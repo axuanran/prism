@@ -24,5 +24,14 @@
     "@prismengine/kernel": "workspace:*",
     "@sinclair/typebox": "^0.34.41"
   },
-  "license": "Apache-2.0"
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/axuanran/prism",
+    "directory": "packages/plugin-calculation-memory"
+  },
+  "homepage": "https://github.com/axuanran/prism#readme",
+  "bugs": {
+    "url": "https://github.com/axuanran/prism/issues"
+  }
 }

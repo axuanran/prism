@@ -27,5 +27,14 @@
   "devDependencies": {
     "@prismengine/plugin-calculation-memory": "workspace:*",
     "@prismengine/testing": "workspace:*"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/axuanran/prism",
+    "directory": "packages/plugin-type-quantity"
+  },
+  "homepage": "https://github.com/axuanran/prism#readme",
+  "bugs": {
+    "url": "https://github.com/axuanran/prism/issues"
   }
 }

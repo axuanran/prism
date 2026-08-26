@@ -28,5 +28,14 @@
     "@prismengine/plugin-http-fastify": "workspace:0.1.0",
     "@prismengine/plugin-organization-basic": "workspace:0.1.0"
   },
-  "license": "Apache-2.0"
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/axuanran/prism",
+    "directory": "packages/platform"
+  },
+  "homepage": "https://github.com/axuanran/prism#readme",
+  "bugs": {
+    "url": "https://github.com/axuanran/prism/issues"
+  }
 }

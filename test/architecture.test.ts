@@ -170,12 +170,39 @@ describe("package architecture", () => {
         readonly name?: string;
         readonly license?: string;
         readonly files?: readonly string[];
+        readonly repository?: {
+          readonly type?: string;
+          readonly url?: string;
+          readonly directory?: string;
+        };
+        readonly homepage?: string;
+        readonly bugs?: { readonly url?: string };
       };
       const packageRoot = join(path, "..");
       const isRoot = path === join(root, "package.json");
       const problems: string[] = [];
       if (manifest.license !== "Apache-2.0") {
         problems.push(`${relative(root, path)} -> license ${manifest.license ?? "missing"}`);
+      }
+      const expectedRepository = "https://github.com/axuanran/prism";
+      if (
+        manifest.repository?.type !== "git" ||
+        manifest.repository.url !== expectedRepository
+      ) {
+        problems.push(`${relative(root, path)} -> invalid repository metadata`);
+      }
+      if (manifest.homepage !== `${expectedRepository}#readme`) {
+        problems.push(`${relative(root, path)} -> invalid homepage`);
+      }
+      if (manifest.bugs?.url !== `${expectedRepository}/issues`) {
+        problems.push(`${relative(root, path)} -> invalid bugs URL`);
+      }
+      if (
+        !isRoot &&
+        manifest.repository?.directory !==
+          relative(root, packageRoot).split(sep).join("/")
+      ) {
+        problems.push(`${relative(root, path)} -> invalid repository directory`);
       }
       if (!isRoot) {
         for (const file of ["LICENSE", "NOTICE"] as const) {

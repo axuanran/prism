@@ -22,5 +22,14 @@
     "apache-arrow": "^21.2.0",
     "decimal.js": "^10.4.3"
   },
-  "license": "Apache-2.0"
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/axuanran/prism",
+    "directory": "packages/contracts-data"
+  },
+  "homepage": "https://github.com/axuanran/prism#readme",
+  "bugs": {
+    "url": "https://github.com/axuanran/prism/issues"
+  }
 }

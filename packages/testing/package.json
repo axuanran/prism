@@ -28,5 +28,14 @@
     "@types/pg": "^8.11.10",
     "vitest": "^2.1.8"
   },
-  "license": "Apache-2.0"
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/axuanran/prism",
+    "directory": "packages/testing"
+  },
+  "homepage": "https://github.com/axuanran/prism#readme",
+  "bugs": {
+    "url": "https://github.com/axuanran/prism/issues"
+  }
 }
