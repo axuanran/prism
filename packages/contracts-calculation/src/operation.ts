@@ -1,6 +1,6 @@
-import type { CallContext, Diagnostic, ValueType } from "@prism/contracts-data";
-import type { ConfigurationContract, ExposureDeclaration, PresentationSpec } from "@prism/kernel";
-import { defineExtensionPoint } from "@prism/kernel";
+import type { CallContext, Diagnostic, ValueType } from "@prismengine/contracts-data";
+import type { ConfigurationContract, ExposureDeclaration, PresentationSpec } from "@prismengine/kernel";
+import { defineExtensionPoint } from "@prismengine/kernel";
 import type { PortDefinition } from "./pipeline.js";
 import type { PlanRef, SemanticPlanNode } from "./semantic-plan.js";
 import type { TypeAnalysisService } from "./analysis.js";

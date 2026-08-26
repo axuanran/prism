@@ -6,7 +6,7 @@ import {
   type FunctionTypeAnalysisRequest,
   type TypeAnalysisExtension,
   type UnaryTypeAnalysisRequest,
-} from "@prism/contracts-calculation";
+} from "@prismengine/contracts-calculation";
 import {
   canonicalSemanticAnnotations,
   decimalType,
@@ -18,8 +18,8 @@ import {
   type DecimalType,
   type JsonObject,
   type ValueType,
-} from "@prism/contracts-data";
-import { defineCapability, definePlugin } from "@prism/kernel";
+} from "@prismengine/contracts-data";
+import { defineCapability, definePlugin } from "@prismengine/kernel";
 
 export const QUANTITY_ANNOTATION_VERSION = "1.0.0";
 export const QUANTITY_ANALYZER_SEMANTIC_VERSION = "1.0.0";

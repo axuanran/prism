@@ -3,8 +3,8 @@ import {
   collectRows,
   decimalToJson,
   PrismError,
-} from "@prism/contracts-data";
-import { definePlugin } from "@prism/kernel";
+} from "@prismengine/contracts-data";
+import { definePlugin } from "@prismengine/kernel";
 import {
   diagnosticCodesFrom,
   withEngine,

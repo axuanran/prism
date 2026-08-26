@@ -4,19 +4,19 @@ import {
   diagnostic,
   PrismError,
   tableType,
-} from "@prism/contracts-data";
+} from "@prismengine/contracts-data";
 import type {
   CallContext,
   Dataset,
   Row,
   TableType,
-} from "@prism/contracts-data";
+} from "@prismengine/contracts-data";
 import {
   isEffectiveOn,
   OrganizationAdministrationToken,
   OrganizationCapabilityToken,
   OrganizationEventType,
-} from "@prism/contracts-organization";
+} from "@prismengine/contracts-organization";
 import type {
   Assignment,
   AssignmentId,
@@ -32,22 +32,22 @@ import type {
   PersonQuery,
   Position,
   PositionId,
-} from "@prism/contracts-organization";
+} from "@prismengine/contracts-organization";
 import {
   StorageCapabilityToken,
-} from "@prism/contracts-storage";
+} from "@prismengine/contracts-storage";
 import type {
   DocumentCollection,
   StorageCapability,
-} from "@prism/contracts-storage";
+} from "@prismengine/contracts-storage";
 import {
   definePlugin,
-} from "@prism/kernel";
+} from "@prismengine/kernel";
 import type {
   DiagnosticsSink,
   EventBus,
   ResourceTypeDefinition,
-} from "@prism/kernel";
+} from "@prismengine/kernel";
 
 export const OrganizationPluginDiagnosticCode = {
   PERSON_NOT_FOUND: "ORGANIZATION_PERSON_NOT_FOUND",

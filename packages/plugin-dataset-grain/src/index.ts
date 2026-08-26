@@ -7,7 +7,7 @@ import {
   type PlanNodeAnalysisValue,
   type PlanRef,
   type SemanticPlanNode,
-} from "@prism/contracts-calculation";
+} from "@prismengine/contracts-calculation";
 import {
   canonicalSemanticAnnotations,
   defineSemanticAnnotationContract,
@@ -17,8 +17,8 @@ import {
   PrismError,
   type JsonObject,
   type TableType,
-} from "@prism/contracts-data";
-import { defineCapability, definePlugin } from "@prism/kernel";
+} from "@prismengine/contracts-data";
+import { defineCapability, definePlugin } from "@prismengine/kernel";
 
 export const GRAIN_ANNOTATION_VERSION = "1.0.0";
 export const GRAIN_CONSTRAINT_VERSION = "1.0.0";

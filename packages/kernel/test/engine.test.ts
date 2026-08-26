@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { EngineDiagnosticCode, PrismError } from "@prism/contracts-data";
-import { createEngine, defineCapability, defineExtensionPoint, definePlugin } from "@prism/kernel";
+import { EngineDiagnosticCode, PrismError } from "@prismengine/contracts-data";
+import { createEngine, defineCapability, defineExtensionPoint, definePlugin } from "@prismengine/kernel";
 
 interface Greeter {
   greet(): string;

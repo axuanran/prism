@@ -1,17 +1,17 @@
-import { PrismError, systemCallContext } from "@prism/contracts-data";
+import { PrismError, systemCallContext } from "@prismengine/contracts-data";
 import {
   ResourceEventType,
   StorageCapabilityToken,
   StorageDiagnosticCode,
-} from "@prism/contracts-storage";
-import type { StorageCapability } from "@prism/contracts-storage";
-import { createEngine, definePlugin } from "@prism/kernel";
-import { describeStorageContract } from "@prism/testing";
+} from "@prismengine/contracts-storage";
+import type { StorageCapability } from "@prismengine/contracts-storage";
+import { createEngine, definePlugin } from "@prismengine/kernel";
+import { describeStorageContract } from "@prismengine/testing";
 import { describe, expect, it } from "vitest";
 import {
   createMemoryStorage,
   storageMemoryPlugin,
-} from "@prism/plugin-storage-memory";
+} from "@prismengine/plugin-storage-memory";
 
 const context = systemCallContext({ correlationId: "storage-memory-test" });
 

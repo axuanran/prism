@@ -3,9 +3,9 @@ import type {
   Diagnostic,
   ValueType,
   VersionStamp,
-} from "@prism/contracts-data";
-import { defineCapability } from "@prism/kernel";
-import type { ValidationResult } from "@prism/kernel";
+} from "@prismengine/contracts-data";
+import { defineCapability } from "@prismengine/kernel";
+import type { ValidationResult } from "@prismengine/kernel";
 import type { PortSchema, PipelineSpec } from "./pipeline.js";
 import type { SemanticPlan } from "./semantic-plan.js";
 import type { CalculationInput, ExecutionOptions, ExecutionResult } from "./execution.js";

@@ -21,8 +21,8 @@ import {
   roundDecimal,
   systemCallContext,
   tableType,
-} from "@prism/contracts-data";
-import type { RunPin } from "@prism/contracts-data";
+} from "@prismengine/contracts-data";
+import type { RunPin } from "@prismengine/contracts-data";
 
 const schema = tableType([
   { name: "personId", type: { kind: "string", annotations: { key: true } } },

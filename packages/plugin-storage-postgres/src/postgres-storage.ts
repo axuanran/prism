@@ -1,17 +1,17 @@
-import type { CallContext } from "@prism/contracts-data";
-import { PrismError, assertJsonValue } from "@prism/contracts-data";
+import type { CallContext } from "@prismengine/contracts-data";
+import { PrismError, assertJsonValue } from "@prismengine/contracts-data";
 import type {
   DocumentCollection,
   DocumentQuery,
   ResourceStore,
   SaveDraftCommand,
   StorageCapability,
-} from "@prism/contracts-storage";
+} from "@prismengine/contracts-storage";
 import {
   ResourceEventType,
   StorageDiagnosticCode,
-} from "@prism/contracts-storage";
-import type { EventBus, Resource, ResourceQuery } from "@prism/kernel";
+} from "@prismengine/contracts-storage";
+import type { EventBus, Resource, ResourceQuery } from "@prismengine/kernel";
 import type { Kysely, Selectable, Transaction } from "kysely";
 import { sql } from "kysely";
 import type { PostgresDatabase, ResourceRevisionTable } from "./database.js";

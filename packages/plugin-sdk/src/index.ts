@@ -6,8 +6,8 @@
  * intentionally not exported: the SDK defines how to author a plugin, not
  * which host composition must run it.
  */
-export * from "@prism/kernel";
-export * from "@prism/contracts-data";
-export * from "@prism/contracts-storage";
-export * from "@prism/contracts-calculation";
-export * from "@prism/contracts-organization";
+export * from "@prismengine/kernel";
+export * from "@prismengine/contracts-data";
+export * from "@prismengine/contracts-storage";
+export * from "@prismengine/contracts-calculation";
+export * from "@prismengine/contracts-organization";

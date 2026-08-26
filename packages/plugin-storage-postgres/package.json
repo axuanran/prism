@@ -1,5 +1,5 @@
 {
-  "name": "@prism/plugin-storage-postgres",
+  "name": "@prismengine/plugin-storage-postgres",
   "version": "0.1.0",
   "type": "module",
   "main": "./dist/index.js",
@@ -19,14 +19,14 @@
     "build": "tsc --build"
   },
   "dependencies": {
-    "@prism/contracts-data": "workspace:*",
-    "@prism/contracts-storage": "workspace:*",
-    "@prism/kernel": "workspace:*",
+    "@prismengine/contracts-data": "workspace:*",
+    "@prismengine/contracts-storage": "workspace:*",
+    "@prismengine/kernel": "workspace:*",
     "kysely": "^0.28.8",
     "pg": "^8.16.3"
   },
   "devDependencies": {
-    "@prism/testing": "workspace:*",
+    "@prismengine/testing": "workspace:*",
     "@types/pg": "^8.15.6",
     "vitest": "^2.1.8"
   },

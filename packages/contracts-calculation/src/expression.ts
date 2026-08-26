@@ -1,4 +1,4 @@
-import type { ValueType } from "@prism/contracts-data";
+import type { ValueType } from "@prismengine/contracts-data";
 
 /**
  * Expression AST.

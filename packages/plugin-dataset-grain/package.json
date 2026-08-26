@@ -1,5 +1,5 @@
 {
-  "name": "@prism/plugin-dataset-grain",
+  "name": "@prismengine/plugin-dataset-grain",
   "version": "0.1.0",
   "type": "module",
   "main": "./dist/index.js",
@@ -19,13 +19,13 @@
     "build": "tsc --build"
   },
   "dependencies": {
-    "@prism/contracts-calculation": "workspace:*",
-    "@prism/contracts-data": "workspace:*",
-    "@prism/kernel": "workspace:*"
+    "@prismengine/contracts-calculation": "workspace:*",
+    "@prismengine/contracts-data": "workspace:*",
+    "@prismengine/kernel": "workspace:*"
   },
   "license": "Apache-2.0",
   "devDependencies": {
-    "@prism/plugin-calculation-memory": "workspace:*",
-    "@prism/testing": "workspace:*"
+    "@prismengine/plugin-calculation-memory": "workspace:*",
+    "@prismengine/testing": "workspace:*"
   }
 }

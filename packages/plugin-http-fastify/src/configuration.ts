@@ -1,5 +1,5 @@
 import { Type, type Static } from "@sinclair/typebox";
-import type { ConfigurationContract, EngineInspection } from "@prism/kernel";
+import type { ConfigurationContract, EngineInspection } from "@prismengine/kernel";
 
 export const HttpConfigurationSchema = Type.Object(
   {

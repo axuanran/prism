@@ -4,13 +4,13 @@ import {
   countRows,
   PrismError,
   systemCallContext,
-} from "@prism/contracts-data";
-import type { CallContext } from "@prism/contracts-data";
+} from "@prismengine/contracts-data";
+import type { CallContext } from "@prismengine/contracts-data";
 import {
   OrganizationAdministrationToken,
   OrganizationCapabilityToken,
   OrganizationEventType,
-} from "@prism/contracts-organization";
+} from "@prismengine/contracts-organization";
 import type {
   Assignment,
   OrganizationAdministration,
@@ -18,16 +18,16 @@ import type {
   OrganizationUnit,
   OrganizationUnitId,
   PersonId,
-} from "@prism/contracts-organization";
-import { StorageCapabilityToken } from "@prism/contracts-storage";
-import type { StorageCapability } from "@prism/contracts-storage";
-import { createEngine, definePlugin } from "@prism/kernel";
-import type { Engine } from "@prism/kernel";
-import { storageMemoryPlugin } from "@prism/plugin-storage-memory";
+} from "@prismengine/contracts-organization";
+import { StorageCapabilityToken } from "@prismengine/contracts-storage";
+import type { StorageCapability } from "@prismengine/contracts-storage";
+import { createEngine, definePlugin } from "@prismengine/kernel";
+import type { Engine } from "@prismengine/kernel";
+import { storageMemoryPlugin } from "@prismengine/plugin-storage-memory";
 import {
   organizationPlugin,
   OrganizationPluginDiagnosticCode,
-} from "@prism/plugin-organization-basic";
+} from "@prismengine/plugin-organization-basic";
 
 interface Harness {
   readonly engine: Engine;

@@ -48,29 +48,29 @@ jobs:
       - run: pnpm typecheck:ci
       - run: pnpm lint
       - run: pnpm test
-      - run: pnpm --filter @prism/studio build
-      - name: Verify npm token and @prism scope access
+      - run: pnpm --filter @prismengine/studio build
+      - name: Verify npm token and @prismengine scope access
         shell: bash
         run: |
           set -euo pipefail
           NPM_USER="$(npm whoami --registry=https://registry.npmjs.org)"
           echo "Authenticated to npm as: $NPM_USER"
 
-          if [ "$NPM_USER" != "prism" ]; then
-            if ! npm org ls prism --json > "$RUNNER_TEMP/prism-org.json"; then
-              echo "::error::The npm token is valid, but @prism is not an organization visible to this account."
-              echo "::error::Create/join the npm organization 'prism', or choose another package scope."
+          if [ "$NPM_USER" != "prismengine" ]; then
+            if ! npm org ls prismengine --json > "$RUNNER_TEMP/prismengine-org.json"; then
+              echo "::error::The npm token is valid, but @prismengine is not an organization visible to this account."
+              echo "::error::Create/join the npm organization 'prismengine', or choose another package scope."
               exit 1
             fi
-            node - "$NPM_USER" "$RUNNER_TEMP/prism-org.json" <<'NODE'
+            node - "$NPM_USER" "$RUNNER_TEMP/prismengine-org.json" <<'NODE'
           const { readFileSync } = require("node:fs");
           const [user, path] = process.argv.slice(2);
           const members = JSON.parse(readFileSync(path, "utf8"));
           if (!Object.prototype.hasOwnProperty.call(members, user)) {
-            console.error(`::error::npm user ${user} is not a member of @prism.`);
+            console.error(`::error::npm user ${user} is not a member of @prismengine.`);
             process.exit(1);
           }
-          console.log(`npm scope access PASS: ${user} is a member of @prism.`);
+          console.log(`npm scope access PASS: ${user} is a member of @prismengine.`);
           NODE
           fi
 
@@ -78,7 +78,7 @@ jobs:
           # each package can configure release.yml as its Trusted Publisher.
           echo "npm bootstrap authentication PASS."
       # Recursive publish follows workspace topology: contracts/SDK/providers
-      # precede @prism/platform. workflow_dispatch + NPM_TOKEN is required;
+      # precede @prismengine/platform. workflow_dispatch + NPM_TOKEN is required;
       # local development can never accidentally publish.
       - name: Publish Apache-2.0 packages
         run: >-
@@ -98,9 +98,9 @@ jobs:
           # npm metadata can be briefly eventually consistent after publish.
           for attempt in 1 2 3 4 5 6; do
             if pnpm add \
-              "@prism/platform@$VERSION" \
-              "@prism/plugin-sdk@$VERSION" \
-              "@prism/testing@$VERSION"; then
+              "@prismengine/platform@$VERSION" \
+              "@prismengine/plugin-sdk@$VERSION" \
+              "@prismengine/testing@$VERSION"; then
               break
             fi
             if [ "$attempt" -eq 6 ]; then
@@ -112,7 +112,7 @@ jobs:
 
           pnpm peers check
           node --input-type=module <<'NODE'
-          import { prismPlatform, PRISM_PLATFORM_VERSION } from "@prism/platform";
+          import { prismPlatform, PRISM_PLATFORM_VERSION } from "@prismengine/platform";
           import { readFileSync, existsSync } from "node:fs";
           import { dirname, join } from "node:path";
           import { fileURLToPath } from "node:url";
@@ -130,7 +130,7 @@ jobs:
             }
           }
 
-          const entry = fileURLToPath(import.meta.resolve("@prism/platform"));
+          const entry = fileURLToPath(import.meta.resolve("@prismengine/platform"));
           const root = join(dirname(entry), "..");
           for (const file of ["LICENSE", "NOTICE"]) {
             if (!existsSync(join(root, file))) {

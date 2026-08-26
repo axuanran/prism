@@ -1,5 +1,5 @@
-import { StorageCapabilityToken } from "@prism/contracts-storage";
-import { definePlugin } from "@prism/kernel";
+import { StorageCapabilityToken } from "@prismengine/contracts-storage";
+import { definePlugin } from "@prismengine/kernel";
 import { MemoryStorage } from "./memory-storage.js";
 
 export { createMemoryStorage, MemoryStorage } from "./memory-storage.js";

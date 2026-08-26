@@ -3,24 +3,24 @@ import {
   DataDiagnosticCode,
   decimalCodec,
   systemCallContext,
-} from "@prism/contracts-data";
-import type { DecimalString } from "@prism/contracts-data";
-import { StorageCapabilityToken } from "@prism/contracts-storage";
-import { createEngine } from "@prism/kernel";
-import type { Engine, Resource } from "@prism/kernel";
+} from "@prismengine/contracts-data";
+import type { DecimalString } from "@prismengine/contracts-data";
+import { StorageCapabilityToken } from "@prismengine/contracts-storage";
+import { createEngine } from "@prismengine/kernel";
+import type { Engine, Resource } from "@prismengine/kernel";
 import {
   createPostgresMigrationJournal,
   storagePostgresPlugin,
-} from "@prism/plugin-storage-postgres";
+} from "@prismengine/plugin-storage-postgres";
 import type {
   PostgresDatabase,
   PostgresMigrationJournal,
-} from "@prism/plugin-storage-postgres";
+} from "@prismengine/plugin-storage-postgres";
 import {
   createScratchDatabase,
   describeStorageContract,
   probePostgres,
-} from "@prism/testing";
+} from "@prismengine/testing";
 import { Kysely, PostgresDialect } from "kysely";
 import { Pool } from "pg";
 import { describe, expect, it } from "vitest";

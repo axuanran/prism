@@ -1,4 +1,4 @@
-import type { RoundingMode } from "@prism/contracts-data";
+import type { RoundingMode } from "@prismengine/contracts-data";
 
 /**
  * Allocation policy.

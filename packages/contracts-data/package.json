@@ -1,5 +1,5 @@
 {
-  "name": "@prism/contracts-data",
+  "name": "@prismengine/contracts-data",
   "version": "0.1.0",
   "type": "module",
   "main": "./dist/index.js",

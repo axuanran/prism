@@ -7,7 +7,7 @@ import {
   createEngine,
   definePlugin,
   prismPlatform,
-} from "@prism/platform";
+} from "@prismengine/platform";
 
 const consumer = definePlugin({
   id: "platform-analysis-consumer",

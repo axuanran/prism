@@ -1,4 +1,4 @@
-import type { TableType, ValueType } from "@prism/contracts-data";
+import type { TableType, ValueType } from "@prismengine/contracts-data";
 import type { AnalyzerRequirement } from "./analysis.js";
 
 /**

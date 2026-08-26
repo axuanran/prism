@@ -1,5 +1,5 @@
 {
-  "name": "@prism/contracts-organization",
+  "name": "@prismengine/contracts-organization",
   "version": "0.1.0",
   "type": "module",
   "main": "./dist/index.js",
@@ -19,8 +19,8 @@
     "build": "tsc --build"
   },
   "dependencies": {
-    "@prism/contracts-data": "workspace:*",
-    "@prism/kernel": "workspace:*"
+    "@prismengine/contracts-data": "workspace:*",
+    "@prismengine/kernel": "workspace:*"
   },
   "license": "Apache-2.0"
 }

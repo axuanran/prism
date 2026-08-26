@@ -3,18 +3,18 @@ import {
   CalculationCapabilityToken,
   TypeAnalysisExtensionPoint,
   type PipelineSpec,
-} from "@prism/contracts-calculation";
-import { tableType, type ValueType } from "@prism/contracts-data";
-import { createEngine, type Engine } from "@prism/kernel";
-import { calculationPlugin } from "@prism/plugin-calculation-memory";
+} from "@prismengine/contracts-calculation";
+import { tableType, type ValueType } from "@prismengine/contracts-data";
+import { createEngine, type Engine } from "@prismengine/kernel";
+import { calculationPlugin } from "@prismengine/plugin-calculation-memory";
 import {
   QUANTITY_ANALYZER_SEMANTIC_VERSION,
   QUANTITY_PLUGIN_VERSION,
   QuantityCapabilityToken,
   QuantityDiagnosticCode,
   quantityPlugin,
-} from "@prism/plugin-type-quantity";
-import { testCallContext } from "@prism/testing";
+} from "@prismengine/plugin-type-quantity";
+import { testCallContext } from "@prismengine/testing";
 
 const context = testCallContext();
 

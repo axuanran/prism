@@ -6,7 +6,7 @@ import {
   type FunctionSignature,
   type AnalysisResult,
   type TypeAnalysisService,
-} from "@prism/contracts-calculation";
+} from "@prismengine/contracts-calculation";
 import {
   D,
   Decimal,
@@ -17,7 +17,7 @@ import {
   type ValueType,
   MAX_DECIMAL_PRECISION,
   decimalType,
-} from "@prism/contracts-data";
+} from "@prismengine/contracts-data";
 
 /**
  * Scale used for a decimal the schema did not pin. Wide on purpose: an

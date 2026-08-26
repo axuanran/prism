@@ -23,7 +23,7 @@ import {
   type TraceLevel,
   type ValidatePlanNode,
   type ParameterValue,
-} from "@prism/contracts-calculation";
+} from "@prismengine/contracts-calculation";
 import {
   D,
   Decimal,
@@ -48,7 +48,7 @@ import {
   type ValueType,
   type VersionStamp,
   decimalToJson,
-} from "@prism/contracts-data";
+} from "@prismengine/contracts-data";
 import { canonicalValue, stableHash, stableStringify } from "./determinism.js";
 import { compileExpressionEvaluator, type ExpressionEvaluator } from "./expression.js";
 

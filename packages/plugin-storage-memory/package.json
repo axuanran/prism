@@ -1,5 +1,5 @@
 {
-  "name": "@prism/plugin-storage-memory",
+  "name": "@prismengine/plugin-storage-memory",
   "version": "0.1.0",
   "type": "module",
   "main": "./dist/index.js",
@@ -19,13 +19,13 @@
     "build": "tsc --build"
   },
   "dependencies": {
-    "@prism/contracts-data": "workspace:*",
-    "@prism/contracts-storage": "workspace:*",
-    "@prism/kernel": "workspace:*",
+    "@prismengine/contracts-data": "workspace:*",
+    "@prismengine/contracts-storage": "workspace:*",
+    "@prismengine/kernel": "workspace:*",
     "@sinclair/typebox": "^0.34.41"
   },
   "devDependencies": {
-    "@prism/testing": "workspace:*"
+    "@prismengine/testing": "workspace:*"
   },
   "license": "Apache-2.0"
 }

@@ -1,14 +1,14 @@
-import type { CallContext } from "@prism/contracts-data";
-import { PrismError } from "@prism/contracts-data";
-import { createEngine, defineCapability, definePlugin } from "@prism/kernel";
-import type { Engine, EngineInspection } from "@prism/kernel";
+import type { CallContext } from "@prismengine/contracts-data";
+import { PrismError } from "@prismengine/contracts-data";
+import { createEngine, defineCapability, definePlugin } from "@prismengine/kernel";
+import type { Engine, EngineInspection } from "@prismengine/kernel";
 import {
   HttpCapabilityToken,
   HttpDiagnosticCode,
   HttpRouteExtensionPoint,
   createHttpPlugin,
-} from "@prism/plugin-http-fastify";
-import type { HttpCapability } from "@prism/plugin-http-fastify";
+} from "@prismengine/plugin-http-fastify";
+import type { HttpCapability } from "@prismengine/plugin-http-fastify";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 interface HiddenCapability {

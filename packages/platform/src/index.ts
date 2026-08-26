@@ -1,17 +1,17 @@
-import type { AnyPluginDefinition } from "@prism/plugin-sdk";
-import { calculationPlugin } from "@prism/plugin-calculation-memory";
-import { grainPlugin } from "@prism/plugin-dataset-grain";
-import { quantityPlugin } from "@prism/plugin-type-quantity";
-import { storageMemoryPlugin } from "@prism/plugin-storage-memory";
+import type { AnyPluginDefinition } from "@prismengine/plugin-sdk";
+import { calculationPlugin } from "@prismengine/plugin-calculation-memory";
+import { grainPlugin } from "@prismengine/plugin-dataset-grain";
+import { quantityPlugin } from "@prismengine/plugin-type-quantity";
+import { storageMemoryPlugin } from "@prismengine/plugin-storage-memory";
 
-export * from "@prism/plugin-sdk";
-export * from "@prism/plugin-calculation-memory";
-export * from "@prism/plugin-type-quantity";
-export * from "@prism/plugin-dataset-grain";
-export * from "@prism/plugin-storage-memory";
-export * from "@prism/plugin-storage-postgres";
-export * from "@prism/plugin-http-fastify";
-export * from "@prism/plugin-organization-basic";
+export * from "@prismengine/plugin-sdk";
+export * from "@prismengine/plugin-calculation-memory";
+export * from "@prismengine/plugin-type-quantity";
+export * from "@prismengine/plugin-dataset-grain";
+export * from "@prismengine/plugin-storage-memory";
+export * from "@prismengine/plugin-storage-postgres";
+export * from "@prismengine/plugin-http-fastify";
+export * from "@prismengine/plugin-organization-basic";
 
 export const PRISM_PLATFORM_VERSION = "0.1.0";
 

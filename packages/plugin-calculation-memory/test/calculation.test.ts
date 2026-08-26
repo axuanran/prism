@@ -12,7 +12,7 @@ import {
   type CompiledPipeline,
   type PlanAnalysisExtension,
   type TypeAnalysisExtension,
-} from "@prism/contracts-calculation";
+} from "@prismengine/contracts-calculation";
 import {
   D,
   Decimal,
@@ -26,8 +26,8 @@ import {
   type Row,
   type TableType,
   type ValueType,
-} from "@prism/contracts-data";
-import { createEngine, definePlugin, type Engine } from "@prism/kernel";
+} from "@prismengine/contracts-data";
+import { createEngine, definePlugin, type Engine } from "@prismengine/kernel";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { calculationPlugin } from "../src/index.js";
 

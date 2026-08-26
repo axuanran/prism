@@ -11,15 +11,15 @@ import {
   type SemanticPlanNode,
   type TypeAnalysisExtension,
   type TypeAnalysisService,
-} from "@prism/contracts-calculation";
+} from "@prismengine/contracts-calculation";
 import {
   assertJsonValue,
   canonicalSemanticAnnotations,
   diagnostic,
   type Diagnostic,
   type ValueType,
-} from "@prism/contracts-data";
-import type { ExtensionRegistry } from "@prism/kernel";
+} from "@prismengine/contracts-data";
+import type { ExtensionRegistry } from "@prismengine/kernel";
 
 interface AnalyzerRegistry {
   readonly type: readonly TypeAnalysisExtension[];

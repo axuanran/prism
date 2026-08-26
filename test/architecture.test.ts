@@ -100,7 +100,7 @@ describe("package architecture", () => {
     "kernel source does not import plugins or specialized contracts",
     () => {
       const forbiddenPackage =
-        /^@prism\/(?:plugin-|contracts-(?:calculation|organization|performance))/;
+        /^@prismengine\/(?:plugin-|contracts-(?:calculation|organization|performance))/;
 
       expect(forbiddenImports(kernelSource, (name) => forbiddenPackage.test(name))).toEqual(
         [],
@@ -114,7 +114,7 @@ describe("package architecture", () => {
       expect(
         forbiddenImports(
           contractsDataSource,
-          (name) => name === "@prism/kernel" || name.startsWith("@prism/kernel/"),
+          (name) => name === "@prismengine/kernel" || name.startsWith("@prismengine/kernel/"),
         ),
       ).toEqual([]);
     },
@@ -227,7 +227,7 @@ describe("package architecture", () => {
   test("official plugins consume only public Prism package entry points", () => {
     const violations = sourceFiles(packagesSource).flatMap((path) =>
       importedPackages(path)
-        .filter((name) => /^@prism\/.+\/(?:src|internal)(?:\/|$)/.test(name))
+        .filter((name) => /^@prismengine\/.+\/(?:src|internal)(?:\/|$)/.test(name))
         .map((name) => `${relative(root, path)} -> ${name}`),
     );
     expect(violations).toEqual([]);

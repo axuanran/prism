@@ -2,8 +2,8 @@ import {
   BackendExtensionPoint,
   CalculationCapabilityToken,
   OperationExtensionPoint,
-} from "@prism/contracts-calculation";
-import { definePlugin } from "@prism/kernel";
+} from "@prismengine/contracts-calculation";
+import { definePlugin } from "@prismengine/kernel";
 import {
   DecisionTableResourceSchema,
   LookupTableResourceSchema,

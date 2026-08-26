@@ -1,8 +1,8 @@
 import type {
   AllocationPolicy,
   ExpressionSpec,
-} from "@prism/contracts-calculation";
-import type { RoundingMode } from "@prism/contracts-data";
+} from "@prismengine/contracts-calculation";
+import type { RoundingMode } from "@prismengine/contracts-data";
 import { Type } from "@sinclair/typebox";
 
 export interface InputConfig {

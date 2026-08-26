@@ -1,4 +1,4 @@
-import type { Diagnostic } from "@prism/contracts-data";
+import type { Diagnostic } from "@prismengine/contracts-data";
 import type { EventBus } from "./events.js";
 import type { ResourceTypeDefinition } from "./resource.js";
 import type {

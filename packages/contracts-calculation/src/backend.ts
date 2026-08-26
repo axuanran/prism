@@ -1,5 +1,5 @@
-import type { CallContext, Dataset, Diagnostic, VersionStamp } from "@prism/contracts-data";
-import { defineExtensionPoint } from "@prism/kernel";
+import type { CallContext, Dataset, Diagnostic, VersionStamp } from "@prismengine/contracts-data";
+import { defineExtensionPoint } from "@prismengine/kernel";
 import type { SemanticPlan, SemanticPlanNode } from "./semantic-plan.js";
 import type { ExecutionOptions, ExecutionResult, ParameterBindings } from "./execution.js";
 

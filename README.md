@@ -6,7 +6,7 @@ License: [Apache-2.0](LICENSE). Attribution: [NOTICE](NOTICE).
 
 ## Product boundary
 
-This repository is **Prism Core**. Hospital Performance is a separate private/commercial repository; it consumes released public `@prism/*` packages and is not a fork or subdirectory of Core.
+This repository is **Prism Core**. Hospital Performance is a separate private/commercial repository; it consumes released public `@prismengine/*` packages and is not a fork or subdirectory of Core.
 
 ```text
 remove the word “hospital”
@@ -16,7 +16,7 @@ remove the word “hospital”
 
 Core owns generic mechanisms: Plugin/Capability lifecycle, Resource revisions, JSON/Codec boundaries, Arrow datasets, calculation IR/backends/operators, storage providers, RunPin evidence, testing SDK, and generic Studio infrastructure.
 
-The private Solution owns hospital domain contracts, performance rules and pipelines, HIS/Oracle adapters, XLSX migrations, customer UI/configuration, deployment, and commercial support. A missing generic capability lands and releases in Core first; the Solution upgrades its dependency. It never imports `@prism/*/src/*`, private internals, Git source URLs, or cross-repository paths.
+The private Solution owns hospital domain contracts, performance rules and pipelines, HIS/Oracle adapters, XLSX migrations, customer UI/configuration, deployment, and commercial support. A missing generic capability lands and releases in Core first; the Solution upgrades its dependency. It never imports `@prismengine/*/src/*`, private internals, Git source URLs, or cross-repository paths.
 
 See [ADR 0014](docs/adr/0014-open-core-private-solutions.md).
 
@@ -97,7 +97,7 @@ PostgreSQL separates logical resource identity from immutable revision content. 
 ## Creating a plugin
 
 ```ts
-import { defineCapability, definePlugin } from "@prism/kernel";
+import { defineCapability, definePlugin } from "@prismengine/kernel";
 
 interface GreetingCapability {
   greet(name: string): string;
@@ -134,11 +134,11 @@ export PRISM_TEST_DATABASE_URL=postgres://prism@127.0.0.1:55432/postgres
 Compose the provider at the host root:
 
 ```ts
-import { createEngine } from "@prism/kernel";
+import { createEngine } from "@prismengine/kernel";
 import {
   createPostgresMigrationJournal,
   storagePostgresPlugin,
-} from "@prism/plugin-storage-postgres";
+} from "@prismengine/plugin-storage-postgres";
 
 const connectionString = process.env.DATABASE_URL!;
 const migrationJournal = createPostgresMigrationJournal({ connectionString });
@@ -165,7 +165,7 @@ Core Studio contains the generic JSON Schema renderer, presentation mapping, cus
 Run the domain-neutral offline mock:
 
 ```sh
-VITE_USE_MOCKS=true pnpm --filter @prism/studio dev
+VITE_USE_MOCKS=true pnpm --filter @prismengine/studio dev
 ```
 
 A Solution supplies its own host routes and domain pages while reusing public Studio foundations after those APIs stabilize.
@@ -183,9 +183,9 @@ Prism runtime packages depend on neither compiler. Local compilation uses TS7 de
 
 ## Public release
 
-All public packages share one compatible version line. `@prism/platform` uses exact workspace versions, and `pnpm pack` rewrites them to exact public versions in the tarball. The manually dispatched release workflow runs build/typecheck/lint, real PostgreSQL tests and Studio build before publishing Apache-2.0 packages with npm provenance. It then installs Platform/SDK/Testing from the registry in a fresh directory, checks peers, imports the default composition, rejects leaked workspace/link dependencies, and verifies LICENSE/NOTICE (`.github/workflows/release.yml`).
+All public packages share one compatible version line. `@prismengine/platform` uses exact workspace versions, and `pnpm pack` rewrites them to exact public versions in the tarball. The manually dispatched release workflow runs build/typecheck/lint, real PostgreSQL tests and Studio build before publishing Apache-2.0 packages with npm provenance. It then installs Platform/SDK/Testing from the registry in a fresh directory, checks peers, imports the default composition, rejects leaked workspace/link dependencies, and verifies LICENSE/NOTICE (`.github/workflows/release.yml`).
 
-Publishing requires the repository `NPM_TOKEN` secret. Until `@prism/platform@0.1.0` and `@prism/plugin-sdk@0.1.0` exist in the registry, private Solutions may validate with temporary local links but must not commit those links or a generated lockfile.
+Publishing requires the repository `NPM_TOKEN` secret. Until `@prismengine/platform@0.1.0` and `@prismengine/plugin-sdk@0.1.0` exist in the registry, private Solutions may validate with temporary local links but must not commit those links or a generated lockfile.
 
 ## Development
 
@@ -195,7 +195,7 @@ pnpm build
 pnpm typecheck
 pnpm lint
 pnpm test
-pnpm --filter @prism/studio build
+pnpm --filter @prismengine/studio build
 ```
 
 Primary gates:

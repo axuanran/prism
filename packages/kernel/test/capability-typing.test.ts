@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { defineCapability, definePlugin } from "@prism/kernel";
-import type { CapabilityToken } from "@prism/kernel";
+import { defineCapability, definePlugin } from "@prismengine/kernel";
+import type { CapabilityToken } from "@prismengine/kernel";
 
 /**
  * Compile-time architecture properties (P2-P4).

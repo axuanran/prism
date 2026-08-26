@@ -12,7 +12,7 @@ import {
   type OperationDescriptor,
   type PlanExplanation,
   type SemanticPlanNode,
-} from "@prism/contracts-calculation";
+} from "@prismengine/contracts-calculation";
 import {
   PrismError,
   diagnostic,
@@ -21,9 +21,9 @@ import {
   type Diagnostic,
   type InputSnapshot,
   type VersionStamp,
-} from "@prism/contracts-data";
-import { isExposed } from "@prism/kernel";
-import type { ExtensionRegistry, ValidationResult } from "@prism/kernel";
+} from "@prismengine/contracts-data";
+import { isExposed } from "@prismengine/kernel";
+import type { ExtensionRegistry, ValidationResult } from "@prismengine/kernel";
 import { stableHash } from "./determinism.js";
 import { FUNCTION_SIGNATURES, compilePublicExpression } from "./expression.js";
 import { lowerPipeline, operationRegistry, operationVersions } from "./lowering.js";

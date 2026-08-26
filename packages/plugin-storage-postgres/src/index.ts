@@ -1,5 +1,5 @@
-import { StorageCapabilityToken } from "@prism/contracts-storage";
-import { definePlugin } from "@prism/kernel";
+import { StorageCapabilityToken } from "@prismengine/contracts-storage";
+import { definePlugin } from "@prismengine/kernel";
 import { openDatabase } from "./database.js";
 import type { PostgresStorageOptions } from "./database.js";
 import { postgresStorageMigrations } from "./migrations.js";

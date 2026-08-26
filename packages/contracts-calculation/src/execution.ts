@@ -5,7 +5,7 @@ import type {
   InputSnapshot,
   Row,
   VersionStamp,
-} from "@prism/contracts-data";
+} from "@prismengine/contracts-data";
 
 /**
  * Execution and trace.

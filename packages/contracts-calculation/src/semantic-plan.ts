@@ -3,7 +3,7 @@ import type {
   SemanticAnnotation,
   TableType,
   ValueType,
-} from "@prism/contracts-data";
+} from "@prismengine/contracts-data";
 import type { AllocationPolicy } from "./allocation.js";
 import type { Expression } from "./expression.js";
 import type {

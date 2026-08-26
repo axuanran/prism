@@ -1,5 +1,5 @@
 {
-  "name": "@prism/plugin-sdk",
+  "name": "@prismengine/plugin-sdk",
   "version": "0.1.0",
   "type": "module",
   "main": "./dist/index.js",
@@ -19,11 +19,11 @@
     "build": "tsc --build"
   },
   "dependencies": {
-    "@prism/kernel": "workspace:0.1.0",
-    "@prism/contracts-data": "workspace:0.1.0",
-    "@prism/contracts-storage": "workspace:0.1.0",
-    "@prism/contracts-calculation": "workspace:0.1.0",
-    "@prism/contracts-organization": "workspace:0.1.0"
+    "@prismengine/kernel": "workspace:0.1.0",
+    "@prismengine/contracts-data": "workspace:0.1.0",
+    "@prismengine/contracts-storage": "workspace:0.1.0",
+    "@prismengine/contracts-calculation": "workspace:0.1.0",
+    "@prismengine/contracts-organization": "workspace:0.1.0"
   },
   "license": "Apache-2.0"
 }

@@ -66,10 +66,10 @@ importers:
 
   packages/contracts-calculation:
     dependencies:
-      '@prism/contracts-data':
+      '@prismengine/contracts-data':
         specifier: workspace:*
         version: link:../contracts-data
-      '@prism/kernel':
+      '@prismengine/kernel':
         specifier: workspace:*
         version: link:../kernel
 
@@ -84,25 +84,25 @@ importers:
 
   packages/contracts-organization:
     dependencies:
-      '@prism/contracts-data':
+      '@prismengine/contracts-data':
         specifier: workspace:*
         version: link:../contracts-data
-      '@prism/kernel':
+      '@prismengine/kernel':
         specifier: workspace:*
         version: link:../kernel
 
   packages/contracts-storage:
     dependencies:
-      '@prism/contracts-data':
+      '@prismengine/contracts-data':
         specifier: workspace:*
         version: link:../contracts-data
-      '@prism/kernel':
+      '@prismengine/kernel':
         specifier: workspace:*
         version: link:../kernel
 
   packages/kernel:
     dependencies:
-      '@prism/contracts-data':
+      '@prismengine/contracts-data':
         specifier: workspace:*
         version: link:../contracts-data
       '@sinclair/typebox':
@@ -118,40 +118,40 @@ importers:
 
   packages/platform:
     dependencies:
-      '@prism/plugin-calculation-memory':
+      '@prismengine/plugin-calculation-memory':
         specifier: workspace:0.1.0
         version: link:../plugin-calculation-memory
-      '@prism/plugin-dataset-grain':
+      '@prismengine/plugin-dataset-grain':
         specifier: workspace:0.1.0
         version: link:../plugin-dataset-grain
-      '@prism/plugin-http-fastify':
+      '@prismengine/plugin-http-fastify':
         specifier: workspace:0.1.0
         version: link:../plugin-http-fastify
-      '@prism/plugin-organization-basic':
+      '@prismengine/plugin-organization-basic':
         specifier: workspace:0.1.0
         version: link:../plugin-organization-basic
-      '@prism/plugin-sdk':
+      '@prismengine/plugin-sdk':
         specifier: workspace:0.1.0
         version: link:../plugin-sdk
-      '@prism/plugin-storage-memory':
+      '@prismengine/plugin-storage-memory':
         specifier: workspace:0.1.0
         version: link:../plugin-storage-memory
-      '@prism/plugin-storage-postgres':
+      '@prismengine/plugin-storage-postgres':
         specifier: workspace:0.1.0
         version: link:../plugin-storage-postgres
-      '@prism/plugin-type-quantity':
+      '@prismengine/plugin-type-quantity':
         specifier: workspace:0.1.0
         version: link:../plugin-type-quantity
 
   packages/plugin-calculation-memory:
     dependencies:
-      '@prism/contracts-calculation':
+      '@prismengine/contracts-calculation':
         specifier: workspace:*
         version: link:../contracts-calculation
-      '@prism/contracts-data':
+      '@prismengine/contracts-data':
         specifier: workspace:*
         version: link:../contracts-data
-      '@prism/kernel':
+      '@prismengine/kernel':
         specifier: workspace:*
         version: link:../kernel
       '@sinclair/typebox':
@@ -160,29 +160,29 @@ importers:
 
   packages/plugin-dataset-grain:
     dependencies:
-      '@prism/contracts-calculation':
+      '@prismengine/contracts-calculation':
         specifier: workspace:*
         version: link:../contracts-calculation
-      '@prism/contracts-data':
+      '@prismengine/contracts-data':
         specifier: workspace:*
         version: link:../contracts-data
-      '@prism/kernel':
+      '@prismengine/kernel':
         specifier: workspace:*
         version: link:../kernel
     devDependencies:
-      '@prism/plugin-calculation-memory':
+      '@prismengine/plugin-calculation-memory':
         specifier: workspace:*
         version: link:../plugin-calculation-memory
-      '@prism/testing':
+      '@prismengine/testing':
         specifier: workspace:*
         version: link:../testing
 
   packages/plugin-http-fastify:
     dependencies:
-      '@prism/contracts-data':
+      '@prismengine/contracts-data':
         specifier: workspace:*
         version: link:../contracts-data
-      '@prism/kernel':
+      '@prismengine/kernel':
         specifier: workspace:*
         version: link:../kernel
       '@sinclair/typebox':
@@ -194,72 +194,72 @@ importers:
 
   packages/plugin-organization-basic:
     dependencies:
-      '@prism/contracts-data':
+      '@prismengine/contracts-data':
         specifier: workspace:*
         version: link:../contracts-data
-      '@prism/contracts-organization':
+      '@prismengine/contracts-organization':
         specifier: workspace:*
         version: link:../contracts-organization
-      '@prism/contracts-storage':
+      '@prismengine/contracts-storage':
         specifier: workspace:*
         version: link:../contracts-storage
-      '@prism/kernel':
+      '@prismengine/kernel':
         specifier: workspace:*
         version: link:../kernel
       '@sinclair/typebox':
         specifier: ^0.34.41
         version: 0.34.52
     devDependencies:
-      '@prism/plugin-storage-memory':
+      '@prismengine/plugin-storage-memory':
         specifier: workspace:*
         version: link:../plugin-storage-memory
 
   packages/plugin-sdk:
     dependencies:
-      '@prism/contracts-calculation':
+      '@prismengine/contracts-calculation':
         specifier: workspace:0.1.0
         version: link:../contracts-calculation
-      '@prism/contracts-data':
+      '@prismengine/contracts-data':
         specifier: workspace:0.1.0
         version: link:../contracts-data
-      '@prism/contracts-organization':
+      '@prismengine/contracts-organization':
         specifier: workspace:0.1.0
         version: link:../contracts-organization
-      '@prism/contracts-storage':
+      '@prismengine/contracts-storage':
         specifier: workspace:0.1.0
         version: link:../contracts-storage
-      '@prism/kernel':
+      '@prismengine/kernel':
         specifier: workspace:0.1.0
         version: link:../kernel
 
   packages/plugin-storage-memory:
     dependencies:
-      '@prism/contracts-data':
+      '@prismengine/contracts-data':
         specifier: workspace:*
         version: link:../contracts-data
-      '@prism/contracts-storage':
+      '@prismengine/contracts-storage':
         specifier: workspace:*
         version: link:../contracts-storage
-      '@prism/kernel':
+      '@prismengine/kernel':
         specifier: workspace:*
         version: link:../kernel
       '@sinclair/typebox':
         specifier: ^0.34.41
         version: 0.34.52
     devDependencies:
-      '@prism/testing':
+      '@prismengine/testing':
         specifier: workspace:*
         version: link:../testing
 
   packages/plugin-storage-postgres:
     dependencies:
-      '@prism/contracts-data':
+      '@prismengine/contracts-data':
         specifier: workspace:*
         version: link:../contracts-data
-      '@prism/contracts-storage':
+      '@prismengine/contracts-storage':
         specifier: workspace:*
         version: link:../contracts-storage
-      '@prism/kernel':
+      '@prismengine/kernel':
         specifier: workspace:*
         version: link:../kernel
       kysely:
@@ -269,7 +269,7 @@ importers:
         specifier: ^8.16.3
         version: 8.23.0
     devDependencies:
-      '@prism/testing':
+      '@prismengine/testing':
         specifier: workspace:*
         version: link:../testing
       '@types/pg':
@@ -281,32 +281,32 @@ importers:
 
   packages/plugin-type-quantity:
     dependencies:
-      '@prism/contracts-calculation':
+      '@prismengine/contracts-calculation':
         specifier: workspace:*
         version: link:../contracts-calculation
-      '@prism/contracts-data':
+      '@prismengine/contracts-data':
         specifier: workspace:*
         version: link:../contracts-data
-      '@prism/kernel':
+      '@prismengine/kernel':
         specifier: workspace:*
         version: link:../kernel
     devDependencies:
-      '@prism/plugin-calculation-memory':
+      '@prismengine/plugin-calculation-memory':
         specifier: workspace:*
         version: link:../plugin-calculation-memory
-      '@prism/testing':
+      '@prismengine/testing':
         specifier: workspace:*
         version: link:../testing
 
   packages/testing:
     dependencies:
-      '@prism/contracts-data':
+      '@prismengine/contracts-data':
         specifier: workspace:*
         version: link:../contracts-data
-      '@prism/contracts-storage':
+      '@prismengine/contracts-storage':
         specifier: workspace:*
         version: link:../contracts-storage
-      '@prism/kernel':
+      '@prismengine/kernel':
         specifier: workspace:*
         version: link:../kernel
       pg:

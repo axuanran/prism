@@ -1,5 +1,5 @@
-import { EngineDiagnosticCode, PrismError, diagnostic, hasErrors } from "@prism/contracts-data";
-import type { Diagnostic } from "@prism/contracts-data";
+import { EngineDiagnosticCode, PrismError, diagnostic, hasErrors } from "@prismengine/contracts-data";
+import type { Diagnostic } from "@prismengine/contracts-data";
 import { normalizeRequirement } from "./capability.js";
 import type { CapabilityToken, RequirementMap } from "./capability.js";
 import type { Logger, PluginContext, PluginRegisterContext } from "./context.js";

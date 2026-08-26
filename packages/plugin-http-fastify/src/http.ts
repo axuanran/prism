@@ -1,5 +1,5 @@
-import type { CallContext } from "@prism/contracts-data";
-import { defineCapability, defineExtensionPoint } from "@prism/kernel";
+import type { CallContext } from "@prismengine/contracts-data";
+import { defineCapability, defineExtensionPoint } from "@prismengine/kernel";
 
 export type HttpMethod = "GET" | "POST" | "PUT" | "DELETE";
 

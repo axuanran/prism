@@ -4,7 +4,7 @@ import type { TSchema } from "@sinclair/typebox";
 import { VALID } from "./schema.js";
 import type { ValidationContext, ValidationResult } from "./schema.js";
 import type { ResourceTypeDefinition } from "./resource.js";
-import type { Diagnostic } from "@prism/contracts-data";
+import type { Diagnostic } from "@prismengine/contracts-data";
 
 /**
  * TypeBox validates `format` only for formats that were registered, and

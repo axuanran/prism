@@ -6,7 +6,7 @@ import {
   type FieldType,
   type Row,
   type TypeAnnotations,
-} from "@prism/contracts-data";
+} from "@prismengine/contracts-data";
 
 const DEFAULT_TEST_PRINCIPAL = Object.freeze({
   id: "test-principal",

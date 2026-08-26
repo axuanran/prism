@@ -1,6 +1,6 @@
-import type { CallContext } from "@prism/contracts-data";
-import { defineCapability } from "@prism/kernel";
-import type { Resource, ResourceQuery } from "@prism/kernel";
+import type { CallContext } from "@prismengine/contracts-data";
+import { defineCapability } from "@prismengine/kernel";
+import type { Resource, ResourceQuery } from "@prismengine/kernel";
 
 /**
  * Storage capability.

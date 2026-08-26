@@ -3,9 +3,9 @@ import {
   PrismError,
   assertJsonValue,
   systemCallContext,
-} from "@prism/contracts-data";
-import type { StorageCapability } from "@prism/contracts-storage";
-import { StorageDiagnosticCode } from "@prism/contracts-storage";
+} from "@prismengine/contracts-data";
+import type { StorageCapability } from "@prismengine/contracts-storage";
+import { StorageDiagnosticCode } from "@prismengine/contracts-storage";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 export interface StorageContractFixture {

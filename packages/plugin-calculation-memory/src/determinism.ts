@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { Decimal, decimalToJson } from "@prism/contracts-data";
+import { Decimal, decimalToJson } from "@prismengine/contracts-data";
 
 function normalize(value: unknown): unknown {
   if (Decimal.isDecimal(value)) return { $decimal: decimalToJson(value) };

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Type } from "@sinclair/typebox";
-import { validateAgainstSchema, validateResourceSpec } from "@prism/kernel";
-import type { ResourceTypeDefinition, ValidationContext } from "@prism/kernel";
+import { validateAgainstSchema, validateResourceSpec } from "@prismengine/kernel";
+import type { ResourceTypeDefinition, ValidationContext } from "@prismengine/kernel";
 
 const context: ValidationContext = {
   resolveResource: async () => null,

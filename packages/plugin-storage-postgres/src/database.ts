@@ -1,6 +1,6 @@
-import { PrismError } from "@prism/contracts-data";
-import { StorageDiagnosticCode } from "@prism/contracts-storage";
-import type { ResourceStatus } from "@prism/kernel";
+import { PrismError } from "@prismengine/contracts-data";
+import { StorageDiagnosticCode } from "@prismengine/contracts-storage";
+import type { ResourceStatus } from "@prismengine/kernel";
 import type { ColumnType } from "kysely";
 import { Kysely, PostgresDialect } from "kysely";
 import { Pool } from "pg";

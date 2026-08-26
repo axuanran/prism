@@ -1,6 +1,6 @@
-import { PrismError } from "@prism/contracts-data";
-import { StorageDiagnosticCode } from "@prism/contracts-storage";
-import type { Migration } from "@prism/kernel";
+import { PrismError } from "@prismengine/contracts-data";
+import { StorageDiagnosticCode } from "@prismengine/contracts-storage";
+import type { Migration } from "@prismengine/kernel";
 import type { Kysely } from "kysely";
 import { sql } from "kysely";
 import type { PostgresDatabase } from "./database.js";

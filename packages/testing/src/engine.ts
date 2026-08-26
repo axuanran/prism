@@ -1,10 +1,10 @@
-import { PrismError } from "@prism/contracts-data";
+import { PrismError } from "@prismengine/contracts-data";
 import {
   createEngine,
   type AnyPluginDefinition,
   type Engine,
   type EngineOptions,
-} from "@prism/kernel";
+} from "@prismengine/kernel";
 
 export type TestEngineOptions = Omit<EngineOptions, "plugins">;
 

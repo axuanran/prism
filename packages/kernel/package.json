@@ -1,5 +1,5 @@
 {
-  "name": "@prism/kernel",
+  "name": "@prismengine/kernel",
   "version": "0.1.0",
   "type": "module",
   "main": "./dist/index.js",
@@ -19,7 +19,7 @@
     "build": "tsc --build"
   },
   "dependencies": {
-    "@prism/contracts-data": "workspace:*",
+    "@prismengine/contracts-data": "workspace:*",
     "semver": "^7.6.3",
     "@sinclair/typebox": "^0.34.0"
   },

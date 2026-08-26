@@ -4,16 +4,16 @@ import {
   CalculationDiagnosticCode,
   PlanAnalysisExtensionPoint,
   type PipelineSpec,
-} from "@prism/contracts-calculation";
-import { D, datasetFromRows, systemCallContext, tableType } from "@prism/contracts-data";
-import { createEngine } from "@prism/kernel";
-import { calculationPlugin } from "@prism/plugin-calculation-memory";
+} from "@prismengine/contracts-calculation";
+import { D, datasetFromRows, systemCallContext, tableType } from "@prismengine/contracts-data";
+import { createEngine } from "@prismengine/kernel";
+import { calculationPlugin } from "@prismengine/plugin-calculation-memory";
 import {
   GRAIN_ANALYZER_SEMANTIC_VERSION,
   GrainCapabilityToken,
   GrainDiagnosticCode,
   grainPlugin,
-} from "@prism/plugin-dataset-grain";
+} from "@prismengine/plugin-dataset-grain";
 
 const context = systemCallContext({ asOf: { validAt: "2026-01-31" } });
 const DECIMAL = { kind: "decimal", precision: 28, scale: 6 } as const;

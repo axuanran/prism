@@ -1,21 +1,21 @@
-import type { CallContext } from "@prism/contracts-data";
-import { PrismError, assertJsonValue } from "@prism/contracts-data";
+import type { CallContext } from "@prismengine/contracts-data";
+import { PrismError, assertJsonValue } from "@prismengine/contracts-data";
 import type {
   DocumentCollection,
   DocumentQuery,
   ResourceStore,
   SaveDraftCommand,
   StorageCapability,
-} from "@prism/contracts-storage";
+} from "@prismengine/contracts-storage";
 import {
   ResourceEventType,
   StorageDiagnosticCode,
-} from "@prism/contracts-storage";
+} from "@prismengine/contracts-storage";
 import type {
   EventBus,
   Resource,
   ResourceQuery,
-} from "@prism/kernel";
+} from "@prismengine/kernel";
 
 const NOOP_EVENTS: EventBus = {
   async publish(): Promise<void> {},

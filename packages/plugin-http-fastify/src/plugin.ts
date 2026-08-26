@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { PrismError, diagnostic } from "@prism/contracts-data";
-import type { CallContext, Diagnostic, Principal } from "@prism/contracts-data";
-import { definePlugin } from "@prism/kernel";
+import { PrismError, diagnostic } from "@prismengine/contracts-data";
+import type { CallContext, Diagnostic, Principal } from "@prismengine/contracts-data";
+import { definePlugin } from "@prismengine/kernel";
 import Fastify from "fastify";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { HttpPluginOptions } from "./configuration.js";

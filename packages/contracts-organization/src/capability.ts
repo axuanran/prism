@@ -1,5 +1,5 @@
-import type { CallContext, Dataset } from "@prism/contracts-data";
-import { defineCapability } from "@prism/kernel";
+import type { CallContext, Dataset } from "@prismengine/contracts-data";
+import { defineCapability } from "@prismengine/kernel";
 import type {
   Assignment,
   AssignmentQuery,

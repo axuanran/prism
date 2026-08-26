@@ -6,7 +6,7 @@ import {
   type PlanNodeOrigin,
   type TypeInferenceResult,
   type TypeAnalysisService,
-} from "@prism/contracts-calculation";
+} from "@prismengine/contracts-calculation";
 import {
   PrismError,
   diagnostic,
@@ -17,7 +17,7 @@ import {
   type ValueType,
   MAX_DECIMAL_PRECISION,
   decimalType,
-} from "@prism/contracts-data";
+} from "@prismengine/contracts-data";
 import { INFERRED_DECIMAL_SCALE } from "./expression.js";
 import {
   AggregateConfigSchema,

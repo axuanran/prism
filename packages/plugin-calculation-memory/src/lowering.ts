@@ -12,7 +12,7 @@ import {
   type SemanticPlan,
   type SemanticPlanNode,
   type TypeAnalysisService,
-} from "@prism/contracts-calculation";
+} from "@prismengine/contracts-calculation";
 import {
   EngineDiagnosticCode,
   PrismError,
@@ -21,8 +21,8 @@ import {
   type CallContext,
   type Diagnostic,
   type ValueType,
-} from "@prism/contracts-data";
-import type { ExtensionRegistry } from "@prism/kernel";
+} from "@prismengine/contracts-data";
+import type { ExtensionRegistry } from "@prismengine/kernel";
 import type { TSchema } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import type { InputConfig } from "./config.js";

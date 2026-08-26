@@ -27,7 +27,7 @@ Three versions remain distinct:
 Extension contract version  calculation.type-analysis@1.0.0
 Annotation contract version type.quantity@1.0.0
 Analyzer semantic version   quantity-analyzer@1.2.0
-Package version             @prism/plugin-type-quantity@0.8.3
+Package version             @prismengine/plugin-type-quantity@0.8.3
 ```
 
 Only semantic changes enter plan identity. README/UI-only package releases do not alter plan hashes.

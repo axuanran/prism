@@ -3,8 +3,8 @@ import type {
   JsonValue,
   SemanticAnnotation,
   ValueType,
-} from "@prism/contracts-data";
-import { defineExtensionPoint } from "@prism/kernel";
+} from "@prismengine/contracts-data";
+import { defineExtensionPoint } from "@prismengine/kernel";
 import type { BinaryOperator, UnaryOperator } from "./expression.js";
 import type { SemanticPlanNode } from "./semantic-plan.js";
 

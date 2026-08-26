@@ -16,7 +16,7 @@ import {
   type Dataset,
   type Row,
   type TableType,
-} from "@prism/contracts-data";
+} from "@prismengine/contracts-data";
 
 function capturedPrismError(run: () => unknown): PrismError {
   try {

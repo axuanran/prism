@@ -15,7 +15,7 @@ The license must permit closed commercial Solutions to consume the engine while 
 
 ## Decision
 
-This repository is **Prism Core**, open source under Apache License 2.0. The root contains `LICENSE` and `NOTICE`; the root manifest and every publishable `@prism/*` package declare `"license": "Apache-2.0"`. An architecture test prevents package metadata from drifting (`LICENSE`, `NOTICE`, `package.json`, `test/architecture.test.ts`).
+This repository is **Prism Core**, open source under Apache License 2.0. The root contains `LICENSE` and `NOTICE`; the root manifest and every publishable `@prismengine/*` package declare `"license": "Apache-2.0"`. An architecture test prevents package metadata from drifting (`LICENSE`, `NOTICE`, `package.json`, `test/architecture.test.ts`).
 
 Hospital Performance is a separate private/commercial repository with an independent version line. It consumes versioned public Prism packages and never forks, vendors, or imports Prism internals.
 
@@ -39,7 +39,7 @@ A private project that needs a missing generic capability contributes it to Pris
 - The private Solution may remain closed while consuming Apache-2.0 packages, subject to license obligations and professional legal review.
 - Prism internals should be hidden through package `exports`; private consumers should depend only on supported public packages. A future private-repository architecture test should reject `/src/`, `/internal/`, Git source URLs, and cross-repository relative imports.
 - Prism and Hospital Performance use independent versions. A Solution release records its compatible Prism Platform version rather than copying the Core version.
-- A future `@prism/platform` may provide one supported distribution identity and common public entry point. It must be a real API surface, not an empty dependency bundle; it is not created by this decision before that public API is designed.
+- A future `@prismengine/platform` may provide one supported distribution identity and common public entry point. It must be a real API surface, not an empty dependency bundle; it is not created by this decision before that public API is designed.
 - Apache-2.0 grants copyright and patent rights but does not grant Prism trademarks. `NOTICE` attribution must remain in redistributed derivative works as required by the license.
 
 ## Cost to reverse
