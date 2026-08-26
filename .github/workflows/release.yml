@@ -1,0 +1,119 @@
+name: Release Public Prism Packages
+
+on:
+  workflow_dispatch:
+    inputs:
+      npm-tag:
+        description: npm dist-tag
+        required: true
+        default: latest
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: prism
+          POSTGRES_PASSWORD: prism
+          POSTGRES_DB: postgres
+        ports:
+          - 55432:5432
+        options: >-
+          --health-cmd "pg_isready -U prism"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      PRISM_TEST_DATABASE_URL: postgres://prism:prism@127.0.0.1:55432/postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.21.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build:ci
+      - run: pnpm typecheck:ci
+      - run: pnpm lint
+      - run: pnpm test
+      - run: pnpm --filter @prism/studio build
+      # Recursive publish follows workspace topology: contracts/SDK/providers
+      # precede @prism/platform. workflow_dispatch + NPM_TOKEN is required;
+      # local development can never accidentally publish.
+      - name: Publish Apache-2.0 packages
+        run: >-
+          pnpm --recursive --filter './packages/**'
+          publish --access public --provenance --no-git-checks
+          --tag '${{ inputs.npm-tag }}'
+
+      - name: Smoke-install public distribution from a clean directory
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="$(node -p "require('./packages/platform/package.json').version")"
+          SMOKE="$(mktemp -d)"
+          cd "$SMOKE"
+          printf '{"name":"prism-release-smoke","private":true,"type":"module"}\n' > package.json
+
+          # npm metadata can be briefly eventually consistent after publish.
+          for attempt in 1 2 3 4 5 6; do
+            if pnpm add \
+              "@prism/platform@$VERSION" \
+              "@prism/plugin-sdk@$VERSION" \
+              "@prism/testing@$VERSION"; then
+              break
+            fi
+            if [ "$attempt" -eq 6 ]; then
+              echo "Published packages were not installable after six attempts." >&2
+              exit 1
+            fi
+            sleep $((attempt * 10))
+          done
+
+          pnpm peers check
+          node --input-type=module <<'NODE'
+          import { prismPlatform, PRISM_PLATFORM_VERSION } from "@prism/platform";
+          import { readFileSync, existsSync } from "node:fs";
+          import { dirname, join } from "node:path";
+          import { fileURLToPath } from "node:url";
+
+          const plugins = prismPlatform();
+          const ids = plugins.map((plugin) => plugin.id);
+          for (const required of [
+            "storage.memory",
+            "calculation.memory",
+            "type.quantity",
+            "dataset.grain",
+          ]) {
+            if (!ids.includes(required)) {
+              throw new Error(`Platform composition omits ${required}.`);
+            }
+          }
+
+          const entry = fileURLToPath(import.meta.resolve("@prism/platform"));
+          const root = join(dirname(entry), "..");
+          for (const file of ["LICENSE", "NOTICE"]) {
+            if (!existsSync(join(root, file))) {
+              throw new Error(`Installed platform package omits ${file}.`);
+            }
+          }
+          const manifest = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+          for (const [name, version] of Object.entries(manifest.dependencies ?? {})) {
+            if (/^(workspace|file|link|git|https?):/i.test(String(version))) {
+              throw new Error(`Installed dependency ${name} leaked ${version}.`);
+            }
+          }
+          console.log(`Registry smoke PASS: platform ${PRISM_PLATFORM_VERSION}; ${ids.join(", ")}`);
+          NODE

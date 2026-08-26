@@ -1,0 +1,16 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "./src",
+    "outDir": "./dist",
+    "tsBuildInfoFile": "./dist/.tsbuildinfo"
+  },
+  "include": ["src/**/*.ts"],
+  "references": [
+    { "path": "../kernel" },
+    { "path": "../contracts-data" },
+    { "path": "../contracts-storage" },
+    { "path": "../contracts-calculation" },
+    { "path": "../contracts-organization" }
+  ]
+}

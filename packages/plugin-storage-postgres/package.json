@@ -1,0 +1,34 @@
+{
+  "name": "@prism/plugin-storage-postgres",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "scripts": {
+    "build": "tsc --build"
+  },
+  "dependencies": {
+    "@prism/contracts-data": "workspace:*",
+    "@prism/contracts-storage": "workspace:*",
+    "@prism/kernel": "workspace:*",
+    "kysely": "^0.28.8",
+    "pg": "^8.16.3"
+  },
+  "devDependencies": {
+    "@prism/testing": "workspace:*",
+    "@types/pg": "^8.15.6",
+    "vitest": "^2.1.8"
+  },
+  "license": "Apache-2.0"
+}

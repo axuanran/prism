@@ -1,0 +1,50 @@
+{
+  "files": [],
+  "references": [
+    {
+      "path": "./packages/contracts-data"
+    },
+    {
+      "path": "./packages/kernel"
+    },
+    {
+      "path": "./packages/testing"
+    },
+    {
+      "path": "./packages/contracts-storage"
+    },
+    {
+      "path": "./packages/contracts-calculation"
+    },
+    {
+      "path": "./packages/contracts-organization"
+    },
+    {
+      "path": "./packages/plugin-storage-memory"
+    },
+    {
+      "path": "./packages/plugin-storage-postgres"
+    },
+    {
+      "path": "./packages/plugin-http-fastify"
+    },
+    {
+      "path": "./packages/plugin-organization-basic"
+    },
+    {
+      "path": "./packages/plugin-calculation-memory"
+    },
+    {
+      "path": "./packages/plugin-type-quantity"
+    },
+    {
+      "path": "./packages/plugin-dataset-grain"
+    },
+    {
+      "path": "./packages/plugin-sdk"
+    },
+    {
+      "path": "./packages/platform"
+    }
+  ]
+}

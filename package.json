@@ -1,0 +1,31 @@
+{
+  "name": "prism-engine",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.21.0",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "tsc --build",
+    "build:ci": "tsc --build --checkers 2 --builders 2",
+    "typecheck": "tsc --build && tsc -p tsconfig.test.json",
+    "typecheck:ci": "tsc --build --checkers 2 --builders 2 && tsc -p tsconfig.test.json --checkers 2",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.3",
+    "@typescript/native": "npm:typescript@7.0.2",
+    "eslint": "^9.39.5",
+    "pg": "^8.23.0",
+    "prettier": "^3.9.6",
+    "typescript": "npm:@typescript/typescript6@6.0.2",
+    "typescript-eslint": "^8.68.0",
+    "vitest": "^2.1.8"
+  },
+  "license": "Apache-2.0"
+}

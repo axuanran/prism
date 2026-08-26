@@ -1,0 +1,81 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: [24]
+
+    # A real PostgreSQL, not a fake. The persistence suite skips when no
+    # database answers, so without this service the storage contract would be
+    # silently unverified on every push - the worst possible outcome for a
+    # suite whose entire purpose is to prove persistence.
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: prism
+          POSTGRES_PASSWORD: prism
+          POSTGRES_DB: postgres
+        ports:
+          - 55432:5432
+        options: >-
+          --health-cmd "pg_isready -U prism"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      PRISM_TEST_DATABASE_URL: postgres://prism:prism@127.0.0.1:55432/postgres
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.21.0
+
+      - name: Set up Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm build:ci
+
+      - name: Typecheck
+        run: pnpm typecheck:ci
+
+      - name: Test
+        run: pnpm test
+
+      - name: Assert the persistence suite actually ran
+        run: |
+          # A skipped storage suite must never be mistaken for a passing one.
+          pnpm exec vitest run packages/plugin-storage-postgres --reporter=json \
+            --outputFile=.vitest-postgres.json
+          node -e "
+            const r = require('./.vitest-postgres.json');
+            const total = r.numTotalTests ?? 0;
+            const passed = r.numPassedTests ?? 0;
+            if (total === 0 || passed === 0) {
+              console.error('PostgreSQL suite did not execute: ' + JSON.stringify({ total, passed }));
+              process.exit(1);
+            }
+            console.log('PostgreSQL suite executed: ' + passed + '/' + total);
+          "
+
+      - name: Lint
+        run: pnpm lint

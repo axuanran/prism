@@ -1,0 +1,32 @@
+{
+  "name": "@prism/plugin-organization-basic",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "scripts": {
+    "build": "tsc --build"
+  },
+  "dependencies": {
+    "@prism/contracts-data": "workspace:*",
+    "@prism/contracts-organization": "workspace:*",
+    "@prism/contracts-storage": "workspace:*",
+    "@prism/kernel": "workspace:*",
+    "@sinclair/typebox": "^0.34.41"
+  },
+  "devDependencies": {
+    "@prism/plugin-storage-memory": "workspace:*"
+  },
+  "license": "Apache-2.0"
+}
