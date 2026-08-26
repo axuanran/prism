@@ -88,6 +88,10 @@ jobs:
 
       - name: Smoke-install public distribution from a clean directory
         shell: bash
+        # Deliberately anonymous: this proves a third party can install the
+        # packages, not merely that the publishing token can read them.
+        env:
+          NODE_AUTH_TOKEN: ""
         run: |
           set -euo pipefail
           VERSION="$(node -p "require('./packages/platform/package.json').version")"
@@ -95,22 +99,31 @@ jobs:
           cd "$SMOKE"
           printf '{"name":"prism-release-smoke","private":true,"type":"module"}\n' > package.json
 
-          # npm metadata can be briefly eventually consistent after publish.
-          for attempt in 1 2 3 4 5 6; do
-            if pnpm add \
-              "@prismengine/platform@$VERSION" \
-              "@prismengine/plugin-sdk@$VERSION" \
-              "@prismengine/testing@$VERSION"; then
+          # npm package documents and tarballs are eventually consistent.
+          # Publishing has already succeeded at this point, so a short smoke
+          # timeout must not falsely report the release itself as failed.
+          visible=false
+          for attempt in $(seq 1 20); do
+            if npm view "@prismengine/platform@$VERSION" version >/dev/null 2>&1 \
+              && npm view "@prismengine/plugin-sdk@$VERSION" version >/dev/null 2>&1 \
+              && npm view "@prismengine/testing@$VERSION" version >/dev/null 2>&1; then
+              visible=true
               break
             fi
-            if [ "$attempt" -eq 6 ]; then
-              echo "Published packages were not installable after six attempts." >&2
-              exit 1
-            fi
-            sleep $((attempt * 10))
+            echo "Registry metadata not visible yet (attempt $attempt/20)."
+            sleep 30
           done
+          if [ "$visible" != true ]; then
+            echo "Published package metadata remained unavailable for ten minutes." >&2
+            exit 1
+          fi
 
+          pnpm add \
+            "@prismengine/platform@$VERSION" \
+            "@prismengine/plugin-sdk@$VERSION" \
+            "@prismengine/testing@$VERSION"
           pnpm peers check
+
           node --input-type=module <<'NODE'
           import { prismPlatform, PRISM_PLATFORM_VERSION } from "@prismengine/platform";
           import { readFileSync, existsSync } from "node:fs";
