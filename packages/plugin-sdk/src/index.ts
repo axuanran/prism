@@ -11,3 +11,4 @@ export * from "@prismengine/contracts-data";
 export * from "@prismengine/contracts-storage";
 export * from "@prismengine/contracts-calculation";
 export * from "@prismengine/contracts-organization";
+export * from "@prismengine/contracts-project";

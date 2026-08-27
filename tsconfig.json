@@ -5,6 +5,9 @@
       "path": "./packages/contracts-data"
     },
     {
+      "path": "./packages/contracts-project"
+    },
+    {
       "path": "./packages/kernel"
     },
     {
@@ -39,6 +42,9 @@
     },
     {
       "path": "./packages/plugin-dataset-grain"
+    },
+    {
+      "path": "./packages/plugin-material-registry"
     },
     {
       "path": "./packages/plugin-sdk"

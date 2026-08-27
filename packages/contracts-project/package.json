@@ -1,5 +1,5 @@
 {
-  "name": "@prismengine/contracts-data",
+  "name": "@prismengine/contracts-project",
   "version": "0.1.4",
   "type": "module",
   "main": "./dist/index.js",
@@ -10,26 +10,18 @@
       "default": "./dist/index.js"
     }
   },
-  "files": [
-    "dist",
-    "LICENSE",
-    "NOTICE"
-  ],
-  "scripts": {
-    "build": "tsc --build"
-  },
+  "files": ["dist", "LICENSE", "NOTICE"],
+  "scripts": { "build": "tsc --build" },
   "dependencies": {
-    "apache-arrow": "^21.2.0",
-    "decimal.js": "^10.4.3"
+    "@prismengine/contracts-data": "workspace:0.1.4",
+    "@prismengine/kernel": "workspace:0.1.4"
   },
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/axuanran/prism",
-    "directory": "packages/contracts-data"
+    "directory": "packages/contracts-project"
   },
   "homepage": "https://github.com/axuanran/prism#readme",
-  "bugs": {
-    "url": "https://github.com/axuanran/prism/issues"
-  }
+  "bugs": { "url": "https://github.com/axuanran/prism/issues" }
 }

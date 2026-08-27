@@ -32,13 +32,20 @@ describe("Prism platform distribution", () => {
       "calculation.memory",
       "type.quantity",
       "dataset.grain",
+      "project.material-registry",
       "platform-analysis-consumer",
     ]);
 
     const engine = createEngine({ plugins });
     await expect(engine.start()).resolves.toBeUndefined();
     expect(engine.inspect().capabilities.map((capability) => capability.id)).toEqual(
-      expect.arrayContaining(["storage", "calculation", "type.quantity", "dataset.grain"]),
+      expect.arrayContaining([
+        "storage",
+        "calculation",
+        "type.quantity",
+        "dataset.grain",
+        "project.material-registry",
+      ]),
     );
     await engine.stop();
   });

@@ -32,6 +32,9 @@
     },
     {
       "path": "../plugin-organization-basic"
+    },
+    {
+      "path": "../plugin-material-registry"
     }
   ]
 }

@@ -2,6 +2,7 @@ import type { AnyPluginDefinition } from "@prismengine/plugin-sdk";
 import { calculationPlugin } from "@prismengine/plugin-calculation-memory";
 import { grainPlugin } from "@prismengine/plugin-dataset-grain";
 import { quantityPlugin } from "@prismengine/plugin-type-quantity";
+import { materialRegistryPlugin } from "@prismengine/plugin-material-registry";
 import { storageMemoryPlugin } from "@prismengine/plugin-storage-memory";
 
 export * from "@prismengine/plugin-sdk";
@@ -12,8 +13,9 @@ export * from "@prismengine/plugin-storage-memory";
 export * from "@prismengine/plugin-storage-postgres";
 export * from "@prismengine/plugin-http-fastify";
 export * from "@prismengine/plugin-organization-basic";
+export * from "@prismengine/plugin-material-registry";
 
-export const PRISM_PLATFORM_VERSION = "0.1.3";
+export const PRISM_PLATFORM_VERSION = "0.1.4";
 
 /**
  * Default public distribution composition.
@@ -28,6 +30,7 @@ export interface PrismPlatformOptions {
   readonly calculation?: boolean;
   readonly quantity?: boolean;
   readonly grain?: boolean;
+  readonly materials?: boolean;
   readonly additionalPlugins?: readonly AnyPluginDefinition[];
 }
 
@@ -41,6 +44,7 @@ export function prismPlatform(
     ...(options.calculation === false ? [] : [calculationPlugin]),
     ...(options.quantity === false ? [] : [quantityPlugin]),
     ...(options.grain === false ? [] : [grainPlugin]),
+    ...(options.materials === false ? [] : [materialRegistryPlugin]),
     ...(options.additionalPlugins ?? []),
   ];
 }

@@ -53,6 +53,7 @@ packages/contracts-data                 JSON, Codec, Decimal, Arrow Dataset, Run
 packages/contracts-storage              Resource/Document storage contracts
 packages/contracts-calculation          PipelineSpec, analysis extensions, SemanticPlan
 packages/contracts-organization         generic organization contracts
+packages/contracts-project              unified Visual/Code Material and Project Release refs
 packages/plugin-storage-memory          development/test storage provider
 packages/plugin-storage-postgres        durable Kysely/PostgreSQL provider
 packages/plugin-calculation-memory      semantic lowering + memory backend
@@ -60,6 +61,7 @@ packages/plugin-organization-basic      generic organization provider
 packages/plugin-http-fastify            explicit HTTP route host
 packages/plugin-type-quantity           optional dimensional type algebra
 packages/plugin-dataset-grain           optional Dataset/Plan grain analysis
+packages/plugin-material-registry       shared Material discovery for Studio and Runtime
 packages/testing                        engine/data/PG/conformance test fixtures
 apps/studio                             generic configuration/pipeline UI foundation
 ```

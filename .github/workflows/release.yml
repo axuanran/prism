@@ -148,6 +148,7 @@ jobs:
             "calculation.memory",
             "type.quantity",
             "dataset.grain",
+            "project.material-registry",
           ]) {
             if (!ids.includes(required)) {
               throw new Error(`Platform composition omits ${required}.`);

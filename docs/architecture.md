@@ -193,6 +193,20 @@ A definition reference locates content; its fingerprint verifies content. Parame
 
 Durable bitemporal replay remains a Solution/host responsibility: Dataset fingerprints are evidence, not a materialized snapshot, unless the selected storage/input provider guarantees that snapshot.
 
+## Unified project materials
+
+Visual and code authoring share one project material identity and registry:
+
+```text
+Visual Definition Resource ─┐
+                            ├─ MaterialManifest ─ Project Release ─ Runtime
+Code Module Artifact ───────┘
+```
+
+`authoringMode=VISUAL` means the structured Definition is authoritative. `authoringMode=CODE` means the source tree and built artifact are authoritative. Prism does not promise a lossless conversion from arbitrary TypeScript back into a visual graph. A Project Release pins every visual Resource revision/fingerprint and every code source revision, dependency-lock hash and artifact hash.
+
+Plugins contribute `formula`, `operator`, `action`, `data-source`, `report`, `page-component` and `field-component` manifests through `project.materials`. `project.material-registry` is the single discovery surface used by visual editors, code tooling and runtimes; a duplicate material id/version is rejected rather than selected by plugin order.
+
 ## Public distribution
 
 `@prismengine/plugin-sdk` is the supported authoring facade over Kernel and public contracts; it exports no provider implementation. `@prismengine/platform` pins compatible public package versions and supplies a composition helper that enables calculation-memory, Quantity and Grain by default plus memory storage for development. Production hosts may replace storage at the composition root. Platform defaults never erase dependency edges: plugins that require Quantity/Grain still declare their Capability requirements (`packages/plugin-sdk/src/index.ts`, `packages/platform/src/index.ts`).

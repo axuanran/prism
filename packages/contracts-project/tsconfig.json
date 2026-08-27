@@ -7,11 +7,7 @@
   },
   "include": ["src/**/*.ts"],
   "references": [
-    { "path": "../kernel" },
     { "path": "../contracts-data" },
-    { "path": "../contracts-storage" },
-    { "path": "../contracts-calculation" },
-    { "path": "../contracts-organization" },
-    { "path": "../contracts-project" }
+    { "path": "../kernel" }
   ]
 }
