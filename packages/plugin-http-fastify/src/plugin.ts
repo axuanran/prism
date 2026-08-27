@@ -32,7 +32,7 @@ export function createHttpPlugin(options: HttpPluginOptions) {
 
   return definePlugin({
     id: "http.fastify",
-    version: "0.1.9",
+    version: "0.1.10",
     description: "Explicit Fastify HTTP transport for Prism Engine routes.",
     provides: [HttpCapabilityToken],
 
