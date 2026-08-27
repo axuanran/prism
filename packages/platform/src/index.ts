@@ -15,7 +15,7 @@ export * from "@prismengine/plugin-http-fastify";
 export * from "@prismengine/plugin-organization-basic";
 export * from "@prismengine/plugin-material-registry";
 
-export const PRISM_PLATFORM_VERSION = "0.1.4";
+export const PRISM_PLATFORM_VERSION = "0.1.5";
 
 /**
  * Default public distribution composition.

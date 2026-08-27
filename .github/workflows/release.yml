@@ -113,9 +113,9 @@ jobs:
           for attempt in $(seq 1 20); do
             visible=true
             for package in "${PACKAGES[@]}"; do
-              if ! npm view "$package@$VERSION" version >/dev/null 2>&1; then
+              if ! npm pack "$package@$VERSION" --dry-run --json >/dev/null 2>&1; then
                 visible=false
-                echo "Registry metadata missing $package@$VERSION (attempt $attempt/20)."
+                echo "Registry tarball missing $package@$VERSION (attempt $attempt/20)."
                 break
               fi
             done
@@ -125,7 +125,7 @@ jobs:
             sleep 30
           done
           if [ "$visible" != true ]; then
-            echo "Published package metadata remained unavailable for ten minutes." >&2
+            echo "Published package tarballs remained unavailable for ten minutes." >&2
             exit 1
           fi
 

@@ -94,10 +94,10 @@ importers:
   packages/contracts-project:
     dependencies:
       '@prismengine/contracts-data':
-        specifier: workspace:0.1.4
+        specifier: workspace:0.1.5
         version: link:../contracts-data
       '@prismengine/kernel':
-        specifier: workspace:0.1.4
+        specifier: workspace:0.1.5
         version: link:../kernel
 
   packages/contracts-storage:
@@ -128,31 +128,31 @@ importers:
   packages/platform:
     dependencies:
       '@prismengine/plugin-calculation-memory':
-        specifier: workspace:0.1.4
+        specifier: workspace:0.1.5
         version: link:../plugin-calculation-memory
       '@prismengine/plugin-dataset-grain':
-        specifier: workspace:0.1.4
+        specifier: workspace:0.1.5
         version: link:../plugin-dataset-grain
       '@prismengine/plugin-http-fastify':
-        specifier: workspace:0.1.4
+        specifier: workspace:0.1.5
         version: link:../plugin-http-fastify
       '@prismengine/plugin-material-registry':
-        specifier: workspace:0.1.4
+        specifier: workspace:0.1.5
         version: link:../plugin-material-registry
       '@prismengine/plugin-organization-basic':
-        specifier: workspace:0.1.4
+        specifier: workspace:0.1.5
         version: link:../plugin-organization-basic
       '@prismengine/plugin-sdk':
-        specifier: workspace:0.1.4
+        specifier: workspace:0.1.5
         version: link:../plugin-sdk
       '@prismengine/plugin-storage-memory':
-        specifier: workspace:0.1.4
+        specifier: workspace:0.1.5
         version: link:../plugin-storage-memory
       '@prismengine/plugin-storage-postgres':
-        specifier: workspace:0.1.4
+        specifier: workspace:0.1.5
         version: link:../plugin-storage-postgres
       '@prismengine/plugin-type-quantity':
-        specifier: workspace:0.1.4
+        specifier: workspace:0.1.5
         version: link:../plugin-type-quantity
 
   packages/plugin-calculation-memory:
@@ -207,13 +207,13 @@ importers:
   packages/plugin-material-registry:
     dependencies:
       '@prismengine/contracts-data':
-        specifier: workspace:0.1.4
+        specifier: workspace:0.1.5
         version: link:../contracts-data
       '@prismengine/contracts-project':
-        specifier: workspace:0.1.4
+        specifier: workspace:0.1.5
         version: link:../contracts-project
       '@prismengine/kernel':
-        specifier: workspace:0.1.4
+        specifier: workspace:0.1.5
         version: link:../kernel
 
   packages/plugin-organization-basic:
@@ -241,22 +241,22 @@ importers:
   packages/plugin-sdk:
     dependencies:
       '@prismengine/contracts-calculation':
-        specifier: workspace:0.1.4
+        specifier: workspace:0.1.5
         version: link:../contracts-calculation
       '@prismengine/contracts-data':
-        specifier: workspace:0.1.4
+        specifier: workspace:0.1.5
         version: link:../contracts-data
       '@prismengine/contracts-organization':
-        specifier: workspace:0.1.4
+        specifier: workspace:0.1.5
         version: link:../contracts-organization
       '@prismengine/contracts-project':
-        specifier: workspace:0.1.4
+        specifier: workspace:0.1.5
         version: link:../contracts-project
       '@prismengine/contracts-storage':
-        specifier: workspace:0.1.4
+        specifier: workspace:0.1.5
         version: link:../contracts-storage
       '@prismengine/kernel':
-        specifier: workspace:0.1.4
+        specifier: workspace:0.1.5
         version: link:../kernel
 
   packages/plugin-storage-memory:
