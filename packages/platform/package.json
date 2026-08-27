@@ -1,6 +1,6 @@
 {
   "name": "@prismengine/platform",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -19,14 +19,14 @@
     "build": "tsc --build"
   },
   "dependencies": {
-    "@prismengine/plugin-calculation-memory": "workspace:0.1.2",
-    "@prismengine/plugin-dataset-grain": "workspace:0.1.2",
-    "@prismengine/plugin-http-fastify": "workspace:0.1.2",
-    "@prismengine/plugin-organization-basic": "workspace:0.1.2",
-    "@prismengine/plugin-sdk": "workspace:0.1.2",
-    "@prismengine/plugin-storage-memory": "workspace:0.1.2",
-    "@prismengine/plugin-storage-postgres": "workspace:0.1.2",
-    "@prismengine/plugin-type-quantity": "workspace:0.1.2"
+    "@prismengine/plugin-calculation-memory": "workspace:0.1.3",
+    "@prismengine/plugin-dataset-grain": "workspace:0.1.3",
+    "@prismengine/plugin-http-fastify": "workspace:0.1.3",
+    "@prismengine/plugin-organization-basic": "workspace:0.1.3",
+    "@prismengine/plugin-sdk": "workspace:0.1.3",
+    "@prismengine/plugin-storage-memory": "workspace:0.1.3",
+    "@prismengine/plugin-storage-postgres": "workspace:0.1.3",
+    "@prismengine/plugin-type-quantity": "workspace:0.1.3"
   },
   "license": "Apache-2.0",
   "repository": {

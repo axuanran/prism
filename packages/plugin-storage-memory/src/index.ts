@@ -9,7 +9,7 @@ export { createMemoryStorage, MemoryStorage } from "./memory-storage.js";
 
 export const storageMemoryPlugin = definePlugin({
   id: "storage.memory",
-  version: "0.1.2",
+  version: "0.1.3",
   provides: [StorageCapabilityToken, AtomicWriteCapabilityToken],
   register(context) {
     const storage = new MemoryStorage(context.events);

@@ -95,6 +95,13 @@ jobs:
         run: |
           set -euo pipefail
           VERSION="$(node -p "require('./packages/platform/package.json').version")"
+          mapfile -t PACKAGES < <(node -e "
+            const fs = require('node:fs');
+            for (const dir of fs.readdirSync('packages')) {
+              const path = 'packages/' + dir + '/package.json';
+              if (fs.existsSync(path)) console.log(require('./' + path).name);
+            }
+          ")
           SMOKE="$(mktemp -d)"
           cd "$SMOKE"
           printf '{"name":"prism-release-smoke","private":true,"type":"module"}\n' > package.json
@@ -104,13 +111,17 @@ jobs:
           # timeout must not falsely report the release itself as failed.
           visible=false
           for attempt in $(seq 1 20); do
-            if npm view "@prismengine/platform@$VERSION" version >/dev/null 2>&1 \
-              && npm view "@prismengine/plugin-sdk@$VERSION" version >/dev/null 2>&1 \
-              && npm view "@prismengine/testing@$VERSION" version >/dev/null 2>&1; then
-              visible=true
+            visible=true
+            for package in "${PACKAGES[@]}"; do
+              if ! npm view "$package@$VERSION" version >/dev/null 2>&1; then
+                visible=false
+                echo "Registry metadata missing $package@$VERSION (attempt $attempt/20)."
+                break
+              fi
+            done
+            if [ "$visible" = true ]; then
               break
             fi
-            echo "Registry metadata not visible yet (attempt $attempt/20)."
             sleep 30
           done
           if [ "$visible" != true ]; then
