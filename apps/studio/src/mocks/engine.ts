@@ -353,6 +353,7 @@ export const mockApi: StudioApi = {
         clientArtifact: descriptor,
         serverArtifact: descriptor,
         buildManifestArtifact: descriptor,
+        materialManifests: [],
         materialArtifacts: [],
         testResult: { passed: true, total: 1, failed: 0, reportHash: hash },
         diagnostics: [],
@@ -422,6 +423,15 @@ export const mockApi: StudioApi = {
     };
     actionRuns.push(run);
     return cloneValue(run);
+  },
+  async listProjectReleaseMaterials(projectId, revision) {
+    const release = projectReleases.find((item) =>
+      item.spec.projectId === projectId && item.revision === revision);
+    if (!release) return [];
+    return release.spec.materialManifests.flatMap((manifest, index) => {
+      const artifact = release.spec.materialArtifacts[index];
+      return artifact ? [{ manifest, artifact, status: 'BUILT' as const }] : [];
+    });
   },
   async listProjectActionRuns(projectId) {
     return cloneValue(actionRuns.filter((run) => run.projectId === projectId));

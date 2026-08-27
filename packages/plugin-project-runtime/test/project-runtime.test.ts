@@ -34,33 +34,65 @@ function releaseFiles(
   coefficient: "1.1" | "1.2",
 ): readonly ProjectSourceFile[] {
   const value = coefficient === "1.1" ? "1320" : "1440";
-  return files.map((file) => {
-    if (file.path === "src/client/index.tsx") {
-      return {
-        ...file,
-        content: `export async function mount(context: { root: HTMLElement }): Promise<void> { context.root.textContent = '${value}'; }\n`,
-      };
-    }
-    if (file.path === "src/server/index.ts") {
-      return {
-        ...file,
-        content: [
-          "export const actions = {",
-          "  async calculate(input: { base: number }, context: { logger: { info(value: unknown): void } }) {",
-          `    context.logger.info('coefficient ${coefficient}');`,
-          `    return { value: input.base * ${coefficient}, coefficient: ${coefficient} };`,
-          "  },",
-          "  async slow() { await new Promise<void>(() => undefined); return { slow: false }; },",
-          "  async crash() { (globalThis as unknown as { process: { exit(code: number): never } }).process.exit(1); },",
-          "  async ping() { return { pong: true }; },",
-          "  async capabilities(_input: null, context: { engine: { inspect(): { capabilities: unknown[] } } }) { return { count: context.engine.inspect().capabilities.length }; },",
-          "};",
-          "",
-        ].join("\n"),
-      };
-    }
-    return file;
-  });
+  const materialVersion = coefficient === "1.1" ? "1.0.0" : "2.0.0";
+  const mapped = files
+    .filter((file) =>
+      file.path !== "src/materials/coefficient.ts" &&
+      file.path !== "prism.materials.json")
+    .map((file) => {
+      if (file.path === "src/client/index.tsx") {
+        return {
+          ...file,
+          content: `export async function mount(context: { root: HTMLElement }): Promise<void> { context.root.textContent = '${value}'; }\n`,
+        };
+      }
+      if (file.path === "src/server/index.ts") {
+        return {
+          ...file,
+          content: [
+            "export const actions = {",
+            "  async calculate(input: { base: number }, context: { logger: { info(value: unknown): void }, materials: { execute(id: string, version: string, input: number): Promise<unknown> } }) {",
+            `    const value = Number(await context.materials.execute('performance.coefficient', '${materialVersion}', input.base));`,
+            `    context.logger.info('coefficient ${coefficient}');`,
+            `    return { value, coefficient: ${coefficient} };`,
+            "  },",
+            "  async slow() { await new Promise<void>(() => undefined); return { slow: false }; },",
+            "  async crash() { (globalThis as unknown as { process: { exit(code: number): never } }).process.exit(1); },",
+            "  async ping() { return { pong: true }; },",
+            "  async capabilities(_input: null, context: { engine: { inspect(): { capabilities: unknown[] } } }) { return { count: context.engine.inspect().capabilities.length }; },",
+            "};",
+            "",
+          ].join("\n"),
+        };
+      }
+      return file;
+    });
+  return [
+    ...mapped,
+    {
+      path: "src/materials/coefficient.ts",
+      mediaType: "text/typescript",
+      content: `export default function coefficient(input: number): number { return input * ${coefficient}; }\n`,
+    },
+    {
+      path: "prism.materials.json",
+      mediaType: "application/json",
+      content: `${JSON.stringify({
+        schemaVersion: "1.0.0",
+        materials: [{
+          id: "performance.coefficient",
+          version: materialVersion,
+          kind: "operator",
+          authoringMode: "CODE",
+          displayName: "系数调整",
+          category: "绩效",
+          runtimeTarget: "pipeline",
+          entry: "src/materials/coefficient.ts",
+          exportName: "default",
+        }],
+      }, null, 2)}\n`,
+    },
+  ];
 }
 
 describe("Project App Runtime", () => {
@@ -105,6 +137,15 @@ describe("Project App Runtime", () => {
       );
       const source2 = await projects.publishDraft(context, created.project.id, draft2.draftVersion);
       expect((await builds.build(context, created.project.id, source2.revision)).status).toBe("SUCCESS");
+      expect(await runtime.releaseMaterials(context, created.project.id, 1)).toMatchObject([{
+        status: "BUILT",
+        manifest: { id: "performance.coefficient", version: "1.0.0" },
+        artifact: { hash: expect.stringMatching(/^[0-9a-f]{64}$/) },
+      }]);
+      expect(await runtime.releaseMaterials(context, created.project.id, 2)).toMatchObject([{
+        status: "BUILT",
+        manifest: { id: "performance.coefficient", version: "2.0.0" },
+      }]);
 
       const active1 = await runtime.activate(context, created.project.id, 1, null);
       expect(active1.release.revision).toBe(1);

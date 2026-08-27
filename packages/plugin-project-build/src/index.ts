@@ -55,7 +55,7 @@ export const PROJECT_RELEASE_KIND = "project.release";
 const BUILD_COLLECTION = "project.build-requests";
 const BUILD_LOG_COLLECTION = "project.build-logs";
 const ARTIFACT_COLLECTION = "project.artifacts";
-const BUILDER_VERSION = "0.1.13";
+const BUILDER_VERSION = "0.1.14";
 
 const ProjectReleaseSchema = Type.Object({
   projectId: Type.String({ minLength: 1 }),
@@ -75,6 +75,7 @@ const ProjectReleaseSchema = Type.Object({
   serverArtifact: Type.Any(),
   buildManifestArtifact: Type.Any(),
   materialArtifacts: Type.Array(Type.Any()),
+  materialManifests: Type.Array(Type.Any()),
   testResult: Type.Any(),
   diagnostics: Type.Array(Type.Any()),
   buildReproducibility: Type.Union([
@@ -391,6 +392,7 @@ class DefaultProjectBuildCapability implements ProjectBuildCapability {
       serverArtifact: stored.server,
       buildManifestArtifact: stored.buildManifest,
       materialArtifacts: stored.materials.map((item) => item.artifact),
+      materialManifests: stored.materials.map((item) => item.manifest),
       testResult: stored.testResult,
       diagnostics: [],
       buildReproducibility: "DETERMINISTIC",

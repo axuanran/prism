@@ -16,7 +16,7 @@ export * from "@prismengine/plugin-organization-basic";
 export * from "@prismengine/plugin-material-registry";
 export * from "@prismengine/plugin-code-project";
 
-export const PRISM_PLATFORM_VERSION = "0.1.13";
+export const PRISM_PLATFORM_VERSION = "0.1.14";
 
 /**
  * Default public distribution composition.

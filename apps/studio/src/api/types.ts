@@ -339,6 +339,7 @@ export interface ProjectReleaseDefinition {
   readonly serverEntryExport: string;
   readonly clientArtifact: ProjectArtifactDescriptor;
   readonly serverArtifact: ProjectArtifactDescriptor;
+  readonly materialManifests: readonly ProjectReleaseMaterialCatalogItem['manifest'][];
   readonly buildManifestArtifact: ProjectArtifactDescriptor;
   readonly materialArtifacts: readonly ProjectArtifactDescriptor[];
   readonly testResult: {
@@ -351,6 +352,16 @@ export interface ProjectReleaseDefinition {
   readonly buildReproducibility: 'DETERMINISTIC' | 'BEST_EFFORT';
   readonly runtimeReproducibility: 'UNKNOWN' | 'DETERMINISTIC' | 'BEST_EFFORT' | 'NON_DETERMINISTIC';
 }
+export interface ProjectReleaseMaterialCatalogItem {
+  readonly manifest: Readonly<Record<string, unknown>> & {
+    readonly id: string;
+    readonly version: string;
+    readonly displayName: string;
+  };
+  readonly artifact: ProjectArtifactDescriptor;
+  readonly status: 'BUILT';
+}
+
 
 export interface ProjectReleaseRef {
   readonly resourceId: string;
@@ -427,4 +438,5 @@ export interface StudioApi {
   invokeProjectAction(projectId: string, release: ProjectReleaseRef, actionId: string, input: unknown): Promise<ProjectActionRun>;
   listProjectActionRuns(projectId: string): Promise<readonly ProjectActionRun[]>;
   listProjectRuntimeLogs(projectId: string): Promise<readonly ProjectRuntimeLog[]>;
+  listProjectReleaseMaterials(projectId: string, revision: number): Promise<readonly ProjectReleaseMaterialCatalogItem[]>;
 }

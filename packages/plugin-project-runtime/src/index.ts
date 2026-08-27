@@ -21,6 +21,7 @@ import {
   ProjectBuildCapabilityToken,
   ProjectRuntimeCapabilityToken,
   type ActiveProjectRelease,
+  type DeclaredCodeMaterialManifest,
   type ProjectActionRun,
   type ProjectBuildCapability,
   type ProjectPrincipal,
@@ -52,7 +53,7 @@ const ACTIVATION_COLLECTION = "project.release-activations";
 const INSTANCE_COLLECTION = "project.runtime-instances";
 const RUN_COLLECTION = "project.action-runs";
 const LOG_COLLECTION = "project.runtime-logs";
-const RUNTIME_VERSION = "0.1.13";
+const RUNTIME_VERSION = "0.1.14";
 const DEFAULT_ACTION_TIMEOUT_MS = 30_000;
 
 interface WorkerLog {
@@ -66,6 +67,11 @@ interface WorkerResult {
   readonly result?: unknown;
   readonly error?: string;
   readonly logs: readonly WorkerLog[];
+}
+
+interface RuntimeMaterialModule {
+  readonly manifest: DeclaredCodeMaterialManifest;
+  readonly content: Uint8Array;
 }
 
 interface PendingInvocation {
@@ -344,6 +350,18 @@ class DefaultProjectRuntime implements ProjectRuntimeCapability {
     return this.runs.find(context, { where: { projectId }, orderBy: [{ field: "createdAt", direction: "desc" }] });
   }
 
+  async releaseMaterials(
+    context: CallContext,
+    projectId: string,
+    revision: number,
+  ) {
+    const release = await this.requiredRelease(context, projectId, revision);
+    return release.spec.materialManifests.flatMap((manifest, index) => {
+      const artifact = release.spec.materialArtifacts[index];
+      return artifact === undefined ? [] : [{ manifest, artifact, status: "BUILT" as const }];
+    });
+  }
+
   async logs(context: CallContext, projectId: string): Promise<readonly ProjectRuntimeLog[]> {
     return this.runtimeLogs.find(context, { where: { projectId }, orderBy: [{ field: "timestamp", direction: "asc" }] });
   }
@@ -420,6 +438,24 @@ class DefaultProjectRuntime implements ProjectRuntimeCapability {
     });
     try {
       const serverBytes = await this.artifacts.read(context, release.spec.serverArtifact, "server.js");
+      const materialModules: RuntimeMaterialModule[] = await Promise.all(
+        release.spec.materialManifests.map(async (manifest, index) => {
+          const artifact = release.spec.materialArtifacts[index];
+          if (artifact === undefined) throw artifactMismatch(release.spec.projectId);
+          const metadata = await this.artifacts.stat(context, artifact);
+          const file = metadata.files[0];
+          if (metadata.files.length !== 1 || file === undefined) {
+            throw PrismError.of(
+              "PROJECT_RUNTIME_MANIFEST_MISMATCH",
+              `Material ${manifest.id}@${manifest.version} must contain one module file.`,
+            );
+          }
+          return {
+            manifest,
+            content: await this.artifacts.read(context, artifact, file.path),
+          };
+        }),
+      );
       const worker = await ReleaseWorker.start(
         instanceId,
         release.spec.projectId,
@@ -427,7 +463,7 @@ class DefaultProjectRuntime implements ProjectRuntimeCapability {
         release.spec.runtimeAbiVersion,
         release.spec.serverArtifact.hash,
         release.spec.actionIds,
-        release.spec.materials.map((item) => `${item.materialId}@${item.materialVersion}`).sort(),
+        materialModules,
         serverBytes,
         restartCount,
         (instance, unexpected) => void this.workerExited(instance, unexpected),
@@ -460,6 +496,12 @@ class DefaultProjectRuntime implements ProjectRuntimeCapability {
   ): Promise<void> {
     if (release.spec.runtimeAbiVersion !== PROJECT_RUNTIME_ABI_VERSION) {
       throw abiMismatch(release.spec.projectId);
+    }
+    if (release.spec.materialManifests.length !== release.spec.materialArtifacts.length) {
+      throw PrismError.of(
+        "PROJECT_RUNTIME_MANIFEST_MISMATCH",
+        "Project Release Material manifests and Artifacts are not aligned.",
+      );
     }
     const refs: readonly ArtifactRef[] = [
       release.spec.clientArtifact,
@@ -578,7 +620,7 @@ class ReleaseWorker {
     runtimeAbiVersion: string,
     serverArtifactHash: string,
     actionIds: readonly string[],
-    materialIdentities: readonly string[],
+    materialModules: readonly RuntimeMaterialModule[],
     serverBytes: Uint8Array,
     restartCount: number,
     onExit: (instance: ProjectRuntimeInstance, unexpected: boolean) => void,
@@ -589,6 +631,12 @@ class ReleaseWorker {
     const artifactPath = join(directory, "server.js");
     await mkdir(directory, { recursive: true });
     await writeFile(artifactPath, serverBytes);
+    const materials = await Promise.all(materialModules.map(async (item, index) => {
+      const path = join(directory, "materials", `${index}.js`);
+      await mkdir(join(directory, "materials"), { recursive: true });
+      await writeFile(path, item.content);
+      return { manifest: item.manifest, artifactPath: path };
+    }));
     const child = fork(fileURLToPath(new URL("./runtime-worker.js", import.meta.url)), [], {
       stdio: ["ignore", "pipe", "pipe", "ipc"],
       execArgv: [],
@@ -628,7 +676,7 @@ class ReleaseWorker {
       runtimeAbiVersion,
       serverArtifactHash,
       actionIds,
-      materialIdentities,
+      materials,
       ...(profileModule === undefined ? {} : { profileModule }),
     });
     const timeout = Promise.withResolvers<never>();
@@ -641,7 +689,9 @@ class ReleaseWorker {
       runtimeAbiVersion,
       serverArtifactHash,
       actions: [...actionIds].sort(),
-      materialIdentities: [...materialIdentities].sort(),
+      materialIdentities: materialModules
+        .map((item) => `${item.manifest.id}@${item.manifest.version}`)
+        .sort(),
     };
     if (
       handshake.type !== "ready" || handshake.projectId !== expected.projectId ||
@@ -763,6 +813,22 @@ function runtimeRoutes(runtime: DefaultProjectRuntime, projects: CodeProjectCapa
               ? null
               : projectReleaseRef(body.expectedActiveRelease),
             typeof body.reason === "string" ? body.reason : undefined,
+          ),
+        };
+      },
+    },
+    {
+      method: "GET",
+      path: "/api/code-projects/:projectId/releases/:revision/materials",
+      summary: "List exact built Release Material catalog",
+      handler: async (request) => {
+        const params = record(request.params);
+        return {
+          status: 200,
+          body: await runtime.releaseMaterials(
+            request.call,
+            string(params.projectId),
+            integer(params.revision),
           ),
         };
       },

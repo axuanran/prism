@@ -132,6 +132,7 @@ export interface ProjectReleaseDefinition extends ProjectReleaseManifest {
   readonly clientArtifact: ProjectArtifactDescriptor;
   readonly serverArtifact: ProjectArtifactDescriptor;
   readonly buildManifestArtifact: ProjectArtifactDescriptor;
+  readonly materialManifests: readonly DeclaredCodeMaterialManifest[];
   readonly testResult: ProjectTestResult;
   readonly materialArtifacts: readonly ProjectArtifactDescriptor[];
   readonly diagnostics: readonly Diagnostic[];
@@ -203,6 +204,28 @@ export interface ProjectPrincipal {
   readonly roles: readonly string[];
 }
 
+export interface ProjectMaterialRuntimeContext {
+  readonly engine: Engine;
+  readonly signal?: AbortSignal;
+  readonly logger: {
+    info(value: unknown): void;
+    warn(value: unknown): void;
+    error(value: unknown): void;
+  };
+}
+
+export type ProjectCodeMaterial = (
+  input: JsonValue,
+  configuration: JsonValue,
+  context: ProjectMaterialRuntimeContext,
+) => JsonValue | Promise<JsonValue>;
+
+export interface ProjectReleaseMaterialCatalogItem {
+  readonly manifest: DeclaredCodeMaterialManifest;
+  readonly artifact: ProjectArtifactDescriptor;
+  readonly status: "BUILT";
+}
+
 export interface ProjectActionContext {
   readonly projectId: string;
   readonly release: ProjectReleaseRef;
@@ -213,6 +236,14 @@ export interface ProjectActionContext {
     info(value: unknown): void;
     warn(value: unknown): void;
     error(value: unknown): void;
+  };
+  readonly materials: {
+    execute(
+      id: string,
+      version: string,
+      input: JsonValue,
+      configuration?: JsonValue,
+    ): Promise<JsonValue>;
   };
 }
 
@@ -308,6 +339,11 @@ export interface ProjectRuntimeCapability {
     actionId: string,
     input: JsonValue,
   ): Promise<ProjectActionRun>;
+  releaseMaterials(
+    context: CallContext,
+    projectId: string,
+    revision: number,
+  ): Promise<readonly ProjectReleaseMaterialCatalogItem[]>;
   getRun(context: CallContext, runId: string): Promise<ProjectActionRun | null>;
   logs(context: CallContext, projectId: string): Promise<readonly ProjectRuntimeLog[]>;
   listRuns(context: CallContext, projectId: string): Promise<readonly ProjectActionRun[]>;

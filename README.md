@@ -49,6 +49,7 @@ Consumers depend on `CapabilityToken<T>`, never a concrete implementation packag
 packages/kernel                         plugin graph, lifecycle, registries
 packages/plugin-sdk                     supported plugin-authoring facade
 packages/platform                       compatible public distribution/composition
+packages/project-sdk                    browser project ABI helpers and public types
 packages/contracts-data                 JSON, Codec, Decimal, Arrow Dataset, RunPin
 packages/contracts-artifact             provider-neutral immutable Artifact contract
 packages/contracts-storage              Resource/Document storage contracts

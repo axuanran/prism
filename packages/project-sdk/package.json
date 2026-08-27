@@ -1,5 +1,5 @@
 {
-  "name": "@prismengine/plugin-code-project",
+  "name": "@prismengine/project-sdk",
   "version": "0.1.14",
   "type": "module",
   "main": "./dist/index.js",
@@ -9,22 +9,13 @@
   "scripts": { "build": "tsc --build" },
   "dependencies": {
     "@prismengine/contracts-data": "workspace:0.1.14",
-    "@prismengine/contracts-project": "workspace:0.1.14",
-    "@prismengine/contracts-storage": "workspace:0.1.14",
-    "@prismengine/kernel": "workspace:0.1.14",
-    "@prismengine/plugin-http-fastify": "workspace:0.1.14",
-    "@sinclair/typebox": "^0.34.41"
-  },
-  "devDependencies": {
-    "@prismengine/plugin-storage-memory": "workspace:0.1.14",
-    "@prismengine/plugin-storage-postgres": "workspace:0.1.14",
-    "@prismengine/testing": "workspace:0.1.14"
+    "@prismengine/contracts-project": "workspace:0.1.14"
   },
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/axuanran/prism",
-    "directory": "packages/plugin-code-project"
+    "directory": "packages/project-sdk"
   },
   "homepage": "https://github.com/axuanran/prism#readme",
   "bugs": { "url": "https://github.com/axuanran/prism/issues" }

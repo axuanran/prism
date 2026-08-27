@@ -8,6 +8,7 @@ import type {
   ProjectBuildRequest,
   ProjectActionRun,
   ProjectReleaseDefinition,
+  ProjectReleaseMaterialCatalogItem,
   ProjectRuntimeLog,
   ProjectSourceDiff,
   ProjectSourceDraft,
@@ -43,6 +44,7 @@ const activeRelease = ref<ActiveProjectRelease | null>(null);
 const actionRuns = ref<readonly ProjectActionRun[]>([]);
 const runtimeLogs = ref<readonly ProjectRuntimeLog[]>([]);
 const actionForm = ref({ actionId: 'calculate', input: '{\"base\":1200}' });
+const releaseCatalog = ref<readonly ProjectReleaseMaterialCatalogItem[]>([]);
 const saveState = ref<'idle' | 'dirty' | 'saving' | 'saved' | 'conflict'>('idle');
 const error = ref<string | null>(null);
 const message = ref<string | null>(null);
@@ -353,6 +355,11 @@ async function invokeAction(): Promise<void> {
   }
 }
 
+async function showReleaseMaterials(revision: number): Promise<void> {
+  if (!selected.value) return;
+  releaseCatalog.value = await api.listProjectReleaseMaterials(selected.value.id, revision);
+}
+
 function openActiveApp(): void {
   if (selected.value) window.open(`/apps/${selected.value.spec.slug}`, '_blank');
 }
@@ -423,6 +430,7 @@ onBeforeUnmount(() => {
               <code>{{ release.spec.buildManifestArtifact.hash.slice(0, 12) }}</code>
               <small>{{ release.spec.testResult.passed ? 'TEST PASS' : 'TEST FAIL' }} · BUILD {{ release.spec.buildReproducibility }} · RUNTIME {{ release.spec.runtimeReproducibility }}</small>
               <button type="button" :disabled="saving || activeRelease?.release.revision === release.revision" @click="activateRelease(release.revision)">{{ activeRelease ? '切换/回滚到此版本' : '激活' }}</button>
+              <button type="button" @click="showReleaseMaterials(release.revision)">查看Release材料</button>
             </article>
           </div>
           <pre class="build-log">{{ buildLog.join('\n') || '选择Build查看日志。' }}</pre>
@@ -435,6 +443,7 @@ onBeforeUnmount(() => {
           <form @submit.prevent="invokeAction"><label>Action ID<input v-model="actionForm.actionId" /></label><label>JSON Input<textarea v-model="actionForm.input"></textarea></label><button class="button button--primary" type="submit" :disabled="!activeRelease">调用Action</button></form>
           <div><h3>Runs</h3><article v-for="run in actionRuns" :key="run.id" class="run-row"><strong>{{ run.status }} · {{ run.actionId }}</strong><span>Release {{ run.release.revision }}</span><code>{{ run.id.slice(0, 12) }}</code><small>{{ run.reproducibility }}</small></article></div>
           <div><h3>Runtime Logs</h3><pre class="runtime-log">{{ runtimeLogs.map(log => `[${log.level}] r${log.release.revision} ${log.message}`).join('\n') || '暂无日志。' }}</pre></div>
+          <div><h3>Release Material Catalog</h3><article v-for="item in releaseCatalog" :key="`${item.manifest.id}@${item.manifest.version}`" class="run-row"><strong>{{ item.manifest.displayName }}</strong><span>{{ item.manifest.id }}@{{ item.manifest.version }}</span><code>{{ item.artifact.hash.slice(0, 12) }}</code><small>{{ item.status }}</small></article></div>
         </div>
       </section>
       <p v-if="message" class="message">{{ message }}</p>

@@ -167,7 +167,7 @@ export const CodeProjectCapabilityToken = defineCapability<CodeProjectCapability
 
 export const codeProjectPlugin = definePlugin({
   id: "project.code",
-  version: "0.1.13",
+  version: "0.1.14",
   requires: {
     storage: StorageCapabilityToken,
     atomicWrite: AtomicWriteCapabilityToken,

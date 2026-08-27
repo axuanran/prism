@@ -45,6 +45,28 @@ monaco.languages.typescript.typescriptDefaults.setDiagnosticsOptions({
   noSyntaxValidation: false,
 });
 
+const PROJECT_SDK_TYPES = `
+declare module "@prismengine/project-sdk" {
+  export interface ProjectReleaseRef { resourceId: string; revision: number; fingerprint: string }
+  export interface ProjectClientRuntimeContext {
+    projectId: string;
+    release: ProjectReleaseRef;
+    root: HTMLElement;
+    actions: { call(actionId: string, input: unknown): Promise<unknown> };
+    logger: Pick<Console, "info" | "warn" | "error">;
+  }
+  export function defineProjectApp(module: {
+    mount(context: ProjectClientRuntimeContext): void | Promise<void>;
+  }): unknown;
+  export function defineProjectActions<T extends Record<string, (input: unknown, context: unknown) => unknown>>(actions: T): T;
+  export function defineCodeMaterial(execute: (input: unknown, configuration: unknown, context: unknown) => unknown): unknown;
+}
+`;
+monaco.languages.typescript.typescriptDefaults.addExtraLib(
+  PROJECT_SDK_TYPES,
+  'prism-project-sdk.d.ts',
+);
+
 function language(path: string): string {
   const extension = path.slice(path.lastIndexOf('.') + 1).toLowerCase();
   return {

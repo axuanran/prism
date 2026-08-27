@@ -16,6 +16,7 @@ import type {
   ProjectActionRun,
   ProjectReleaseDefinition,
   ProjectReleaseRef,
+  ProjectReleaseMaterialCatalogItem,
   ProjectRuntimeLog,
   ProjectSourceDiff,
   ProjectSourceDraft,
@@ -330,6 +331,10 @@ class LiveStudioApi implements StudioApi {
 
   listProjectRuntimeLogs(projectId: string): Promise<readonly ProjectRuntimeLog[]> {
     return this.#request(`/api/runtime/${encodeURIComponent(projectId)}/logs`);
+  }
+
+  listProjectReleaseMaterials(projectId: string, revision: number): Promise<readonly ProjectReleaseMaterialCatalogItem[]> {
+    return this.#request(`/api/code-projects/${encodeURIComponent(projectId)}/releases/${revision}/materials`);
   }
 }
 

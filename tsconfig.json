@@ -62,6 +62,9 @@
       "path": "./packages/plugin-artifact-store-local"
     },
     {
+      "path": "./packages/project-sdk"
+    },
+    {
       "path": "./packages/plugin-sdk"
     },
     {
