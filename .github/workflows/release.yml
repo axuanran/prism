@@ -133,6 +133,8 @@ jobs:
           for attempt in $(seq 1 20); do
             rm -rf node_modules pnpm-lock.yaml
             if pnpm add \
+              --force \
+              --store-dir "$SMOKE/store-$attempt" \
               "@prismengine/platform@$VERSION" \
               "@prismengine/plugin-sdk@$VERSION" \
               "@prismengine/testing@$VERSION"; then

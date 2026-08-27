@@ -1,6 +1,6 @@
 {
   "name": "@prismengine/plugin-project-build",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -8,12 +8,12 @@
   "files": ["dist", "LICENSE", "NOTICE"],
   "scripts": { "build": "tsc --build" },
   "dependencies": {
-    "@prismengine/contracts-data": "workspace:0.1.8",
-    "@prismengine/contracts-project": "workspace:0.1.8",
-    "@prismengine/contracts-storage": "workspace:0.1.8",
-    "@prismengine/kernel": "workspace:0.1.8",
-    "@prismengine/plugin-code-project": "workspace:0.1.8",
-    "@prismengine/plugin-http-fastify": "workspace:0.1.8",
+    "@prismengine/contracts-data": "workspace:0.1.9",
+    "@prismengine/contracts-project": "workspace:0.1.9",
+    "@prismengine/contracts-storage": "workspace:0.1.9",
+    "@prismengine/kernel": "workspace:0.1.9",
+    "@prismengine/plugin-code-project": "workspace:0.1.9",
+    "@prismengine/plugin-http-fastify": "workspace:0.1.9",
     "@typescript/native": "npm:typescript@7.0.2",
     "@sinclair/typebox": "^0.34.41",
     "esbuild": "^0.25.0",
@@ -21,9 +21,9 @@
     "vitest": "^2.1.8"
   },
   "devDependencies": {
-    "@prismengine/plugin-storage-memory": "workspace:0.1.8",
-    "@prismengine/plugin-storage-postgres": "workspace:0.1.8",
-    "@prismengine/testing": "workspace:0.1.8"
+    "@prismengine/plugin-storage-memory": "workspace:0.1.9",
+    "@prismengine/plugin-storage-postgres": "workspace:0.1.9",
+    "@prismengine/testing": "workspace:0.1.9"
   },
   "license": "Apache-2.0",
   "repository": {
