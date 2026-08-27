@@ -11,6 +11,8 @@ import type {
   Person,
   PipelineExecutionResponse,
   PipelineSpec,
+  ProjectBuildRequest,
+  ProjectReleaseDefinition,
   ProjectSourceDiff,
   ProjectSourceDraft,
   ProjectSourceFile,
@@ -278,6 +280,27 @@ class LiveStudioApi implements StudioApi {
   diffProjectSource(projectId: string, from: number | 'draft', to: number | 'draft'): Promise<ProjectSourceDiff> {
     const search = new URLSearchParams({ from: String(from), to: String(to) });
     return this.#request(`/api/code-projects/${encodeURIComponent(projectId)}/source/diff?${search.toString()}`);
+  }
+  buildProject(projectId: string, sourceRevision: number): Promise<ProjectBuildRequest> {
+    return this.#request(`/api/code-projects/${encodeURIComponent(projectId)}/builds`, {
+      method: 'POST',
+      body: JSON.stringify({ sourceRevision }),
+    });
+  }
+
+  listProjectBuilds(projectId: string): Promise<readonly ProjectBuildRequest[]> {
+    return this.#request(`/api/code-projects/${encodeURIComponent(projectId)}/builds`);
+  }
+
+  async getProjectBuildLog(buildId: string): Promise<readonly string[]> {
+    const response = await this.#request<{ readonly lines: readonly string[] }>(
+      `/api/project-builds/${encodeURIComponent(buildId)}/log`,
+    );
+    return response.lines;
+  }
+
+  listProjectReleases(projectId: string): Promise<readonly Resource<ProjectReleaseDefinition>[]> {
+    return this.#request(`/api/code-projects/${encodeURIComponent(projectId)}/releases`);
   }
 }
 

@@ -1,11 +1,13 @@
 import {
   diagnostic,
   type Diagnostic,
+  type CallContext,
   type JsonValue,
 } from "@prismengine/contracts-data";
 import {
   defineCapability,
   defineExtensionPoint,
+  type Resource,
   type ValidationResult,
 } from "@prismengine/kernel";
 
@@ -81,6 +83,91 @@ export interface DraftMaterialCatalogItem {
   readonly status: "DECLARED";
   readonly buildStatus: "NOT_BUILT";
 }
+
+export type ProjectBuildStatus =
+  | "QUEUED"
+  | "RUNNING"
+  | "SUCCESS"
+  | "FAILED"
+  | "CANCELLED";
+
+export interface ProjectBuildRequest {
+  readonly id: string;
+  readonly projectId: string;
+  readonly sourceRevision: number;
+  readonly sourceFingerprint: string;
+  readonly status: ProjectBuildStatus;
+  readonly requestedBy: string;
+  readonly createdAt: string;
+  readonly startedAt?: string;
+  readonly finishedAt?: string;
+  readonly releaseId?: string;
+  readonly diagnostics: readonly Diagnostic[];
+}
+
+export interface ProjectTestResult {
+  readonly passed: boolean;
+  readonly total: number;
+  readonly failed: number;
+  readonly reportHash: string;
+}
+
+export interface ProjectArtifactDescriptor {
+  readonly hash: string;
+  readonly size: number;
+  readonly contentType: string;
+  readonly storageKey: string;
+}
+
+export interface ProjectReleaseDefinition extends ProjectReleaseManifest {
+  readonly sourceRevision: number;
+  readonly sourceFingerprint: string;
+  readonly packageJsonHash: string;
+  readonly dependencyLockHash: string;
+  readonly builderVersion: string;
+  readonly nodeVersion: string;
+  readonly pnpmVersion: string;
+  readonly clientArtifact: ProjectArtifactDescriptor;
+  readonly serverArtifact: ProjectArtifactDescriptor;
+  readonly buildManifestArtifact: ProjectArtifactDescriptor;
+  readonly testResult: ProjectTestResult;
+  readonly diagnostics: readonly Diagnostic[];
+  readonly reproducibility: "DETERMINISTIC" | "BEST_EFFORT" | "NON_DETERMINISTIC";
+}
+
+export interface ProjectBuildCapability {
+  build(
+    context: CallContext,
+    projectId: string,
+    sourceRevision: number,
+  ): Promise<ProjectBuildRequest>;
+  getBuild(
+    context: CallContext,
+    buildId: string,
+  ): Promise<ProjectBuildRequest | null>;
+  listBuilds(
+    context: CallContext,
+    projectId: string,
+  ): Promise<readonly ProjectBuildRequest[]>;
+  release(
+    context: CallContext,
+    projectId: string,
+    revision: number,
+  ): Promise<Resource<ProjectReleaseDefinition> | null>;
+  releases(
+    context: CallContext,
+    projectId: string,
+  ): Promise<readonly Resource<ProjectReleaseDefinition>[]>;
+  buildLog(
+    context: CallContext,
+    buildId: string,
+  ): Promise<readonly string[]>;
+}
+
+export const ProjectBuildCapabilityToken = defineCapability<ProjectBuildCapability>({
+  id: "project.build",
+  version: "1.0.0",
+});
 
 export interface VisualMaterialSource {
   readonly authoringMode: "VISUAL";

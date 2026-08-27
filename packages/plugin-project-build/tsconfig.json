@@ -1,0 +1,18 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "./src",
+    "outDir": "./dist",
+    "lib": ["ESNext"],
+    "tsBuildInfoFile": "./dist/.tsbuildinfo"
+  },
+  "include": ["src/**/*.ts"],
+  "references": [
+    { "path": "../contracts-data" },
+    { "path": "../contracts-project" },
+    { "path": "../contracts-storage" },
+    { "path": "../kernel" },
+    { "path": "../plugin-code-project" },
+    { "path": "../plugin-http-fastify" }
+  ]
+}

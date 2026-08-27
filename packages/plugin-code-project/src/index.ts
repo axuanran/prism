@@ -167,7 +167,7 @@ export const CodeProjectCapabilityToken = defineCapability<CodeProjectCapability
 
 export const codeProjectPlugin = definePlugin({
   id: "project.code",
-  version: "0.1.7",
+  version: "0.1.8",
   requires: {
     storage: StorageCapabilityToken,
     atomicWrite: AtomicWriteCapabilityToken,
@@ -851,6 +851,15 @@ function defaultFiles(command: CreateCodeProjectCommand): readonly ProjectSource
       type: "module",
       dependencies: {},
     }, null, 2), "application/json"),
+    textFile("pnpm-lock.yaml", [
+      "lockfileVersion: '9.0'",
+      "settings:",
+      "  autoInstallPeers: true",
+      "  excludeLinksFromLockfile: false",
+      "importers:",
+      "  .: {}",
+      "",
+    ].join("\n"), "application/yaml"),
     textFile("prism.project.json", project, "application/json"),
     textFile("prism.materials.json", JSON.stringify({
       schemaVersion: "1.0.0",

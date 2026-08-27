@@ -38,6 +38,9 @@
     },
     {
       "path": "../plugin-code-project"
+    },
+    {
+      "path": "../plugin-project-build"
     }
   ]
 }

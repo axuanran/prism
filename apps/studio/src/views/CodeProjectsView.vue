@@ -4,6 +4,8 @@ import { api } from '../api/client';
 import type {
   CodeProjectSpec,
   DraftMaterialCatalogItem,
+  ProjectBuildRequest,
+  ProjectReleaseDefinition,
   ProjectSourceDiff,
   ProjectSourceDraft,
   ProjectSourceFile,
@@ -30,6 +32,10 @@ const diff = ref<ProjectSourceDiff | null>(null);
 const diffPath = ref('');
 const loading = ref(true);
 const saving = ref(false);
+const builds = ref<readonly ProjectBuildRequest[]>([]);
+const releases = ref<readonly Resource<ProjectReleaseDefinition>[]>([]);
+const buildLog = ref<readonly string[]>([]);
+const activeBuildId = ref('');
 const saveState = ref<'idle' | 'dirty' | 'saving' | 'saved' | 'conflict'>('idle');
 const error = ref<string | null>(null);
 const message = ref<string | null>(null);
@@ -75,13 +81,17 @@ async function load(): Promise<void> {
 
 async function selectProject(project: CodeProject): Promise<void> {
   selected.value = project;
-  const [loadedDraft, loadedRevisions] = await Promise.all([
+  const [loadedDraft, loadedRevisions, loadedBuilds, loadedReleases] = await Promise.all([
     api.getProjectSourceDraft(project.id),
     api.listProjectSourceRevisions(project.id),
+    api.listProjectBuilds(project.id),
+    api.listProjectReleases(project.id),
   ]);
   draft.value = loadedDraft;
   files.value = loadedDraft.files.map((file) => ({ ...file }));
   revisions.value = loadedRevisions;
+  builds.value = loadedBuilds;
+  releases.value = loadedReleases;
   tabs.value = [];
   openFile(files.value[0]?.path ?? '');
   diff.value = null;
@@ -261,6 +271,31 @@ function addMaterial(): void {
   }
 }
 
+async function buildRevision(revision: number): Promise<void> {
+  if (!selected.value) return;
+  saving.value = true;
+  error.value = null;
+  try {
+    const build = await api.buildProject(selected.value.id, revision);
+    builds.value = await api.listProjectBuilds(selected.value.id);
+    releases.value = await api.listProjectReleases(selected.value.id);
+    activeBuildId.value = build.id;
+    buildLog.value = await api.getProjectBuildLog(build.id);
+    message.value = build.status === 'SUCCESS'
+      ? `Build ${build.id} SUCCESS；Project Release已创建。`
+      : `Build ${build.id} FAILED；未创建Project Release。`;
+  } catch (cause: unknown) {
+    error.value = cause instanceof Error ? cause.message : '构建失败。';
+  } finally {
+    saving.value = false;
+  }
+}
+
+async function showBuildLog(buildId: string): Promise<void> {
+  activeBuildId.value = buildId;
+  buildLog.value = await api.getProjectBuildLog(buildId);
+}
+
 function mediaType(path: string): string {
   if (/\.tsx$/i.test(path)) return 'text/typescript-jsx';
   if (/\.ts$/i.test(path)) return 'text/typescript';
@@ -309,11 +344,41 @@ onBeforeUnmount(() => {
           <article v-for="item in materials" :key="`${item.manifest.id}@${item.manifest.version}`" class="material-card"><strong>{{ item.manifest.displayName }}</strong><span>{{ item.manifest.id }}@{{ item.manifest.version }}</span><small>{{ item.status }} / {{ item.buildStatus }}</small><button type="button" @click="openFile('prism.materials.json')">编辑Manifest</button></article>
           <hr />
           <h2>Source Revisions</h2>
-          <article v-for="revision in revisions" :key="revision.revision" class="revision-card"><strong>Revision {{ revision.revision }}</strong><code>{{ revision.spec.fingerprint.slice(0, 12) }}</code><button type="button" @click="showDiff(revision.revision, 'draft')">与Draft比较</button></article>
+          <article v-for="revision in revisions" :key="revision.revision" class="revision-card">
+            <strong>Revision {{ revision.revision }}</strong>
+            <code>{{ revision.spec.fingerprint.slice(0, 12) }}</code>
+            <button type="button" @click="showDiff(revision.revision, 'draft')">与Draft比较</button>
+            <button type="button" :disabled="saving" @click="buildRevision(revision.revision)">构建Release</button>
+          </article>
         </aside>
       </section>
 
       <section v-if="diff" class="panel diff-section"><header><div><p class="eyebrow">SOURCE DIFF</p><h2>{{ diff.from }} → {{ diff.to }}</h2></div><p>新增 {{ diff.added.length }} · 删除 {{ diff.removed.length }} · 修改 {{ diff.changed.length }}</p></header><div class="diff-files"><button v-for="path in diffFiles" :key="path" type="button" :class="{ active: diffPath === path }" @click="diffPath = path">{{ path }}</button></div><PrismDiffEditor v-if="diffPath" :path="diffPath" :original="diffOriginal" :modified="diffModified" /></section>
+      <section class="panel build-section">
+        <div>
+          <p class="eyebrow">BUILD WORKER</p>
+          <h2>构建与Release</h2>
+        </div>
+        <div class="build-grid">
+          <div>
+            <h3>Build Requests</h3>
+            <button v-for="build in builds" :key="build.id" type="button" class="build-row" :class="{ active: activeBuildId === build.id }" @click="showBuildLog(build.id)">
+              <span>{{ build.status }} · Source r{{ build.sourceRevision }}</span>
+              <code>{{ build.id.slice(0, 12) }}</code>
+            </button>
+          </div>
+          <div>
+            <h3>Project Releases</h3>
+            <article v-for="release in releases" :key="release.revision" class="release-row">
+              <strong>Release {{ release.revision }}</strong>
+              <span>Source r{{ release.spec.sourceRevision }}</span>
+              <code>{{ release.spec.buildManifestArtifact.hash.slice(0, 12) }}</code>
+              <small>{{ release.spec.testResult.passed ? 'TEST PASS' : 'TEST FAIL' }} · {{ release.spec.reproducibility }}</small>
+            </article>
+          </div>
+          <pre class="build-log">{{ buildLog.join('\n') || '选择Build查看日志。' }}</pre>
+        </div>
+      </section>
       <p v-if="message" class="message">{{ message }}</p>
     </EngineDataBoundary>
   </main>
@@ -321,5 +386,11 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .project-page { display: grid; gap: var(--space-5); }.page-heading,.actions,.tree-heading,.diff-section header { display:flex;align-items:center;justify-content:space-between;gap:var(--space-3); }h1,h2 { margin:0;color:var(--color-text-strong); }.page-heading p,.scope-note { color:var(--color-text-muted); }.eyebrow { margin:0 0 var(--space-1);color:var(--color-accent);font-size:var(--font-size-xs);font-weight:700;letter-spacing:.08em; }.save-state { padding:var(--space-1) var(--space-2);border-radius:var(--radius-round);background:var(--color-accent-soft);font-family:ui-monospace,monospace;font-size:var(--font-size-xs); }.panel { border:var(--border-width) solid var(--color-border);border-radius:var(--radius-lg);background:var(--color-surface);box-shadow:var(--shadow-sm); }.create-form { display:flex;align-items:end;gap:var(--space-3);padding:var(--space-4); }.create-form label { display:grid;gap:var(--space-1); }.create-form input { min-height:38px;padding:0 var(--space-2);border:var(--border-width) solid var(--color-border);border-radius:var(--radius-sm); }.ide-shell { display:grid;grid-template-columns:260px minmax(460px,1fr) 280px;min-height:620px;gap:var(--space-3); }.project-panel,.material-panel { padding:var(--space-3);overflow:auto; }.project-item,.material-card,.revision-card { display:grid;width:100%;gap:var(--space-1);padding:var(--space-2);border:var(--border-width) solid var(--color-border);border-radius:var(--radius-sm);background:transparent;color:var(--color-text);text-align:left;margin-bottom:var(--space-2); }.project-item.active { border-color:var(--color-accent);background:var(--color-accent-soft); }.project-item span,.material-card span,.material-card small,.revision-card code { color:var(--color-text-muted);font-size:var(--font-size-xs); }.tree-heading button,.file-row button,.tabs button,.material-card button,.revision-card button,.diff-files button { border:0;background:transparent;color:inherit;cursor:pointer;text-align:left; }.file-row { display:flex;align-items:center;justify-content:space-between;border-radius:var(--radius-sm); }.file-row>button { flex:1;padding:var(--space-1);overflow:hidden;text-overflow:ellipsis; }.file-row.active { background:var(--color-accent-soft); }.editor-panel { display:grid;grid-template-rows:auto 1fr;overflow:hidden; }.tabs { display:flex;overflow-x:auto;border-bottom:var(--border-width) solid var(--color-border); }.tabs button { padding:var(--space-2) var(--space-3);white-space:nowrap;border-right:var(--border-width) solid var(--color-border); }.tabs button.active { background:var(--color-accent-soft); }.empty-editor { display:grid;place-items:center;color:var(--color-text-muted); }.material-card button,.revision-card button { color:var(--color-accent);padding:0; }.error-text { color:var(--color-danger); }.diff-section { padding:var(--space-4);display:grid;gap:var(--space-3); }.diff-files { display:flex;gap:var(--space-2);overflow:auto; }.diff-files button { padding:var(--space-1) var(--space-2);border:var(--border-width) solid var(--color-border);border-radius:var(--radius-sm); }.diff-files button.active { border-color:var(--color-accent); }.message { padding:var(--space-3);border-radius:var(--radius-md);background:var(--color-accent-soft); }
+.build-section { padding: var(--space-4); display: grid; gap: var(--space-3); }
+.build-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); }
+.build-row,.release-row { display: grid; width: 100%; gap: var(--space-1); padding: var(--space-2); margin-bottom: var(--space-2); border: var(--border-width) solid var(--color-border); border-radius: var(--radius-sm); background: transparent; color: var(--color-text); text-align: left; }
+.build-row.active { border-color: var(--color-accent); background: var(--color-accent-soft); }
+.build-row code,.release-row code,.release-row small { color: var(--color-text-muted); }
+.build-log { grid-column: 1 / -1; max-height: 280px; overflow: auto; margin: 0; padding: var(--space-3); border-radius: var(--radius-sm); background: #101820; color: #d8e2e8; font-size: 12px; white-space: pre-wrap; }
 @media(max-width:1100px){.ide-shell{grid-template-columns:220px 1fr}.material-panel{grid-column:1/-1}.page-heading{align-items:flex-start;flex-direction:column}}@media(max-width:720px){.ide-shell{grid-template-columns:1fr}.create-form,.actions{align-items:stretch;flex-direction:column}}
 </style>

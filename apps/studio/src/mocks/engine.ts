@@ -7,6 +7,8 @@ import type {
   OrganizationUnit,
   Person,
   PipelineExecutionResponse,
+  ProjectBuildRequest,
+  ProjectReleaseDefinition,
   ProjectSourceDiff,
   ProjectSourceDraft,
   ProjectSourceFile,
@@ -29,6 +31,8 @@ const assignments: Assignment[] = [];
 let codeProject: Resource<CodeProjectSpec> | null = null;
 let sourceDraft: ProjectSourceDraft | null = null;
 const sourceRevisions: Resource<PublishedProjectSource>[] = [];
+const projectBuilds: ProjectBuildRequest[] = [];
+const projectReleases: Resource<ProjectReleaseDefinition>[] = [];
 
 // Domain-neutral mock data. Hospital-specific resources live in the private
 // Solution repository; Core Studio exercises only the generic Resource model.
@@ -309,6 +313,68 @@ export const mockApi: StudioApi = {
       changed: [...right.keys()].filter((path) => left.has(path) && left.get(path) !== right.get(path)),
       materialChanges: { added: [], removed: [], changed: [] },
     };
+  },
+  async buildProject(projectId, sourceRevision) {
+    const source = sourceRevisions.find((item) => item.revision === sourceRevision);
+    if (!source) throw new Error('Published source not found.');
+    const id = nextId('build');
+    const hash = String(sourceRevision).padStart(64, 'a');
+    const descriptor = {
+      hash,
+      size: 1,
+      contentType: 'application/octet-stream',
+      storageKey: `sha256/${hash.slice(0, 2)}/${hash}`,
+    };
+    const release: Resource<ProjectReleaseDefinition> = {
+      id: `${projectId}:release`,
+      kind: 'project.release',
+      name: `${projectId} Release`,
+      revision: projectReleases.length + 1,
+      status: 'published',
+      spec: {
+        projectId,
+        sourceRevision,
+        sourceFingerprint: source.spec.fingerprint,
+        packageJsonHash: hash,
+        dependencyLockHash: hash,
+        builderVersion: 'offline',
+        nodeVersion: 'offline',
+        pnpmVersion: 'offline',
+        clientArtifact: descriptor,
+        serverArtifact: descriptor,
+        buildManifestArtifact: descriptor,
+        testResult: { passed: true, total: 1, failed: 0, reportHash: hash },
+        diagnostics: [],
+        reproducibility: 'DETERMINISTIC',
+        materials: [],
+      },
+      createdAt: now,
+      updatedAt: new Date().toISOString(),
+    };
+    projectReleases.push(release);
+    const build: ProjectBuildRequest = {
+      id,
+      projectId,
+      sourceRevision,
+      sourceFingerprint: source.spec.fingerprint,
+      status: 'SUCCESS',
+      requestedBy: 'studio-builder',
+      createdAt: new Date().toISOString(),
+      finishedAt: new Date().toISOString(),
+      releaseId: `${release.id}@${release.revision}`,
+      diagnostics: [],
+    };
+    projectBuilds.push(build);
+    return cloneValue(build);
+  },
+  async listProjectBuilds(projectId) {
+    return cloneValue(projectBuilds.filter((item) => item.projectId === projectId));
+  },
+  async getProjectBuildLog() {
+    return ['pnpm install PASS', 'TS7 typecheck PASS', 'Vitest PASS', 'Vite client build PASS', 'esbuild server build PASS'];
+  },
+  async listProjectReleases(projectId) {
+    return cloneValue(projectReleases.filter((item) => item.spec.projectId === projectId));
   },
   async executePipeline(): Promise<PipelineExecutionResponse> {
     return { status: 'success', outputs: {}, diagnostics: [], trace: emptyTrace, planHash: 'offline' };

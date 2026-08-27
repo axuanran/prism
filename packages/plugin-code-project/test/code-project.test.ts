@@ -69,6 +69,7 @@ describe("Code Project Source lifecycle", () => {
     expect(created.draft).toMatchObject({ draftVersion: 1, baseSourceRevision: null });
     expect(created.draft.files.map((file) => file.path)).toEqual([
       "package.json",
+      "pnpm-lock.yaml",
       "prism.materials.json",
       "prism.project.json",
       "src/client/index.tsx",

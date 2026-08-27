@@ -50,6 +50,9 @@
       "path": "./packages/plugin-code-project"
     },
     {
+      "path": "./packages/plugin-project-build"
+    },
+    {
       "path": "./packages/plugin-sdk"
     },
     {

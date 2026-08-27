@@ -63,6 +63,7 @@ packages/plugin-type-quantity           optional dimensional type algebra
 packages/plugin-dataset-grain           optional Dataset/Plan grain analysis
 packages/plugin-material-registry       shared Material discovery for Studio and Runtime
 packages/plugin-code-project            source Draft CAS and immutable Source revisions
+packages/plugin-project-build           isolated Build Worker and immutable Project Releases
 packages/testing                        engine/data/PG/conformance test fixtures
 apps/studio                             generic configuration/pipeline UI foundation
 ```

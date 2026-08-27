@@ -303,6 +303,50 @@ export interface ProjectSourceDiff {
   };
 }
 
+export interface ProjectBuildRequest {
+  readonly id: string;
+  readonly projectId: string;
+  readonly sourceRevision: number;
+  readonly sourceFingerprint: string;
+  readonly status: 'QUEUED' | 'RUNNING' | 'SUCCESS' | 'FAILED' | 'CANCELLED';
+  readonly requestedBy: string;
+  readonly createdAt: string;
+  readonly startedAt?: string;
+  readonly finishedAt?: string;
+  readonly releaseId?: string;
+  readonly diagnostics: readonly Diagnostic[];
+}
+
+export interface ProjectArtifactDescriptor {
+  readonly hash: string;
+  readonly size: number;
+  readonly contentType: string;
+  readonly storageKey: string;
+}
+
+export interface ProjectReleaseDefinition {
+  readonly projectId: string;
+  readonly sourceRevision: number;
+  readonly sourceFingerprint: string;
+  readonly packageJsonHash: string;
+  readonly dependencyLockHash: string;
+  readonly builderVersion: string;
+  readonly nodeVersion: string;
+  readonly pnpmVersion: string;
+  readonly clientArtifact: ProjectArtifactDescriptor;
+  readonly serverArtifact: ProjectArtifactDescriptor;
+  readonly buildManifestArtifact: ProjectArtifactDescriptor;
+  readonly testResult: {
+    readonly passed: boolean;
+    readonly total: number;
+    readonly failed: number;
+    readonly reportHash: string;
+  };
+  readonly diagnostics: readonly Diagnostic[];
+  readonly reproducibility: 'DETERMINISTIC' | 'BEST_EFFORT' | 'NON_DETERMINISTIC';
+  readonly materials: readonly unknown[];
+}
+
 export interface StudioApi {
   health(): Promise<{ readonly status: 'ok' }>;
   inspectEngine(): Promise<EngineInspection>;
@@ -331,4 +375,8 @@ export interface StudioApi {
   publishProjectSource(projectId: string, draftVersion: number): Promise<Resource<PublishedProjectSource>>;
   listProjectSourceRevisions(projectId: string): Promise<readonly Resource<PublishedProjectSource>[]>;
   diffProjectSource(projectId: string, from: number | 'draft', to: number | 'draft'): Promise<ProjectSourceDiff>;
+  buildProject(projectId: string, sourceRevision: number): Promise<ProjectBuildRequest>;
+  listProjectBuilds(projectId: string): Promise<readonly ProjectBuildRequest[]>;
+  getProjectBuildLog(buildId: string): Promise<readonly string[]>;
+  listProjectReleases(projectId: string): Promise<readonly Resource<ProjectReleaseDefinition>[]>;
 }
