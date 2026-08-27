@@ -32,9 +32,18 @@ interface InvokeMessage {
   readonly principal: ProjectPrincipal;
 }
 
+interface MaterialMessage {
+  readonly type: "execute-material";
+  readonly requestId: string;
+  readonly materialId: string;
+  readonly materialVersion: string;
+  readonly input: JsonValue;
+  readonly configuration: JsonValue;
+}
+
 interface CancelMessage { readonly type: "cancel"; readonly requestId: string }
 interface DisposeMessage { readonly type: "dispose" }
-type RuntimeMessage = InitMessage | InvokeMessage | CancelMessage | DisposeMessage;
+type RuntimeMessage = InitMessage | InvokeMessage | MaterialMessage | CancelMessage | DisposeMessage;
 
 let actions: Readonly<Record<string, ProjectAction>> = {};
 const materials = new Map<string, ProjectCodeMaterial>();
@@ -130,6 +139,19 @@ async function handle(message: RuntimeMessage): Promise<void> {
   const controller = new AbortController();
   controllers.set(message.requestId, controller);
   try {
+    if (message.type === "execute-material") {
+      const material = materials.get(`${message.materialId}@${message.materialVersion}`);
+      if (material === undefined) {
+        throw new Error(`Material ${message.materialId}@${message.materialVersion} is not loaded.`);
+      }
+      const output = await material(message.input, message.configuration, {
+        engine,
+        signal: controller.signal,
+        logger,
+      });
+      process.send?.({ type: "action-success", requestId: message.requestId, output, logs });
+      return;
+    }
     const action = actions[message.actionId];
     if (action === undefined) {
       process.send?.({

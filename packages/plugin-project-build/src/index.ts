@@ -55,7 +55,7 @@ export const PROJECT_RELEASE_KIND = "project.release";
 const BUILD_COLLECTION = "project.build-requests";
 const BUILD_LOG_COLLECTION = "project.build-logs";
 const ARTIFACT_COLLECTION = "project.artifacts";
-const BUILDER_VERSION = "0.1.14";
+const BUILDER_VERSION = "0.1.15";
 
 const ProjectReleaseSchema = Type.Object({
   projectId: Type.String({ minLength: 1 }),

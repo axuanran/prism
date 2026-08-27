@@ -1,6 +1,6 @@
 {
   "name": "@prismengine/plugin-sdk",
-  "version": "0.1.14",
+  "version": "0.1.15",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -19,13 +19,13 @@
     "build": "tsc --build"
   },
   "dependencies": {
-    "@prismengine/contracts-artifact": "workspace:0.1.14",
-    "@prismengine/contracts-calculation": "workspace:0.1.14",
-    "@prismengine/contracts-data": "workspace:0.1.14",
-    "@prismengine/contracts-organization": "workspace:0.1.14",
-    "@prismengine/contracts-project": "workspace:0.1.14",
-    "@prismengine/contracts-storage": "workspace:0.1.14",
-    "@prismengine/kernel": "workspace:0.1.14"
+    "@prismengine/contracts-artifact": "workspace:0.1.15",
+    "@prismengine/contracts-calculation": "workspace:0.1.15",
+    "@prismengine/contracts-data": "workspace:0.1.15",
+    "@prismengine/contracts-organization": "workspace:0.1.15",
+    "@prismengine/contracts-project": "workspace:0.1.15",
+    "@prismengine/contracts-storage": "workspace:0.1.15",
+    "@prismengine/kernel": "workspace:0.1.15"
   },
   "license": "Apache-2.0",
   "repository": {

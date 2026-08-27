@@ -439,4 +439,5 @@ export interface StudioApi {
   listProjectActionRuns(projectId: string): Promise<readonly ProjectActionRun[]>;
   listProjectRuntimeLogs(projectId: string): Promise<readonly ProjectRuntimeLog[]>;
   listProjectReleaseMaterials(projectId: string, revision: number): Promise<readonly ProjectReleaseMaterialCatalogItem[]>;
+  executeProjectMaterial(projectId: string, release: ProjectReleaseRef, materialId: string, version: string, input: unknown, configuration?: unknown): Promise<unknown>;
 }

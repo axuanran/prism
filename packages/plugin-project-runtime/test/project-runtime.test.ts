@@ -148,6 +148,14 @@ describe("Project App Runtime", () => {
       }]);
 
       const active1 = await runtime.activate(context, created.project.id, 1, null);
+      expect(await runtime.executeMaterial(
+        context,
+        created.project.id,
+        active1.release,
+        "performance.coefficient",
+        "1.0.0",
+        1200,
+      )).toBe(1320);
       expect(active1.release.revision).toBe(1);
       const run1 = await runtime.invoke(
         context,
@@ -185,6 +193,14 @@ describe("Project App Runtime", () => {
         .rejects.toThrow("PROJECT_ACTIVE_RELEASE_CONFLICT");
 
       const active2 = await runtime.activate(context, created.project.id, 2, active1.release);
+      expect(await runtime.executeMaterial(
+        context,
+        created.project.id,
+        active2.release,
+        "performance.coefficient",
+        "2.0.0",
+        1200,
+      )).toBe(1440);
       const run2 = await runtime.invoke(
         context,
         created.project.id,

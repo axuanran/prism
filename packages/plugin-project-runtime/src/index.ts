@@ -53,7 +53,7 @@ const ACTIVATION_COLLECTION = "project.release-activations";
 const INSTANCE_COLLECTION = "project.runtime-instances";
 const RUN_COLLECTION = "project.action-runs";
 const LOG_COLLECTION = "project.runtime-logs";
-const RUNTIME_VERSION = "0.1.14";
+const RUNTIME_VERSION = "0.1.15";
 const DEFAULT_ACTION_TIMEOUT_MS = 30_000;
 
 interface WorkerLog {
@@ -340,6 +340,46 @@ class DefaultProjectRuntime implements ProjectRuntimeCapability {
       ],
     });
     return run;
+  }
+
+  async executeMaterial(
+    context: CallContext,
+    projectId: string,
+    requestedRelease: ProjectReleaseRef,
+    materialId: string,
+    materialVersion: string,
+    input: JsonValue,
+    configuration: JsonValue = null,
+  ): Promise<JsonValue> {
+    assertJsonValue(input, "/input");
+    assertJsonValue(configuration, "/configuration");
+    const active = await this.active(context, projectId);
+    if (active === null || !sameRelease(active.release, requestedRelease)) {
+      throw PrismError.of(
+        "PROJECT_RELEASE_CHANGED",
+        "Visual Material Release no longer matches Active Release.",
+        { projectId, requestedRelease, activeRelease: active?.release ?? null },
+      );
+    }
+    const release = await this.requiredRelease(context, projectId, active.release.revision);
+    const worker = await this.worker(context, projectId, release);
+    const response = await worker.executeMaterial(
+      materialId,
+      materialVersion,
+      input,
+      configuration,
+      context.signal,
+    );
+    if (!response.ok) {
+      throw PrismError.of(
+        response.code ?? "PROJECT_MATERIAL_FAILED",
+        response.error ?? "Code Material execution failed.",
+        { projectId, materialId, materialVersion },
+      );
+    }
+    const output = response.result ?? null;
+    assertJsonValue(output, "/result");
+    return output;
   }
 
   async getRun(context: CallContext, runId: string): Promise<ProjectActionRun | null> {
@@ -762,6 +802,52 @@ class ReleaseWorker {
     }
   }
 
+  async executeMaterial(
+    materialId: string,
+    materialVersion: string,
+    input: JsonValue,
+    configuration: JsonValue,
+    signal?: AbortSignal,
+  ): Promise<WorkerResult> {
+    if (!this.isAvailable) {
+      return { ok: false, code: "PROJECT_RUNTIME_DISCONNECTED", error: "Runtime Worker is unavailable.", logs: [] };
+    }
+    const requestId = crypto.randomUUID();
+    const deferred = Promise.withResolvers<WorkerResult>();
+    this.pending.set(requestId, deferred);
+    this.inFlight += 1;
+    this.child.send({
+      type: "execute-material",
+      requestId,
+      materialId,
+      materialVersion,
+      input,
+      configuration,
+    });
+    const abort = () => {
+      const pending = this.pending.get(requestId);
+      if (pending === undefined) return;
+      this.pending.delete(requestId);
+      if (this.child.connected) this.child.send({ type: "cancel", requestId });
+      pending.resolve({ ok: false, code: "PROJECT_ACTION_CANCELLED", error: "Material execution cancelled.", logs: [] });
+    };
+    signal?.addEventListener("abort", abort, { once: true });
+    const timeout = setTimeout(() => {
+      const pending = this.pending.get(requestId);
+      if (pending === undefined) return;
+      this.pending.delete(requestId);
+      pending.resolve({ ok: false, code: "PROJECT_ACTION_TIMEOUT", error: "Material execution timed out.", logs: [] });
+    }, this.actionTimeoutMs);
+    try {
+      return await deferred.promise;
+    } finally {
+      clearTimeout(timeout);
+      signal?.removeEventListener("abort", abort);
+      this.inFlight -= 1;
+      if (this.draining && this.inFlight === 0) await this.dispose();
+    }
+  }
+
   disposeWhenIdle(): void {
     this.draining = true;
     if (this.inFlight === 0) void this.dispose();
@@ -841,6 +927,26 @@ function runtimeRoutes(runtime: DefaultProjectRuntime, projects: CodeProjectCapa
         status: 200,
         body: await runtime.active(request.call, string(record(request.params).id)),
       }),
+    },
+    {
+      method: "POST",
+      path: "/api/runtime/:projectId/materials/:materialId/:version/execute",
+      summary: "Execute exact built Release Code Material",
+      handler: async (request) => {
+        const body = record(request.body);
+        return {
+          status: 200,
+          body: await runtime.executeMaterial(
+            request.call,
+            string(record(request.params).projectId),
+            projectReleaseRef(body.release),
+            string(record(request.params).materialId),
+            string(record(request.params).version),
+            (body.input ?? null) as JsonValue,
+            (body.configuration ?? null) as JsonValue,
+          ),
+        };
+      },
     },
     {
       method: "POST",

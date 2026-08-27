@@ -336,6 +336,12 @@ class LiveStudioApi implements StudioApi {
   listProjectReleaseMaterials(projectId: string, revision: number): Promise<readonly ProjectReleaseMaterialCatalogItem[]> {
     return this.#request(`/api/code-projects/${encodeURIComponent(projectId)}/releases/${revision}/materials`);
   }
+  executeProjectMaterial(projectId: string, release: ProjectReleaseRef, materialId: string, version: string, input: unknown, configuration: unknown = null): Promise<unknown> {
+    return this.#request(`/api/runtime/${encodeURIComponent(projectId)}/materials/${encodeURIComponent(materialId)}/${encodeURIComponent(version)}/execute`, {
+      method: 'POST',
+      body: JSON.stringify({ release, input, configuration }),
+    });
+  }
 }
 
 const useMock = import.meta.env.VITE_USE_MOCKS === 'true';

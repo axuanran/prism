@@ -45,6 +45,7 @@ const actionRuns = ref<readonly ProjectActionRun[]>([]);
 const runtimeLogs = ref<readonly ProjectRuntimeLog[]>([]);
 const actionForm = ref({ actionId: 'calculate', input: '{\"base\":1200}' });
 const releaseCatalog = ref<readonly ProjectReleaseMaterialCatalogItem[]>([]);
+const materialResult = ref<unknown>(null);
 const saveState = ref<'idle' | 'dirty' | 'saving' | 'saved' | 'conflict'>('idle');
 const error = ref<string | null>(null);
 const message = ref<string | null>(null);
@@ -360,6 +361,22 @@ async function showReleaseMaterials(revision: number): Promise<void> {
   releaseCatalog.value = await api.listProjectReleaseMaterials(selected.value.id, revision);
 }
 
+async function executeReleaseMaterial(item: ProjectReleaseMaterialCatalogItem): Promise<void> {
+  if (!selected.value || !activeRelease.value) return;
+  try {
+    materialResult.value = await api.executeProjectMaterial(
+      selected.value.id,
+      activeRelease.value.release,
+      item.manifest.id,
+      item.manifest.version,
+      JSON.parse(actionForm.value.input),
+      {},
+    );
+  } catch (cause: unknown) {
+    error.value = cause instanceof Error ? cause.message : 'Material执行失败。';
+  }
+}
+
 function openActiveApp(): void {
   if (selected.value) window.open(`/apps/${selected.value.spec.slug}`, '_blank');
 }
@@ -443,7 +460,7 @@ onBeforeUnmount(() => {
           <form @submit.prevent="invokeAction"><label>Action ID<input v-model="actionForm.actionId" /></label><label>JSON Input<textarea v-model="actionForm.input"></textarea></label><button class="button button--primary" type="submit" :disabled="!activeRelease">调用Action</button></form>
           <div><h3>Runs</h3><article v-for="run in actionRuns" :key="run.id" class="run-row"><strong>{{ run.status }} · {{ run.actionId }}</strong><span>Release {{ run.release.revision }}</span><code>{{ run.id.slice(0, 12) }}</code><small>{{ run.reproducibility }}</small></article></div>
           <div><h3>Runtime Logs</h3><pre class="runtime-log">{{ runtimeLogs.map(log => `[${log.level}] r${log.release.revision} ${log.message}`).join('\n') || '暂无日志。' }}</pre></div>
-          <div><h3>Release Material Catalog</h3><article v-for="item in releaseCatalog" :key="`${item.manifest.id}@${item.manifest.version}`" class="run-row"><strong>{{ item.manifest.displayName }}</strong><span>{{ item.manifest.id }}@{{ item.manifest.version }}</span><code>{{ item.artifact.hash.slice(0, 12) }}</code><small>{{ item.status }}</small></article></div>
+          <div><h3>Release Material Catalog</h3><article v-for="item in releaseCatalog" :key="`${item.manifest.id}@${item.manifest.version}`" class="run-row"><strong>{{ item.manifest.displayName }}</strong><span>{{ item.manifest.id }}@{{ item.manifest.version }}</span><code>{{ item.artifact.hash.slice(0, 12) }}</code><small>{{ item.status }}</small><button type="button" :disabled="!activeRelease" @click="executeReleaseMaterial(item)">用JSON Input执行</button></article><pre class="runtime-log">{{ materialResult === null ? '暂无Material结果。' : JSON.stringify(materialResult, null, 2) }}</pre></div>
         </div>
       </section>
       <p v-if="message" class="message">{{ message }}</p>

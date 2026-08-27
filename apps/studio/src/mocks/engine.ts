@@ -433,6 +433,9 @@ export const mockApi: StudioApi = {
       return artifact ? [{ manifest, artifact, status: 'BUILT' as const }] : [];
     });
   },
+  async executeProjectMaterial(_projectId, _release, _materialId, _version, input) {
+    return input;
+  },
   async listProjectActionRuns(projectId) {
     return cloneValue(actionRuns.filter((run) => run.projectId === projectId));
   },

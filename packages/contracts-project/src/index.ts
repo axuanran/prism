@@ -344,6 +344,15 @@ export interface ProjectRuntimeCapability {
     projectId: string,
     revision: number,
   ): Promise<readonly ProjectReleaseMaterialCatalogItem[]>;
+  executeMaterial(
+    context: CallContext,
+    projectId: string,
+    release: ProjectReleaseRef,
+    materialId: string,
+    materialVersion: string,
+    input: JsonValue,
+    configuration?: JsonValue,
+  ): Promise<JsonValue>;
   getRun(context: CallContext, runId: string): Promise<ProjectActionRun | null>;
   logs(context: CallContext, projectId: string): Promise<readonly ProjectRuntimeLog[]>;
   listRuns(context: CallContext, projectId: string): Promise<readonly ProjectActionRun[]>;
