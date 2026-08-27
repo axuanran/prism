@@ -16,8 +16,33 @@ import {
 const context = systemCallContext({ correlationId: "storage-memory-test" });
 
 describeStorageContract("memory", async () => {
-  const storage = createMemoryStorage();
-  return { storage, atomicWrite: storage, async dispose() {} };
+  let failure:
+    | { readonly point: "after-operation" | "before-commit" | "after-commit"; readonly operationIndex?: number }
+    | undefined;
+  const storage = createMemoryStorage(undefined, {
+    hit(point) {
+      if (
+        failure !== undefined &&
+        failure.point === point.point &&
+        (failure.operationIndex === undefined ||
+          ("operationIndex" in point && failure.operationIndex === point.operationIndex))
+      ) {
+        failure = undefined;
+        throw new Error("Injected atomic write failure");
+      }
+    },
+  });
+  return {
+    storage,
+    atomicWrite: storage,
+    injectAtomicFailure(point, operationIndex) {
+      failure = {
+        point,
+        ...(operationIndex === undefined ? {} : { operationIndex }),
+      };
+    },
+    async dispose() {},
+  };
 });
 
 async function diagnosticCodes(operation: () => Promise<unknown>): Promise<readonly string[]> {

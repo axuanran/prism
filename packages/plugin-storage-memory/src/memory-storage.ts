@@ -20,6 +20,15 @@ import type {
   ResourceQuery,
 } from "@prismengine/kernel";
 
+export type AtomicWriteFaultPoint =
+  | { readonly point: "after-operation"; readonly operationIndex: number }
+  | { readonly point: "before-commit" }
+  | { readonly point: "after-commit" };
+
+export interface AtomicWriteFaultInjector {
+  hit(point: AtomicWriteFaultPoint): void;
+}
+
 const NOOP_EVENTS: EventBus = {
   async publish(): Promise<void> {},
   subscribe: () => () => {},
@@ -464,7 +473,10 @@ export class MemoryStorage implements StorageCapability, AtomicWriteCapability {
     MemoryDocumentCollection<{ readonly id: string }>
   >();
 
-  constructor(events: EventBus = NOOP_EVENTS) {
+  constructor(
+    events: EventBus = NOOP_EVENTS,
+    private readonly atomicWriteFault?: AtomicWriteFaultInjector,
+  ) {
     this.resources = new MemoryResourceStore(events);
   }
 
@@ -506,25 +518,29 @@ export class MemoryStorage implements StorageCapability, AtomicWriteCapability {
       if (!satisfied) throw atomicConflict(request.requestId, precondition);
     }
 
-    for (const operation of request.operations) {
+    for (let operationIndex = 0; operationIndex < request.operations.length; operationIndex += 1) {
+      const operation = request.operations[operationIndex];
+      if (operation === undefined) continue;
       const draft = draftFor(operation.collection);
       if (operation.kind === "delete-document") {
         draft.delete(operation.id);
-        continue;
+      } else {
+        const exists = draft.has(operation.document.id);
+        if (
+          (operation.mode === "create" && exists) ||
+          (operation.mode === "replace" && !exists)
+        ) {
+          throw atomicConflict(request.requestId, {
+            kind: operation.mode === "create" ? "document-absent" : "document-present",
+            collection: operation.collection,
+            id: operation.document.id,
+          });
+        }
+        draft.set(operation.document.id, immutableCopy(operation.document));
       }
-      const exists = draft.has(operation.document.id);
-      if (
-        (operation.mode === "create" && exists) ||
-        (operation.mode === "replace" && !exists)
-      ) {
-        throw atomicConflict(request.requestId, {
-          kind: operation.mode === "create" ? "document-absent" : "document-present",
-          collection: operation.collection,
-          id: operation.document.id,
-        });
-      }
-      draft.set(operation.document.id, immutableCopy(operation.document));
+      this.atomicWriteFault?.hit({ point: "after-operation", operationIndex });
     }
+    this.atomicWriteFault?.hit({ point: "before-commit" });
 
     for (const [name, documents] of drafts) {
       let collection = this.collections.get(name);
@@ -534,6 +550,7 @@ export class MemoryStorage implements StorageCapability, AtomicWriteCapability {
       }
       collection.replace(documents);
     }
+    this.atomicWriteFault?.hit({ point: "after-commit" });
     return { requestId: request.requestId, operationCount: request.operations.length };
   }
 }
@@ -596,6 +613,9 @@ function atomicConflict(
 }
 
 
-export function createMemoryStorage(events?: EventBus): MemoryStorage {
-  return new MemoryStorage(events);
+export function createMemoryStorage(
+  events?: EventBus,
+  atomicWriteFault?: AtomicWriteFaultInjector,
+): MemoryStorage {
+  return new MemoryStorage(events, atomicWriteFault);
 }

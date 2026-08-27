@@ -5,7 +5,10 @@ import {
 import { definePlugin } from "@prismengine/kernel";
 import { MemoryStorage } from "./memory-storage.js";
 
-export { createMemoryStorage, MemoryStorage } from "./memory-storage.js";
+export {
+  createMemoryStorage,
+  MemoryStorage,
+} from "./memory-storage.js";
 
 export const storageMemoryPlugin = definePlugin({
   id: "storage.memory",

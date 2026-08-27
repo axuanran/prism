@@ -19,6 +19,15 @@ import type { Kysely, Selectable, Transaction } from "kysely";
 import { sql } from "kysely";
 import type { PostgresDatabase, ResourceRevisionTable } from "./database.js";
 
+export type AtomicWriteFaultPoint =
+  | { readonly point: "after-operation"; readonly operationIndex: number }
+  | { readonly point: "before-commit" }
+  | { readonly point: "after-commit" };
+
+export interface AtomicWriteFaultInjector {
+  hit(point: AtomicWriteFaultPoint): void;
+}
+
 const NOOP_EVENTS: EventBus = {
   async publish(): Promise<void> {},
   subscribe: () => () => {},
@@ -729,6 +738,7 @@ export class PostgresStorage implements StorageCapability, AtomicWriteCapability
     private readonly db: Kysely<PostgresDatabase>,
     private readonly schema: string,
     events: EventBus = NOOP_EVENTS,
+    private readonly atomicWriteFault?: AtomicWriteFaultInjector,
   ) {
     this.resources = new PostgresResourceStore(db, schema, events);
   }
@@ -744,15 +754,13 @@ export class PostgresStorage implements StorageCapability, AtomicWriteCapability
     request: AtomicWriteRequest,
   ): Promise<AtomicWriteResult> {
     validateAtomicRequest(request);
-    return guarded("execute an atomic write", () =>
+    const result = await guarded("execute an atomic write", () =>
       this.db.transaction().execute(async (transaction) => {
         const database = transaction.withSchema(this.schema);
-        const targets = atomicTargets(request);
-        for (const target of targets) {
+        for (const target of atomicTargets(request)) {
           await sql`select pg_advisory_xact_lock(hashtextextended(${target}, 0))`
             .execute(transaction);
         }
-
         for (const precondition of request.preconditions) {
           const row = await database
             .selectFrom("document")
@@ -773,69 +781,79 @@ export class PostgresStorage implements StorageCapability, AtomicWriteCapability
         }
 
         const now = new Date();
-        for (const operation of request.operations) {
+        for (
+          let operationIndex = 0;
+          operationIndex < request.operations.length;
+          operationIndex += 1
+        ) {
+          const operation = request.operations[operationIndex];
+          if (operation === undefined) continue;
           if (operation.kind === "delete-document") {
             await database
               .deleteFrom("document")
               .where("collection", "=", operation.collection)
               .where("id", "=", operation.id)
               .execute();
-            continue;
-          }
-          const values = {
-            collection: operation.collection,
-            id: operation.document.id,
-            body: operation.document,
-            created_at: now,
-            updated_at: now,
-          };
-          if (operation.mode === "create") {
-            const existing = await database
-              .selectFrom("document")
-              .select("id")
-              .where("collection", "=", operation.collection)
-              .where("id", "=", operation.document.id)
-              .executeTakeFirst();
-            if (existing !== undefined) {
-              throw atomicConflict(request.requestId, {
-                kind: "document-absent",
-                collection: operation.collection,
-                id: operation.document.id,
-              });
-            }
-            await database.insertInto("document").values(values).execute();
-          } else if (operation.mode === "upsert") {
-            await database
-              .insertInto("document")
-              .values(values)
-              .onConflict((conflict) =>
-                conflict.columns(["collection", "id"]).doUpdateSet({
-                  body: operation.document,
-                  updated_at: now,
-                }),
-              )
-              .execute();
           } else {
-            const result = await database
-              .updateTable("document")
-              .set({ body: operation.document, updated_at: now })
-              .where("collection", "=", operation.collection)
-              .where("id", "=", operation.document.id)
-              .executeTakeFirst();
-            if (result.numUpdatedRows !== 1n) {
-              throw atomicConflict(request.requestId, {
-                kind: "document-present",
-                collection: operation.collection,
-                id: operation.document.id,
-              });
+            const values = {
+              collection: operation.collection,
+              id: operation.document.id,
+              body: operation.document,
+              created_at: now,
+              updated_at: now,
+            };
+            if (operation.mode === "create") {
+              const existing = await database
+                .selectFrom("document")
+                .select("id")
+                .where("collection", "=", operation.collection)
+                .where("id", "=", operation.document.id)
+                .executeTakeFirst();
+              if (existing !== undefined) {
+                throw atomicConflict(request.requestId, {
+                  kind: "document-absent",
+                  collection: operation.collection,
+                  id: operation.document.id,
+                });
+              }
+              await database.insertInto("document").values(values).execute();
+            } else if (operation.mode === "upsert") {
+              await database
+                .insertInto("document")
+                .values(values)
+                .onConflict((conflict) =>
+                  conflict.columns(["collection", "id"]).doUpdateSet({
+                    body: operation.document,
+                    updated_at: now,
+                  }),
+                )
+                .execute();
+            } else {
+              const update = await database
+                .updateTable("document")
+                .set({ body: operation.document, updated_at: now })
+                .where("collection", "=", operation.collection)
+                .where("id", "=", operation.document.id)
+                .executeTakeFirst();
+              if (update.numUpdatedRows !== 1n) {
+                throw atomicConflict(request.requestId, {
+                  kind: "document-present",
+                  collection: operation.collection,
+                  id: operation.document.id,
+                });
+              }
             }
           }
+          this.atomicWriteFault?.hit({ point: "after-operation", operationIndex });
         }
+        this.atomicWriteFault?.hit({ point: "before-commit" });
         return {
           requestId: request.requestId,
           operationCount: request.operations.length,
         };
       }),
     );
+    this.atomicWriteFault?.hit({ point: "after-commit" });
+    return result;
   }
 }

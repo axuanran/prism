@@ -14,6 +14,10 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 export interface StorageContractFixture {
   readonly storage: StorageCapability;
   readonly atomicWrite: AtomicWriteCapability;
+  injectAtomicFailure?(
+    point: "after-operation" | "before-commit" | "after-commit",
+    operationIndex?: number,
+  ): void;
   dispose(): Promise<void>;
 }
 
@@ -506,6 +510,64 @@ export function describeStorageContract(
         ).toBe(0);
       }
     });
+
+    it("rolls back a provider failure before commit", async () => {
+      if (fixture.injectAtomicFailure === undefined) return;
+      fixture.injectAtomicFailure("before-commit");
+      await expect(fixture.atomicWrite.execute(context, {
+        requestId: "before-commit-failure",
+        preconditions: [],
+        operations: [
+          {
+            kind: "put-document",
+            collection: "contract.commit-a",
+            document: { id: "a", value: 1 },
+            mode: "create",
+          },
+          {
+            kind: "put-document",
+            collection: "contract.commit-b",
+            document: { id: "b", value: 2 },
+            mode: "create",
+          },
+        ],
+      })).rejects.toBeDefined();
+      expect(await fixture.storage.collection("contract.commit-a").count(context)).toBe(0);
+      expect(await fixture.storage.collection("contract.commit-b").count(context)).toBe(0);
+    });
+
+    it("keeps committed data when the response is lost after commit", async () => {
+      if (fixture.injectAtomicFailure === undefined) return;
+      const request = {
+        requestId: "after-commit-failure",
+        preconditions: [{
+          kind: "document-absent" as const,
+          collection: "contract.response-loss",
+          id: "key",
+        }],
+        operations: [{
+          kind: "put-document" as const,
+          collection: "contract.response-loss",
+          document: { id: "key", batchId: "batch-1" },
+          mode: "create" as const,
+        }],
+      };
+      fixture.injectAtomicFailure("after-commit");
+      await expect(fixture.atomicWrite.execute(context, request))
+        .rejects.toThrow("Injected atomic write failure");
+      expect(
+        await fixture.storage.collection("contract.response-loss").get(context, "key"),
+      ).toEqual({ id: "key", batchId: "batch-1" });
+      await expect(fixture.atomicWrite.execute(context, request)).rejects.toMatchObject({
+        diagnostics: expect.arrayContaining([
+          expect.objectContaining({
+            code: StorageDiagnosticCode.ATOMIC_WRITE_PRECONDITION_FAILED,
+          }),
+        ]),
+      });
+      expect(await fixture.storage.collection("contract.response-loss").count(context)).toBe(1);
+    });
+
 
     it("allows exactly one concurrent create for one idempotency key", async () => {
       const attempts = await Promise.allSettled(

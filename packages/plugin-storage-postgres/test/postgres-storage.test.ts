@@ -38,15 +38,26 @@ if (postgresUrl === undefined) {
 
 const describeRealPostgres = postgresUrl === undefined ? describe.skip : describe;
 
+interface TestAtomicWriteFaultInjector {
+  hit(point:
+    | { readonly point: "after-operation"; readonly operationIndex: number }
+    | { readonly point: "before-commit" }
+    | { readonly point: "after-commit" }
+  ): void;
+}
+
 interface RunningEngine {
   readonly engine: Engine;
   readonly journal: PostgresMigrationJournal;
 }
 
-async function boot(connectionString: string): Promise<RunningEngine> {
+async function boot(
+  connectionString: string,
+  atomicWriteFault?: TestAtomicWriteFaultInjector,
+): Promise<RunningEngine> {
   const journal = createPostgresMigrationJournal({ connectionString });
   const engine = createEngine({
-    plugins: [storagePostgresPlugin({ connectionString })],
+    plugins: [storagePostgresPlugin({ connectionString }, atomicWriteFault)],
     migrationJournal: journal,
   });
   await engine.start();
@@ -72,10 +83,31 @@ function requirePostgresUrl(): string {
 describeRealPostgres("real PostgreSQL 17 storage", () => {
   describeStorageContract("postgresql", async () => {
     const scratch = await createScratchDatabase(requirePostgresUrl(), "contract");
-    const running = await boot(scratch.url);
+    let failure:
+      | { readonly point: "after-operation" | "before-commit" | "after-commit"; readonly operationIndex?: number }
+      | undefined;
+    const running = await boot(scratch.url, {
+      hit(point) {
+        if (
+          failure !== undefined &&
+          failure.point === point.point &&
+          (failure.operationIndex === undefined ||
+            ("operationIndex" in point && failure.operationIndex === point.operationIndex))
+        ) {
+          failure = undefined;
+          throw new Error("Injected atomic write failure");
+        }
+      },
+    });
     return {
       storage: running.engine.capability(StorageCapabilityToken),
       atomicWrite: running.engine.capability(AtomicWriteCapabilityToken),
+      injectAtomicFailure(point, operationIndex) {
+        failure = {
+          point,
+          ...(operationIndex === undefined ? {} : { operationIndex }),
+        };
+      },
       async dispose(): Promise<void> {
         await shutdown(running);
         await scratch.drop();
