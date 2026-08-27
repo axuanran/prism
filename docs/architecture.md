@@ -197,7 +197,7 @@ Durable bitemporal replay remains a Solution/host responsibility: Dataset finger
 
 `@prismengine/plugin-sdk` is the supported authoring facade over Kernel and public contracts; it exports no provider implementation. `@prismengine/platform` pins compatible public package versions and supplies a composition helper that enables calculation-memory, Quantity and Grain by default plus memory storage for development. Production hosts may replace storage at the composition root. Platform defaults never erase dependency edges: plugins that require Quantity/Grain still declare their Capability requirements (`packages/plugin-sdk/src/index.ts`, `packages/platform/src/index.ts`).
 
-Source manifests use exact `workspace:0.1.0`; `pnpm pack` converts them to public `0.1.0` dependencies. Platform package tests and tarball verification prevent an accidental floating or workspace dependency from becoming a release.
+Source manifests use exact `workspace:<release-version>` dependencies; `pnpm pack` converts them to the same public release version. Platform package tests and tarball verification prevent an accidental floating, stale, or workspace dependency from becoming a release.
 
 ## Generic Studio
 

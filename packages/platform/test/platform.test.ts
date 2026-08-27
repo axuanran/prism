@@ -68,7 +68,10 @@ describe("Prism platform distribution", () => {
 
     expect(manifest.version).toBe(PRISM_PLATFORM_VERSION);
     expect(Object.keys(manifest.dependencies).length).toBeGreaterThan(0);
-    expect(Object.values(manifest.dependencies).every((version) => version === "workspace:0.1.0"))
-      .toBe(true);
+    expect(
+      Object.values(manifest.dependencies).every(
+        (version) => version === `workspace:${manifest.version}`,
+      ),
+    ).toBe(true);
   });
 });

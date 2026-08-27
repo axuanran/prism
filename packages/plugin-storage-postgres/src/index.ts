@@ -25,7 +25,7 @@ export function storagePostgresPlugin(options: PostgresStorageOptions) {
   const handle = openDatabase(options);
   return definePlugin({
     id: "storage.postgres",
-    version: "0.1.1",
+    version: "0.1.2",
     provides: [StorageCapabilityToken, AtomicWriteCapabilityToken],
     migrations: postgresStorageMigrations(handle.db, handle.schema),
     register(context) {

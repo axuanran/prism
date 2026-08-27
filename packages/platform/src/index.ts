@@ -13,7 +13,7 @@ export * from "@prismengine/plugin-storage-postgres";
 export * from "@prismengine/plugin-http-fastify";
 export * from "@prismengine/plugin-organization-basic";
 
-export const PRISM_PLATFORM_VERSION = "0.1.1";
+export const PRISM_PLATFORM_VERSION = "0.1.2";
 
 /**
  * Default public distribution composition.
