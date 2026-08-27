@@ -47,6 +47,9 @@
       "path": "./packages/plugin-material-registry"
     },
     {
+      "path": "./packages/plugin-code-project"
+    },
+    {
       "path": "./packages/plugin-sdk"
     },
     {

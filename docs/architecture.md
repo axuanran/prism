@@ -207,6 +207,18 @@ Code Module Artifact ───────┘
 
 Plugins contribute `formula`, `operator`, `action`, `data-source`, `report`, `page-component` and `field-component` manifests through `project.materials`. `project.material-registry` is the single discovery surface used by visual editors, code tooling and runtimes; a duplicate material id/version is rejected rather than selected by plugin order.
 
+The catalogs are intentionally scoped:
+
+```text
+Installed catalog      Plugin contributions; globally browseable
+Draft catalog          Current Project Draft declarations; DECLARED / NOT_BUILT
+Release catalog        Exact built Code Materials pinned by a future Project Release
+```
+
+Selecting the highest installed version is a design-time convenience only. Published definitions and runtimes always use an exact material id, version and source identity. Publishing a Project Source does not register its declarations globally and does not make them runnable.
+
+Code Project edits use a `project.source-drafts` Document with `draftVersion` CAS. Keystrokes update that Document; they never create Resource revisions. Publication normalizes UTF-8 text to LF, validates NFC project-relative POSIX paths and case-fold collisions, sorts files, computes a canonical SHA-256 tree fingerprint and creates an immutable `project.source` Resource revision. Phase 2 stores text files only and reads Material declarations from `prism.materials.json`; executable artifacts and Project Releases begin only after a real build.
+
 ## Public distribution
 
 `@prismengine/plugin-sdk` is the supported authoring facade over Kernel and public contracts; it exports no provider implementation. `@prismengine/platform` pins compatible public package versions and supplies a composition helper that enables calculation-memory, Quantity and Grain by default plus memory storage for development. Production hosts may replace storage at the composition root. Platform defaults never erase dependency edges: plugins that require Quantity/Grain still declare their Capability requirements (`packages/plugin-sdk/src/index.ts`, `packages/platform/src/index.ts`).

@@ -16,6 +16,7 @@ const businessNavigation: NavItem[] = [
 ];
 
 const developerNavigation: NavItem[] = [
+  { to: '/studio/projects', label: '代码项目', shortLabel: 'CODE' },
   { to: '/developer/capabilities', label: '能力检查器', shortLabel: 'DEV' },
   { to: '/developer/pipelines', label: '流水线编辑器', shortLabel: 'FLOW' },
 ];

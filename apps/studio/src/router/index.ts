@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router';
 import CapabilityInspectorView from '../views/CapabilityInspectorView.vue';
+import CodeProjectsView from '../views/CodeProjectsView.vue';
 import DashboardView from '../views/DashboardView.vue';
 import OrganizationView from '../views/OrganizationView.vue';
 import PipelineEditorView from '../views/PipelineEditorView.vue';
@@ -25,6 +26,12 @@ export const router = createRouter({
       name: 'organization',
       component: OrganizationView,
       meta: { title: '组织', eyebrow: '业务配置' },
+    },
+    {
+      path: '/studio/projects/:slug?',
+      name: 'code-projects',
+      component: CodeProjectsView,
+      meta: { title: '代码项目', eyebrow: 'Programmable Studio' },
     },
     {
       path: '/developer/capabilities',

@@ -35,6 +35,9 @@
     },
     {
       "path": "../plugin-material-registry"
+    },
+    {
+      "path": "../plugin-code-project"
     }
   ]
 }

@@ -1,10 +1,16 @@
 import type {
   Assignment,
+  CodeProjectSpec,
+  DraftMaterialCatalogItem,
   Diagnostic,
   OperationDescriptor,
   OrganizationUnit,
   Person,
   PipelineExecutionResponse,
+  ProjectSourceDiff,
+  ProjectSourceDraft,
+  ProjectSourceFile,
+  PublishedProjectSource,
   Resource,
   ResourceStatus,
   ResourceTypeDescriptor,
@@ -19,6 +25,10 @@ const people: Person[] = [
 ];
 const units: OrganizationUnit[] = [];
 const assignments: Assignment[] = [];
+
+let codeProject: Resource<CodeProjectSpec> | null = null;
+let sourceDraft: ProjectSourceDraft | null = null;
+const sourceRevisions: Resource<PublishedProjectSource>[] = [];
 
 // Domain-neutral mock data. Hospital-specific resources live in the private
 // Solution repository; Core Studio exercises only the generic Resource model.
@@ -188,6 +198,117 @@ export const mockApi: StudioApi = {
   },
   async validatePipeline() {
     return { valid: true, diagnostics: [] };
+  },
+  async listCodeProjects() {
+    return codeProject === null ? [] : [cloneValue(codeProject)];
+  },
+  async createCodeProject(body) {
+    const id = body.id ?? body.slug;
+    codeProject = {
+      id,
+      kind: 'project.code-project',
+      name: body.name,
+      revision: 1,
+      status: 'published',
+      spec: {
+        slug: body.slug,
+        name: body.name,
+        sourceId: `${id}:source`,
+        ...(body.description ? { description: body.description } : {}),
+      },
+      createdAt: now,
+      updatedAt: now,
+    };
+    const files: readonly ProjectSourceFile[] = [
+      { path: 'package.json', mediaType: 'application/json', content: '{\\n  \"private\": true\\n}\\n' },
+      { path: 'prism.project.json', mediaType: 'application/json', content: '{\\n  \"schemaVersion\": \"1.0.0\"\\n}\\n' },
+      { path: 'prism.materials.json', mediaType: 'application/json', content: '{\\n  \"schemaVersion\": \"1.0.0\",\\n  \"materials\": []\\n}\\n' },
+      { path: 'src/client/index.tsx', mediaType: 'text/typescript-jsx', content: 'export async function mount() {}\\n' },
+      { path: 'src/server/index.ts', mediaType: 'text/typescript', content: 'export default {};\\n' },
+      { path: 'tests/project.test.ts', mediaType: 'text/typescript', content: 'export default async () => ({ passed: true });\\n' },
+    ];
+    sourceDraft = {
+      id,
+      projectId: id,
+      sourceId: `${id}:source`,
+      baseSourceRevision: null,
+      draftVersion: 1,
+      files,
+      updatedAt: now,
+      updatedBy: 'studio-builder',
+    };
+    return { project: cloneValue(codeProject), draft: cloneValue(sourceDraft) };
+  },
+  async getProjectSourceDraft() {
+    if (sourceDraft === null) throw new Error('Project draft not found.');
+    return cloneValue(sourceDraft);
+  },
+  async saveProjectSourceDraft(_projectId, draftVersion, files) {
+    if (sourceDraft === null || sourceDraft.draftVersion !== draftVersion) {
+      throw new Error('PROJECT_SOURCE_DRAFT_CONFLICT');
+    }
+    sourceDraft = {
+      ...sourceDraft,
+      draftVersion: draftVersion + 1,
+      files: cloneValue(files),
+      updatedAt: new Date().toISOString(),
+    };
+    return cloneValue(sourceDraft);
+  },
+  async listDraftMaterials(): Promise<readonly DraftMaterialCatalogItem[]> {
+    if (sourceDraft === null) return [];
+    const source = sourceDraft.files.find((file) => file.path === 'prism.materials.json');
+    if (!source) return [];
+    const parsed = JSON.parse(source.content) as { materials?: DraftMaterialCatalogItem['manifest'][] };
+    return (parsed.materials ?? []).map((manifest) => ({
+      manifest,
+      status: 'DECLARED',
+      buildStatus: 'NOT_BUILT',
+    }));
+  },
+  async publishProjectSource() {
+    if (codeProject === null || sourceDraft === null) throw new Error('Project draft not found.');
+    const revision = sourceRevisions.length + 1;
+    const published: Resource<PublishedProjectSource> = {
+      id: codeProject.spec.sourceId,
+      kind: 'project.source',
+      name: `${codeProject.name} Source`,
+      revision,
+      status: 'published',
+      spec: {
+        projectId: codeProject.id,
+        files: cloneValue(sourceDraft.files),
+        fingerprint: String(revision).padStart(64, '0'),
+      },
+      createdAt: now,
+      updatedAt: new Date().toISOString(),
+    };
+    sourceRevisions.push(published);
+    sourceDraft = {
+      ...sourceDraft,
+      baseSourceRevision: revision,
+      draftVersion: sourceDraft.draftVersion + 1,
+    };
+    return cloneValue(published);
+  },
+  async listProjectSourceRevisions() {
+    return cloneValue(sourceRevisions);
+  },
+  async diffProjectSource(projectId, from, to): Promise<ProjectSourceDiff> {
+    const filesAt = (identity: number | 'draft') => identity === 'draft'
+      ? sourceDraft?.files ?? []
+      : sourceRevisions.find((item) => item.revision === identity)?.spec.files ?? [];
+    const left = new Map(filesAt(from).map((file) => [file.path, file.content]));
+    const right = new Map(filesAt(to).map((file) => [file.path, file.content]));
+    return {
+      projectId,
+      from,
+      to,
+      added: [...right.keys()].filter((path) => !left.has(path)),
+      removed: [...left.keys()].filter((path) => !right.has(path)),
+      changed: [...right.keys()].filter((path) => left.has(path) && left.get(path) !== right.get(path)),
+      materialChanges: { added: [], removed: [], changed: [] },
+    };
   },
   async executePipeline(): Promise<PipelineExecutionResponse> {
     return { status: 'success', outputs: {}, diagnostics: [], trace: emptyTrace, planHash: 'offline' };

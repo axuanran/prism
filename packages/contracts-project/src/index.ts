@@ -9,6 +9,7 @@ import {
   type ValidationResult,
 } from "@prismengine/kernel";
 
+/** Authority of the definition only; CODE materials remain usable by visual builders. */
 export type MaterialAuthoringMode = "VISUAL" | "CODE";
 
 export type MaterialKind =
@@ -35,6 +36,50 @@ export interface MaterialManifest {
   readonly configurationSchema?: JsonValue;
   readonly editorSchema?: JsonValue;
   readonly traceProjection?: JsonValue;
+}
+
+export interface CodeProjectDefinition {
+  readonly slug: string;
+  readonly name: string;
+  readonly sourceId: string;
+  readonly description?: string;
+}
+
+export interface ProjectSourceFile {
+  /** NFC-normalized, project-relative POSIX path. */
+  readonly path: string;
+  readonly mediaType: string;
+  /** UTF-8 text normalized to LF before publication. */
+  readonly content: string;
+}
+
+export interface DeclaredCodeMaterialManifest extends MaterialManifest {
+  readonly authoringMode: "CODE";
+  readonly entry: string;
+  readonly exportName: string;
+  readonly requiredCapabilities?: readonly string[];
+}
+
+export interface ProjectSourceDefinition {
+  readonly projectId: string;
+  readonly files: readonly ProjectSourceFile[];
+}
+
+export interface ProjectSourceDraft {
+  readonly id: string;
+  readonly projectId: string;
+  readonly sourceId: string;
+  readonly baseSourceRevision: number | null;
+  readonly draftVersion: number;
+  readonly files: readonly ProjectSourceFile[];
+  readonly updatedAt: string;
+  readonly updatedBy: string;
+}
+
+export interface DraftMaterialCatalogItem {
+  readonly manifest: DeclaredCodeMaterialManifest;
+  readonly status: "DECLARED";
+  readonly buildStatus: "NOT_BUILT";
 }
 
 export interface VisualMaterialSource {
@@ -71,13 +116,14 @@ export interface ProjectReleaseManifest {
   readonly materials: readonly ProjectMaterialRef[];
 }
 
-/** Plugins contribute executable or visual materials through one registry. */
+/** Installed Plugin catalog only. Draft and Release catalogs are project-scoped. */
 export const MaterialExtensionPoint = defineExtensionPoint<MaterialManifest>({
   id: "project.materials",
   version: "1.0.0",
 });
 
 export interface MaterialRegistryCapability {
+  /** Design-time browsing; absent version resolves the highest installed version. */
   list(): readonly MaterialManifest[];
   get(id: string, version?: string): MaterialManifest | null;
 }

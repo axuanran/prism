@@ -15,6 +15,7 @@ import type { HttpCapability, HttpRequest, HttpRoute } from "./http.js";
 const DEFAULT_PORT = 3000;
 const DEFAULT_HOST = "127.0.0.1";
 const PRINCIPAL_HEADER = "x-principal-id";
+const PRINCIPAL_ROLES_HEADER = "x-principal-roles";
 const CORRELATION_HEADER = "x-correlation-id";
 const AS_OF_HEADER = "x-as-of";
 
@@ -31,7 +32,7 @@ export function createHttpPlugin(options: HttpPluginOptions) {
 
   return definePlugin({
     id: "http.fastify",
-    version: "0.1.0",
+    version: "0.1.6",
     description: "Explicit Fastify HTTP transport for Prism Engine routes.",
     provides: [HttpCapabilityToken],
 
@@ -152,7 +153,7 @@ function configureErrors(server: FastifyInstance, report: (error: unknown) => vo
 function toHttpRequest(request: FastifyRequest): HttpRequest {
   const principal: Principal = {
     id: firstHeader(request.headers[PRINCIPAL_HEADER]) ?? "anonymous",
-    roles: [],
+    roles: parseRoles(firstHeader(request.headers[PRINCIPAL_ROLES_HEADER])),
   };
   const call: CallContext = {
     principal,
@@ -173,4 +174,10 @@ function toHttpRequest(request: FastifyRequest): HttpRequest {
 
 function firstHeader(value: string | readonly string[] | undefined): string | undefined {
   return typeof value === "string" ? value : value?.[0];
+}
+
+function parseRoles(value: string | undefined): readonly string[] {
+  return value === undefined
+    ? []
+    : value.split(",").map((role) => role.trim()).filter(Boolean);
 }

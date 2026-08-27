@@ -243,6 +243,65 @@ export interface PipelineExecutionResponse {
   readonly planHash: string;
 }
 
+export interface CodeProjectSpec {
+  readonly slug: string;
+  readonly name: string;
+  readonly sourceId: string;
+  readonly description?: string;
+}
+
+export interface ProjectSourceFile {
+  readonly path: string;
+  readonly mediaType: string;
+  readonly content: string;
+}
+
+export interface ProjectSourceDraft {
+  readonly id: string;
+  readonly projectId: string;
+  readonly sourceId: string;
+  readonly baseSourceRevision: number | null;
+  readonly draftVersion: number;
+  readonly files: readonly ProjectSourceFile[];
+  readonly updatedAt: string;
+  readonly updatedBy: string;
+}
+
+export interface PublishedProjectSource {
+  readonly projectId: string;
+  readonly fingerprint: string;
+  readonly files: readonly ProjectSourceFile[];
+}
+
+export interface DraftMaterialCatalogItem {
+  readonly manifest: {
+    readonly id: string;
+    readonly version: string;
+    readonly kind: string;
+    readonly authoringMode: 'CODE';
+    readonly displayName: string;
+    readonly category: string;
+    readonly runtimeTarget: string;
+    readonly entry: string;
+    readonly exportName: string;
+  };
+  readonly status: 'DECLARED';
+  readonly buildStatus: 'NOT_BUILT';
+}
+
+export interface ProjectSourceDiff {
+  readonly projectId: string;
+  readonly from: number | 'draft';
+  readonly to: number | 'draft';
+  readonly added: readonly string[];
+  readonly removed: readonly string[];
+  readonly changed: readonly string[];
+  readonly materialChanges: {
+    readonly added: readonly string[];
+    readonly removed: readonly string[];
+    readonly changed: readonly string[];
+  };
+}
 
 export interface StudioApi {
   health(): Promise<{ readonly status: 'ok' }>;
@@ -264,4 +323,12 @@ export interface StudioApi {
   listOperations(): Promise<readonly OperationDescriptor[]>;
   validatePipeline(spec: PipelineSpec): Promise<{ readonly valid: boolean; readonly diagnostics: readonly Diagnostic[] }>;
   executePipeline(spec: PipelineSpec, inputs?: Readonly<Record<string, DatasetPayload>>): Promise<PipelineExecutionResponse>;
+  listCodeProjects(): Promise<readonly Resource<CodeProjectSpec>[]>;
+  createCodeProject(body: { readonly id?: string; readonly slug: string; readonly name: string; readonly description?: string }): Promise<{ readonly project: Resource<CodeProjectSpec>; readonly draft: ProjectSourceDraft }>;
+  getProjectSourceDraft(projectId: string): Promise<ProjectSourceDraft>;
+  saveProjectSourceDraft(projectId: string, draftVersion: number, files: readonly ProjectSourceFile[]): Promise<ProjectSourceDraft>;
+  listDraftMaterials(projectId: string): Promise<readonly DraftMaterialCatalogItem[]>;
+  publishProjectSource(projectId: string, draftVersion: number): Promise<Resource<PublishedProjectSource>>;
+  listProjectSourceRevisions(projectId: string): Promise<readonly Resource<PublishedProjectSource>[]>;
+  diffProjectSource(projectId: string, from: number | 'draft', to: number | 'draft'): Promise<ProjectSourceDiff>;
 }

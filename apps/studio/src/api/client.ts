@@ -1,14 +1,20 @@
 import { mockApi } from '../mocks/engine';
 import type {
   Assignment,
+  CodeProjectSpec,
   DatasetPayload,
   Diagnostic,
+  DraftMaterialCatalogItem,
   EngineInspection,
   OperationDescriptor,
   OrganizationUnit,
   Person,
   PipelineExecutionResponse,
   PipelineSpec,
+  ProjectSourceDiff,
+  ProjectSourceDraft,
+  ProjectSourceFile,
+  PublishedProjectSource,
   Resource,
   ResourceStatus,
   ResourceTypeDescriptor,
@@ -90,6 +96,8 @@ class LiveStudioApi implements StudioApi {
     const headers = new Headers(init.headers);
     headers.set('accept', 'application/json');
     headers.set('x-correlation-id', correlationId());
+    headers.set('x-principal-id', 'studio-builder');
+    headers.set('x-principal-roles', 'BUILDER,USER');
     if (init.body !== undefined) {
       headers.set('content-type', 'application/json');
     }
@@ -231,6 +239,46 @@ class LiveStudioApi implements StudioApi {
     });
   }
 
+  listCodeProjects(): Promise<readonly Resource<CodeProjectSpec>[]> {
+    return this.#request('/api/code-projects');
+  }
+
+  createCodeProject(body: { readonly id?: string; readonly slug: string; readonly name: string; readonly description?: string }): Promise<{ readonly project: Resource<CodeProjectSpec>; readonly draft: ProjectSourceDraft }> {
+    return this.#request('/api/code-projects', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  }
+
+  getProjectSourceDraft(projectId: string): Promise<ProjectSourceDraft> {
+    return this.#request(`/api/code-projects/${encodeURIComponent(projectId)}/draft`);
+  }
+
+  saveProjectSourceDraft(projectId: string, draftVersion: number, files: readonly ProjectSourceFile[]): Promise<ProjectSourceDraft> {
+    return this.#request(`/api/code-projects/${encodeURIComponent(projectId)}/draft/${draftVersion}`, {
+      method: 'PUT',
+      body: JSON.stringify({ files }),
+    });
+  }
+
+  listDraftMaterials(projectId: string): Promise<readonly DraftMaterialCatalogItem[]> {
+    return this.#request(`/api/code-projects/${encodeURIComponent(projectId)}/draft/materials`);
+  }
+
+  publishProjectSource(projectId: string, draftVersion: number): Promise<Resource<PublishedProjectSource>> {
+    return this.#request(`/api/code-projects/${encodeURIComponent(projectId)}/draft/${draftVersion}/publish`, {
+      method: 'POST',
+    });
+  }
+
+  listProjectSourceRevisions(projectId: string): Promise<readonly Resource<PublishedProjectSource>[]> {
+    return this.#request(`/api/code-projects/${encodeURIComponent(projectId)}/source/revisions`);
+  }
+
+  diffProjectSource(projectId: string, from: number | 'draft', to: number | 'draft'): Promise<ProjectSourceDiff> {
+    const search = new URLSearchParams({ from: String(from), to: String(to) });
+    return this.#request(`/api/code-projects/${encodeURIComponent(projectId)}/source/diff?${search.toString()}`);
+  }
 }
 
 const useMock = import.meta.env.VITE_USE_MOCKS === 'true';

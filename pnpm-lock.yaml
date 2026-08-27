@@ -41,6 +41,9 @@ importers:
       '@vue-flow/core':
         specifier: ^1.48.2
         version: 1.48.2(vue@3.5.41(@typescript/typescript6@6.0.2))
+      monaco-editor:
+        specifier: ^0.52.2
+        version: 0.52.2
       pinia:
         specifier: ^3.0.3
         version: 3.0.4(@typescript/typescript6@6.0.2)(vue@3.5.41(@typescript/typescript6@6.0.2))
@@ -94,10 +97,10 @@ importers:
   packages/contracts-project:
     dependencies:
       '@prismengine/contracts-data':
-        specifier: workspace:0.1.5
+        specifier: workspace:0.1.6
         version: link:../contracts-data
       '@prismengine/kernel':
-        specifier: workspace:0.1.5
+        specifier: workspace:0.1.6
         version: link:../kernel
 
   packages/contracts-storage:
@@ -128,31 +131,34 @@ importers:
   packages/platform:
     dependencies:
       '@prismengine/plugin-calculation-memory':
-        specifier: workspace:0.1.5
+        specifier: workspace:0.1.6
         version: link:../plugin-calculation-memory
+      '@prismengine/plugin-code-project':
+        specifier: workspace:0.1.6
+        version: link:../plugin-code-project
       '@prismengine/plugin-dataset-grain':
-        specifier: workspace:0.1.5
+        specifier: workspace:0.1.6
         version: link:../plugin-dataset-grain
       '@prismengine/plugin-http-fastify':
-        specifier: workspace:0.1.5
+        specifier: workspace:0.1.6
         version: link:../plugin-http-fastify
       '@prismengine/plugin-material-registry':
-        specifier: workspace:0.1.5
+        specifier: workspace:0.1.6
         version: link:../plugin-material-registry
       '@prismengine/plugin-organization-basic':
-        specifier: workspace:0.1.5
+        specifier: workspace:0.1.6
         version: link:../plugin-organization-basic
       '@prismengine/plugin-sdk':
-        specifier: workspace:0.1.5
+        specifier: workspace:0.1.6
         version: link:../plugin-sdk
       '@prismengine/plugin-storage-memory':
-        specifier: workspace:0.1.5
+        specifier: workspace:0.1.6
         version: link:../plugin-storage-memory
       '@prismengine/plugin-storage-postgres':
-        specifier: workspace:0.1.5
+        specifier: workspace:0.1.6
         version: link:../plugin-storage-postgres
       '@prismengine/plugin-type-quantity':
-        specifier: workspace:0.1.5
+        specifier: workspace:0.1.6
         version: link:../plugin-type-quantity
 
   packages/plugin-calculation-memory:
@@ -169,6 +175,37 @@ importers:
       '@sinclair/typebox':
         specifier: ^0.34.41
         version: 0.34.52
+
+  packages/plugin-code-project:
+    dependencies:
+      '@prismengine/contracts-data':
+        specifier: workspace:0.1.6
+        version: link:../contracts-data
+      '@prismengine/contracts-project':
+        specifier: workspace:0.1.6
+        version: link:../contracts-project
+      '@prismengine/contracts-storage':
+        specifier: workspace:0.1.6
+        version: link:../contracts-storage
+      '@prismengine/kernel':
+        specifier: workspace:0.1.6
+        version: link:../kernel
+      '@prismengine/plugin-http-fastify':
+        specifier: workspace:0.1.6
+        version: link:../plugin-http-fastify
+      '@sinclair/typebox':
+        specifier: ^0.34.41
+        version: 0.34.52
+    devDependencies:
+      '@prismengine/plugin-storage-memory':
+        specifier: workspace:0.1.6
+        version: link:../plugin-storage-memory
+      '@prismengine/plugin-storage-postgres':
+        specifier: workspace:0.1.6
+        version: link:../plugin-storage-postgres
+      '@prismengine/testing':
+        specifier: workspace:0.1.6
+        version: link:../testing
 
   packages/plugin-dataset-grain:
     dependencies:
@@ -207,13 +244,13 @@ importers:
   packages/plugin-material-registry:
     dependencies:
       '@prismengine/contracts-data':
-        specifier: workspace:0.1.5
+        specifier: workspace:0.1.6
         version: link:../contracts-data
       '@prismengine/contracts-project':
-        specifier: workspace:0.1.5
+        specifier: workspace:0.1.6
         version: link:../contracts-project
       '@prismengine/kernel':
-        specifier: workspace:0.1.5
+        specifier: workspace:0.1.6
         version: link:../kernel
 
   packages/plugin-organization-basic:
@@ -241,22 +278,22 @@ importers:
   packages/plugin-sdk:
     dependencies:
       '@prismengine/contracts-calculation':
-        specifier: workspace:0.1.5
+        specifier: workspace:0.1.6
         version: link:../contracts-calculation
       '@prismengine/contracts-data':
-        specifier: workspace:0.1.5
+        specifier: workspace:0.1.6
         version: link:../contracts-data
       '@prismengine/contracts-organization':
-        specifier: workspace:0.1.5
+        specifier: workspace:0.1.6
         version: link:../contracts-organization
       '@prismengine/contracts-project':
-        specifier: workspace:0.1.5
+        specifier: workspace:0.1.6
         version: link:../contracts-project
       '@prismengine/contracts-storage':
-        specifier: workspace:0.1.5
+        specifier: workspace:0.1.6
         version: link:../contracts-storage
       '@prismengine/kernel':
-        specifier: workspace:0.1.5
+        specifier: workspace:0.1.6
         version: link:../kernel
 
   packages/plugin-storage-memory:
@@ -1629,6 +1666,9 @@ packages:
 
   mitt@3.0.1:
     resolution: {integrity: sha512-vKivATfr97l2/QBCYAkXYDbrIWPM2IIKEl7YPhjCvKlG3kE2gm+uBo6nEXK3M5/Ffh/FLpKExzOQ3JJoJGFKBw==}
+
+  monaco-editor@0.52.2:
+    resolution: {integrity: sha512-GEQWEZmfkOGLdd3XK8ryrfWz3AIP8YymVXiPHEdewrUq7mh0qrKrfHLNCXcbB6sTnMLnOZ3ztSiKcciFUkIJwQ==}
 
   ms@2.1.3:
     resolution: {integrity: sha512-6FlzubTLZG3J2a/NVCAleEhjzq5oxgHyaCU9yYXvcLsvoVaHJq/s5xXI6/XXP6tz7R9xAOtHnSO/tXtF3WRTlA==}
@@ -3253,6 +3293,8 @@ snapshots:
       brace-expansion: 1.1.18
 
   mitt@3.0.1: {}
+
+  monaco-editor@0.52.2: {}
 
   ms@2.1.3: {}
 
