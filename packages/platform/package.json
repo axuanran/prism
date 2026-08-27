@@ -1,6 +1,6 @@
 {
   "name": "@prismengine/platform",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -19,16 +19,16 @@
     "build": "tsc --build"
   },
   "dependencies": {
-    "@prismengine/plugin-calculation-memory": "workspace:0.1.6",
-    "@prismengine/plugin-code-project": "workspace:0.1.6",
-    "@prismengine/plugin-dataset-grain": "workspace:0.1.6",
-    "@prismengine/plugin-http-fastify": "workspace:0.1.6",
-    "@prismengine/plugin-organization-basic": "workspace:0.1.6",
-    "@prismengine/plugin-material-registry": "workspace:0.1.6",
-    "@prismengine/plugin-sdk": "workspace:0.1.6",
-    "@prismengine/plugin-storage-memory": "workspace:0.1.6",
-    "@prismengine/plugin-storage-postgres": "workspace:0.1.6",
-    "@prismengine/plugin-type-quantity": "workspace:0.1.6"
+    "@prismengine/plugin-calculation-memory": "workspace:0.1.7",
+    "@prismengine/plugin-code-project": "workspace:0.1.7",
+    "@prismengine/plugin-dataset-grain": "workspace:0.1.7",
+    "@prismengine/plugin-http-fastify": "workspace:0.1.7",
+    "@prismengine/plugin-organization-basic": "workspace:0.1.7",
+    "@prismengine/plugin-material-registry": "workspace:0.1.7",
+    "@prismengine/plugin-sdk": "workspace:0.1.7",
+    "@prismengine/plugin-storage-memory": "workspace:0.1.7",
+    "@prismengine/plugin-storage-postgres": "workspace:0.1.7",
+    "@prismengine/plugin-type-quantity": "workspace:0.1.7"
   },
   "license": "Apache-2.0",
   "repository": {

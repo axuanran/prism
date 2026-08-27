@@ -10,7 +10,7 @@ import { definePlugin, type ExtensionRegistry } from "@prismengine/kernel";
 
 export const materialRegistryPlugin = definePlugin({
   id: "project.material-registry",
-  version: "0.1.6",
+  version: "0.1.7",
   provides: [MaterialRegistryCapabilityToken],
   register(context) {
     context.provide(
