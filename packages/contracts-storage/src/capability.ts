@@ -1,4 +1,8 @@
-import type { CallContext } from "@prismengine/contracts-data";
+import type {
+  CallContext,
+  JsonObject,
+  JsonPrimitive,
+} from "@prismengine/contracts-data";
 import { defineCapability } from "@prismengine/kernel";
 import type { Resource, ResourceQuery } from "@prismengine/kernel";
 
@@ -122,6 +126,65 @@ export interface DocumentCollection<TDocument extends { readonly id: string }> {
   count(context: CallContext, query?: DocumentQuery): Promise<number>;
 }
 
+export interface AtomicDocument extends JsonObject {
+  readonly id: string;
+}
+
+export type AtomicWritePrecondition =
+  | {
+      readonly kind: "document-absent";
+      readonly collection: string;
+      readonly id: string;
+    }
+  | {
+      readonly kind: "document-present";
+      readonly collection: string;
+      readonly id: string;
+      readonly fields?: Readonly<Record<string, JsonPrimitive>>;
+    };
+
+export type AtomicWriteOperation =
+  | {
+      readonly kind: "put-document";
+      readonly collection: string;
+      readonly document: AtomicDocument;
+      readonly mode: "create" | "upsert" | "replace";
+    }
+  | {
+      readonly kind: "delete-document";
+      readonly collection: string;
+      readonly id: string;
+    };
+
+export interface AtomicWriteRequest {
+  readonly requestId: string;
+  readonly preconditions: readonly AtomicWritePrecondition[];
+  readonly operations: readonly AtomicWriteOperation[];
+}
+
+export interface AtomicWriteResult {
+  readonly requestId: string;
+  readonly operationCount: number;
+}
+
+/**
+ * Declarative single-provider atomic write. The provider owns transaction
+ * execution; callers cannot run code, I/O, or database-specific operations
+ * inside the atomic boundary.
+ */
+export interface AtomicWriteCapability {
+  execute(
+    context: CallContext,
+    request: AtomicWriteRequest,
+  ): Promise<AtomicWriteResult>;
+}
+
+export const AtomicWriteCapabilityToken =
+  defineCapability<AtomicWriteCapability>({
+    id: "storage.atomic-write",
+    version: "1.0.0",
+  });
+
 export interface StorageCapability {
   readonly resources: ResourceStore;
 
@@ -145,6 +208,8 @@ export const StorageDiagnosticCode = {
   RESOURCE_PUBLISHED_IMMUTABLE: "RESOURCE_PUBLISHED_IMMUTABLE",
   RESOURCE_KIND_UNKNOWN: "RESOURCE_KIND_UNKNOWN",
   RESOURCE_VALIDATION_FAILED: "RESOURCE_VALIDATION_FAILED",
+  ATOMIC_WRITE_INVALID: "ATOMIC_WRITE_INVALID",
+  ATOMIC_WRITE_PRECONDITION_FAILED: "ATOMIC_WRITE_PRECONDITION_FAILED",
 } as const;
 
 export const ResourceEventType = {

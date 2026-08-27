@@ -148,6 +148,8 @@ Published content is permanently immutable. PostgreSQL enforces this with a `BEF
 
 Migrations belong to the plugin that owns the tables. Kernel orders/runs them and writes successful IDs through a journal. V0.1 migrations are forward-only and must be idempotent. A journal created from a connection string owns a separate pool; its creator calls `dispose()`.
 
+`storage.atomic-write` accepts a declaration of document preconditions and put/delete operations. It never exposes a transaction callback or provider client. One provider executes one plan: memory applies it to temporary collection copies before swapping them, while PostgreSQL evaluates it inside one database transaction with advisory locks for absent-document races. Cross-provider transactions and Resource mutations are outside the V1 contract.
+
 Memory and PostgreSQL import one provider-independent `describeStorageContract` suite. CI uses real PostgreSQL 17 and fails if the persistence suite executes zero tests.
 
 ## Arrow Dataset boundary

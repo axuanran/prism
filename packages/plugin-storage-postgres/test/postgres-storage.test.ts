@@ -5,7 +5,10 @@ import {
   systemCallContext,
 } from "@prismengine/contracts-data";
 import type { DecimalString } from "@prismengine/contracts-data";
-import { StorageCapabilityToken } from "@prismengine/contracts-storage";
+import {
+  AtomicWriteCapabilityToken,
+  StorageCapabilityToken,
+} from "@prismengine/contracts-storage";
 import { createEngine } from "@prismengine/kernel";
 import type { Engine, Resource } from "@prismengine/kernel";
 import {
@@ -72,6 +75,7 @@ describeRealPostgres("real PostgreSQL 17 storage", () => {
     const running = await boot(scratch.url);
     return {
       storage: running.engine.capability(StorageCapabilityToken),
+      atomicWrite: running.engine.capability(AtomicWriteCapabilityToken),
       async dispose(): Promise<void> {
         await shutdown(running);
         await scratch.drop();

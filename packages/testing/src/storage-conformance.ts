@@ -4,12 +4,16 @@ import {
   assertJsonValue,
   systemCallContext,
 } from "@prismengine/contracts-data";
-import type { StorageCapability } from "@prismengine/contracts-storage";
+import type {
+  AtomicWriteCapability,
+  StorageCapability,
+} from "@prismengine/contracts-storage";
 import { StorageDiagnosticCode } from "@prismengine/contracts-storage";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 export interface StorageContractFixture {
   readonly storage: StorageCapability;
+  readonly atomicWrite: AtomicWriteCapability;
   dispose(): Promise<void>;
 }
 
@@ -375,5 +379,165 @@ export function describeStorageContract(
       expect(actual.code).toBe(expected.code);
       expect(actual.details?.path).toBe("/spec/nested/bad");
     });
+    it("atomically writes across collections and enforces document modes", async () => {
+      const result = await fixture.atomicWrite.execute(context, {
+        requestId: "atomic-create",
+        preconditions: [
+          { kind: "document-absent", collection: "contract.batches", id: "batch-1" },
+        ],
+        operations: [
+          {
+            kind: "put-document",
+            collection: "contract.batches",
+            document: { id: "batch-1", status: "SUCCESS" },
+            mode: "create",
+          },
+          {
+            kind: "put-document",
+            collection: "contract.results",
+            document: { id: "result-1", batchId: "batch-1", value: "10" },
+            mode: "create",
+          },
+        ],
+      });
+      expect(result).toEqual({ requestId: "atomic-create", operationCount: 2 });
+      expect(
+        await fixture.storage.collection("contract.batches").get(context, "batch-1"),
+      ).toEqual({ id: "batch-1", status: "SUCCESS" });
+      expect(
+        await fixture.storage.collection("contract.results").get(context, "result-1"),
+      ).toEqual({ id: "result-1", batchId: "batch-1", value: "10" });
+
+      await fixture.atomicWrite.execute(context, {
+        requestId: "atomic-replace",
+        preconditions: [{
+          kind: "document-present",
+          collection: "contract.batches",
+          id: "batch-1",
+          fields: { status: "SUCCESS" },
+        }],
+        operations: [{
+          kind: "put-document",
+          collection: "contract.batches",
+          document: { id: "batch-1", status: "ARCHIVED" },
+          mode: "replace",
+        }],
+      });
+      expect(
+        await fixture.storage.collection("contract.batches").get(context, "batch-1"),
+      ).toEqual({ id: "batch-1", status: "ARCHIVED" });
+    });
+
+    it("rolls back every collection when a precondition fails", async () => {
+      await fixture.storage.collection<TestDocument>("contract.atomic-existing").put(
+        context,
+        { id: "known", team: "red", score: 1, active: true },
+      );
+      let error: unknown;
+      try {
+        await fixture.atomicWrite.execute(context, {
+          requestId: "atomic-conflict",
+          preconditions: [{
+            kind: "document-absent",
+            collection: "contract.atomic-existing",
+            id: "known",
+          }],
+          operations: [
+            {
+              kind: "put-document",
+              collection: "contract.atomic-a",
+              document: { id: "a", value: 1 },
+              mode: "create",
+            },
+            {
+              kind: "put-document",
+              collection: "contract.atomic-b",
+              document: { id: "b", value: 2 },
+              mode: "create",
+            },
+          ],
+        });
+      } catch (caught) {
+        error = caught;
+      }
+      expect(diagnostic(error).code).toBe(
+        StorageDiagnosticCode.ATOMIC_WRITE_PRECONDITION_FAILED,
+      );
+      expect(await fixture.storage.collection("contract.atomic-a").count(context)).toBe(0);
+      expect(await fixture.storage.collection("contract.atomic-b").count(context)).toBe(0);
+    });
+
+    it("rolls back writes when a later operation conflicts", async () => {
+      const blockers = fixture.storage.collection<{
+        readonly id: string;
+        readonly occupied: boolean;
+      }>("contract.atomic-blockers");
+      for (let failureIndex = 0; failureIndex < 4; failureIndex += 1) {
+        const blockerId = `blocker-${failureIndex}`;
+        await blockers.put(context, { id: blockerId, occupied: true });
+        const operations = Array.from({ length: 4 }, (_, index) => ({
+          kind: "put-document" as const,
+          collection: index === failureIndex
+            ? "contract.atomic-blockers"
+            : `contract.atomic-position-${failureIndex}`,
+          document: {
+            id: index === failureIndex ? blockerId : `written-${index}`,
+            index,
+          },
+          mode: "create" as const,
+        }));
+        let error: unknown;
+        try {
+          await fixture.atomicWrite.execute(context, {
+            requestId: `operation-failure-${failureIndex}`,
+            preconditions: [],
+            operations,
+          });
+        } catch (caught) {
+          error = caught;
+        }
+        expect(diagnostic(error).code).toBe(
+          StorageDiagnosticCode.ATOMIC_WRITE_PRECONDITION_FAILED,
+        );
+        expect(
+          await fixture.storage
+            .collection(`contract.atomic-position-${failureIndex}`)
+            .count(context),
+        ).toBe(0);
+      }
+    });
+
+    it("allows exactly one concurrent create for one idempotency key", async () => {
+      const attempts = await Promise.allSettled(
+        Array.from({ length: 20 }, (_, index) =>
+          fixture.atomicWrite.execute(context, {
+            requestId: `concurrent-${index}`,
+            preconditions: [{
+              kind: "document-absent",
+              collection: "contract.idempotency",
+              id: "same-fingerprint",
+            }],
+            operations: [{
+              kind: "put-document",
+              collection: "contract.idempotency",
+              document: {
+                id: "same-fingerprint",
+                batchId: `batch-${index}`,
+              },
+              mode: "create",
+            }],
+          })),
+      );
+      expect(attempts.filter((attempt) => attempt.status === "fulfilled")).toHaveLength(1);
+      const rejected = attempts.filter(
+        (attempt): attempt is PromiseRejectedResult => attempt.status === "rejected",
+      );
+      expect(rejected).toHaveLength(19);
+      expect(rejected.every((attempt) =>
+        diagnostic(attempt.reason).code ===
+          StorageDiagnosticCode.ATOMIC_WRITE_PRECONDITION_FAILED)).toBe(true);
+      expect(await fixture.storage.collection("contract.idempotency").count(context)).toBe(1);
+    });
+
   });
 }

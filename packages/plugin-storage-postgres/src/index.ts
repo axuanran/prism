@@ -1,4 +1,7 @@
-import { StorageCapabilityToken } from "@prismengine/contracts-storage";
+import {
+  AtomicWriteCapabilityToken,
+  StorageCapabilityToken,
+} from "@prismengine/contracts-storage";
 import { definePlugin } from "@prismengine/kernel";
 import { openDatabase } from "./database.js";
 import type { PostgresStorageOptions } from "./database.js";
@@ -22,14 +25,13 @@ export function storagePostgresPlugin(options: PostgresStorageOptions) {
   const handle = openDatabase(options);
   return definePlugin({
     id: "storage.postgres",
-    version: "0.1.0",
-    provides: [StorageCapabilityToken],
+    version: "0.1.1",
+    provides: [StorageCapabilityToken, AtomicWriteCapabilityToken],
     migrations: postgresStorageMigrations(handle.db, handle.schema),
     register(context) {
-      context.provide(
-        StorageCapabilityToken,
-        new PostgresStorage(handle.db, handle.schema, context.events),
-      );
+      const storage = new PostgresStorage(handle.db, handle.schema, context.events);
+      context.provide(StorageCapabilityToken, storage);
+      context.provide(AtomicWriteCapabilityToken, storage);
     },
     async stop() {
       if (handle.owned) await handle.db.destroy();

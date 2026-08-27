@@ -1,4 +1,7 @@
-import { StorageCapabilityToken } from "@prismengine/contracts-storage";
+import {
+  AtomicWriteCapabilityToken,
+  StorageCapabilityToken,
+} from "@prismengine/contracts-storage";
 import { definePlugin } from "@prismengine/kernel";
 import { MemoryStorage } from "./memory-storage.js";
 
@@ -6,9 +9,11 @@ export { createMemoryStorage, MemoryStorage } from "./memory-storage.js";
 
 export const storageMemoryPlugin = definePlugin({
   id: "storage.memory",
-  version: "0.1.0",
-  provides: [StorageCapabilityToken],
+  version: "0.1.1",
+  provides: [StorageCapabilityToken, AtomicWriteCapabilityToken],
   register(context) {
-    context.provide(StorageCapabilityToken, new MemoryStorage(context.events));
+    const storage = new MemoryStorage(context.events);
+    context.provide(StorageCapabilityToken, storage);
+    context.provide(AtomicWriteCapabilityToken, storage);
   },
 });

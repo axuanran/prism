@@ -1,6 +1,9 @@
 import type { CallContext } from "@prismengine/contracts-data";
 import { PrismError, assertJsonValue } from "@prismengine/contracts-data";
 import type {
+  AtomicWriteCapability,
+  AtomicWriteRequest,
+  AtomicWriteResult,
   DocumentCollection,
   DocumentQuery,
   ResourceStore,
@@ -439,9 +442,22 @@ class MemoryDocumentCollection<TDocument extends { readonly id: string }>
     }
     return count;
   }
+
+  snapshot(): Map<string, TDocument> {
+    return new Map(
+      [...this.documents].map(([id, document]) => [id, immutableCopy(document)]),
+    );
+  }
+
+  replace(documents: Map<string, TDocument>): void {
+    this.documents.clear();
+    for (const [id, document] of documents) {
+      this.documents.set(id, immutableCopy(document));
+    }
+  }
 }
 
-export class MemoryStorage implements StorageCapability {
+export class MemoryStorage implements StorageCapability, AtomicWriteCapability {
   readonly resources: ResourceStore;
   private readonly collections = new Map<
     string,
@@ -464,7 +480,121 @@ export class MemoryStorage implements StorageCapability {
     const typedCollection = collection as unknown as DocumentCollection<TDocument>;
     return typedCollection;
   }
+
+  async execute(
+    _context: CallContext,
+    request: AtomicWriteRequest,
+  ): Promise<AtomicWriteResult> {
+    validateAtomicRequest(request);
+    const drafts = new Map<string, Map<string, { readonly id: string }>>();
+    const draftFor = (name: string): Map<string, { readonly id: string }> => {
+      let draft = drafts.get(name);
+      if (draft !== undefined) return draft;
+      const collection = this.collections.get(name);
+      draft = collection === undefined ? new Map() : collection.snapshot();
+      drafts.set(name, draft);
+      return draft;
+    };
+
+    for (const precondition of request.preconditions) {
+      const document = draftFor(precondition.collection).get(precondition.id);
+      const satisfied = precondition.kind === "document-absent"
+        ? document === undefined
+        : document !== undefined && Object.entries(precondition.fields ?? {}).every(
+            ([field, expected]) => Object.is(fieldValue(document, field), expected),
+          );
+      if (!satisfied) throw atomicConflict(request.requestId, precondition);
+    }
+
+    for (const operation of request.operations) {
+      const draft = draftFor(operation.collection);
+      if (operation.kind === "delete-document") {
+        draft.delete(operation.id);
+        continue;
+      }
+      const exists = draft.has(operation.document.id);
+      if (
+        (operation.mode === "create" && exists) ||
+        (operation.mode === "replace" && !exists)
+      ) {
+        throw atomicConflict(request.requestId, {
+          kind: operation.mode === "create" ? "document-absent" : "document-present",
+          collection: operation.collection,
+          id: operation.document.id,
+        });
+      }
+      draft.set(operation.document.id, immutableCopy(operation.document));
+    }
+
+    for (const [name, documents] of drafts) {
+      let collection = this.collections.get(name);
+      if (collection === undefined) {
+        collection = new MemoryDocumentCollection();
+        this.collections.set(name, collection);
+      }
+      collection.replace(documents);
+    }
+    return { requestId: request.requestId, operationCount: request.operations.length };
+  }
 }
+function validateAtomicRequest(request: AtomicWriteRequest): void {
+  if (request.requestId.trim() === "" || request.operations.length === 0) {
+    throw PrismError.of(
+      StorageDiagnosticCode.ATOMIC_WRITE_INVALID,
+      "Atomic write requires a request id and at least one operation.",
+      { requestId: request.requestId },
+    );
+  }
+  const targets = new Set<string>();
+  request.preconditions.forEach((precondition, index) => {
+    if (precondition.collection.trim() === "" || precondition.id.trim() === "") {
+      throw PrismError.of(
+        StorageDiagnosticCode.ATOMIC_WRITE_INVALID,
+        "Atomic write precondition target is invalid.",
+        { requestId: request.requestId, preconditionIndex: index },
+      );
+    }
+  });
+  request.operations.forEach((operation, index) => {
+    const id = operation.kind === "put-document" ? operation.document.id : operation.id;
+    if (operation.collection.trim() === "" || id.trim() === "") {
+      throw PrismError.of(
+        StorageDiagnosticCode.ATOMIC_WRITE_INVALID,
+        "Atomic write operation target is invalid.",
+        { requestId: request.requestId, operationIndex: index },
+      );
+    }
+    const target = `${operation.collection}\u0000${id}`;
+    if (targets.has(target)) {
+      throw PrismError.of(
+        StorageDiagnosticCode.ATOMIC_WRITE_INVALID,
+        "Atomic write contains duplicate operation targets.",
+        { requestId: request.requestId, operationIndex: index },
+      );
+    }
+    targets.add(target);
+    if (operation.kind === "put-document") {
+      assertJsonValue(operation.document, `/operations/${index}/document`);
+    }
+  });
+}
+
+function atomicConflict(
+  requestId: string,
+  target: AtomicWriteRequest["preconditions"][number],
+): PrismError {
+  return PrismError.of(
+    StorageDiagnosticCode.ATOMIC_WRITE_PRECONDITION_FAILED,
+    `Atomic write precondition failed for ${target.collection}/${target.id}.`,
+    {
+      requestId,
+      kind: target.kind,
+      collection: target.collection,
+      id: target.id,
+    },
+  );
+}
+
 
 export function createMemoryStorage(events?: EventBus): MemoryStorage {
   return new MemoryStorage(events);

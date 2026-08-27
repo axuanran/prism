@@ -1,6 +1,9 @@
 import type { CallContext } from "@prismengine/contracts-data";
 import { PrismError, assertJsonValue } from "@prismengine/contracts-data";
 import type {
+  AtomicWriteCapability,
+  AtomicWriteRequest,
+  AtomicWriteResult,
   DocumentCollection,
   DocumentQuery,
   ResourceStore,
@@ -649,7 +652,77 @@ class PostgresDocumentCollection<TDocument extends { readonly id: string }>
   }
 }
 
-export class PostgresStorage implements StorageCapability {
+function validateAtomicRequest(request: AtomicWriteRequest): void {
+  if (request.requestId.trim() === "" || request.operations.length === 0) {
+    throw storageError(
+      StorageDiagnosticCode.ATOMIC_WRITE_INVALID,
+      "Atomic write requires a request id and at least one operation.",
+      { requestId: request.requestId },
+    );
+  }
+  const operationTargets = new Set<string>();
+  request.preconditions.forEach((precondition, index) => {
+    if (precondition.collection.trim() === "" || precondition.id.trim() === "") {
+      throw storageError(
+        StorageDiagnosticCode.ATOMIC_WRITE_INVALID,
+        "Atomic write precondition target is invalid.",
+        { requestId: request.requestId, preconditionIndex: index },
+      );
+    }
+  });
+  request.operations.forEach((operation, index) => {
+    const id = operation.kind === "put-document" ? operation.document.id : operation.id;
+    if (operation.collection.trim() === "" || id.trim() === "") {
+      throw storageError(
+        StorageDiagnosticCode.ATOMIC_WRITE_INVALID,
+        "Atomic write operation target is invalid.",
+        { requestId: request.requestId, operationIndex: index },
+      );
+    }
+    const target = JSON.stringify([operation.collection, id]);
+    if (operationTargets.has(target)) {
+      throw storageError(
+        StorageDiagnosticCode.ATOMIC_WRITE_INVALID,
+        "Atomic write contains duplicate operation targets.",
+        { requestId: request.requestId, operationIndex: index },
+      );
+    }
+    operationTargets.add(target);
+    if (operation.kind === "put-document") {
+      assertJsonValue(operation.document, `/operations/${index}/document`);
+    }
+  });
+}
+
+function atomicTargets(request: AtomicWriteRequest): readonly string[] {
+  const targets = new Set<string>();
+  for (const precondition of request.preconditions) {
+    targets.add(JSON.stringify([precondition.collection, precondition.id]));
+  }
+  for (const operation of request.operations) {
+    const id = operation.kind === "put-document" ? operation.document.id : operation.id;
+    targets.add(JSON.stringify([operation.collection, id]));
+  }
+  return [...targets].sort();
+}
+
+function atomicConflict(
+  requestId: string,
+  target: AtomicWriteRequest["preconditions"][number],
+): PrismError {
+  return storageError(
+    StorageDiagnosticCode.ATOMIC_WRITE_PRECONDITION_FAILED,
+    `Atomic write precondition failed for ${target.collection}/${target.id}.`,
+    {
+      requestId,
+      kind: target.kind,
+      collection: target.collection,
+      id: target.id,
+    },
+  );
+}
+
+export class PostgresStorage implements StorageCapability, AtomicWriteCapability {
   readonly resources: ResourceStore;
 
   constructor(
@@ -664,5 +737,105 @@ export class PostgresStorage implements StorageCapability {
     name: string,
   ): DocumentCollection<TDocument> {
     return new PostgresDocumentCollection<TDocument>(this.db, this.schema, name);
+  }
+
+  async execute(
+    _context: CallContext,
+    request: AtomicWriteRequest,
+  ): Promise<AtomicWriteResult> {
+    validateAtomicRequest(request);
+    return guarded("execute an atomic write", () =>
+      this.db.transaction().execute(async (transaction) => {
+        const database = transaction.withSchema(this.schema);
+        const targets = atomicTargets(request);
+        for (const target of targets) {
+          await sql`select pg_advisory_xact_lock(hashtextextended(${target}, 0))`
+            .execute(transaction);
+        }
+
+        for (const precondition of request.preconditions) {
+          const row = await database
+            .selectFrom("document")
+            .select("body")
+            .where("collection", "=", precondition.collection)
+            .where("id", "=", precondition.id)
+            .executeTakeFirst();
+          const body = row?.body;
+          const satisfied = precondition.kind === "document-absent"
+            ? body === undefined
+            : body !== undefined && Object.entries(precondition.fields ?? {}).every(
+                ([field, expected]) =>
+                  typeof body === "object" &&
+                  body !== null &&
+                  Object.is(Reflect.get(body, field), expected),
+              );
+          if (!satisfied) throw atomicConflict(request.requestId, precondition);
+        }
+
+        const now = new Date();
+        for (const operation of request.operations) {
+          if (operation.kind === "delete-document") {
+            await database
+              .deleteFrom("document")
+              .where("collection", "=", operation.collection)
+              .where("id", "=", operation.id)
+              .execute();
+            continue;
+          }
+          const values = {
+            collection: operation.collection,
+            id: operation.document.id,
+            body: operation.document,
+            created_at: now,
+            updated_at: now,
+          };
+          if (operation.mode === "create") {
+            const existing = await database
+              .selectFrom("document")
+              .select("id")
+              .where("collection", "=", operation.collection)
+              .where("id", "=", operation.document.id)
+              .executeTakeFirst();
+            if (existing !== undefined) {
+              throw atomicConflict(request.requestId, {
+                kind: "document-absent",
+                collection: operation.collection,
+                id: operation.document.id,
+              });
+            }
+            await database.insertInto("document").values(values).execute();
+          } else if (operation.mode === "upsert") {
+            await database
+              .insertInto("document")
+              .values(values)
+              .onConflict((conflict) =>
+                conflict.columns(["collection", "id"]).doUpdateSet({
+                  body: operation.document,
+                  updated_at: now,
+                }),
+              )
+              .execute();
+          } else {
+            const result = await database
+              .updateTable("document")
+              .set({ body: operation.document, updated_at: now })
+              .where("collection", "=", operation.collection)
+              .where("id", "=", operation.document.id)
+              .executeTakeFirst();
+            if (result.numUpdatedRows !== 1n) {
+              throw atomicConflict(request.requestId, {
+                kind: "document-present",
+                collection: operation.collection,
+                id: operation.document.id,
+              });
+            }
+          }
+        }
+        return {
+          requestId: request.requestId,
+          operationCount: request.operations.length,
+        };
+      }),
+    );
   }
 }

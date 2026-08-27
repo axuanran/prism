@@ -17,7 +17,7 @@ const context = systemCallContext({ correlationId: "storage-memory-test" });
 
 describeStorageContract("memory", async () => {
   const storage = createMemoryStorage();
-  return { storage, async dispose() {} };
+  return { storage, atomicWrite: storage, async dispose() {} };
 });
 
 async function diagnosticCodes(operation: () => Promise<unknown>): Promise<readonly string[]> {
