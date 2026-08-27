@@ -1,8 +1,6 @@
 import type {
   DeclaredCodeMaterialManifest,
-  ProjectArtifactDescriptor,
   ProjectSourceFile,
-  ProjectTestResult,
 } from "@prismengine/contracts-project";
 
 export interface BuildWorkerRequest {
@@ -13,27 +11,38 @@ export interface BuildWorkerRequest {
   readonly sourceFingerprint: string;
   readonly files: readonly ProjectSourceFile[];
   readonly materials: readonly DeclaredCodeMaterialManifest[];
-  readonly artifactRoot: string;
   readonly builderVersion: string;
 }
 
-export interface BuiltMaterialArtifact {
+export interface BuildArtifactPayload {
+  readonly contentType: string;
+  readonly files: readonly {
+    readonly path: string;
+    readonly content: Uint8Array;
+  }[];
+}
+
+export interface BuiltMaterialPayload {
   readonly manifest: DeclaredCodeMaterialManifest;
-  readonly artifact: ProjectArtifactDescriptor;
+  readonly artifact: BuildArtifactPayload;
 }
 
 export interface BuildWorkerSuccess {
   readonly type: "success";
-  readonly clientArtifact: ProjectArtifactDescriptor;
-  readonly serverArtifact: ProjectArtifactDescriptor;
-  readonly buildManifestArtifact: ProjectArtifactDescriptor;
-  readonly testReportArtifact: ProjectArtifactDescriptor;
-  readonly testResult: ProjectTestResult;
+  readonly clientArtifact: BuildArtifactPayload;
+  readonly serverArtifact: BuildArtifactPayload;
+  readonly testReportArtifact: BuildArtifactPayload;
+  readonly testSummary: {
+    readonly passed: boolean;
+    readonly total: number;
+    readonly failed: number;
+  };
   readonly packageJsonHash: string;
   readonly dependencyLockHash: string;
   readonly pnpmVersion: string;
-  readonly materials: readonly BuiltMaterialArtifact[];
+  readonly materials: readonly BuiltMaterialPayload[];
   readonly logs: readonly string[];
+  readonly actionIds: readonly string[];
 }
 
 export interface BuildWorkerFailure {

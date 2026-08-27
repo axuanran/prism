@@ -1,12 +1,15 @@
+import type { ArtifactRef } from "@prismengine/contracts-artifact";
 import {
   diagnostic,
   type Diagnostic,
   type CallContext,
   type JsonValue,
+  type RunPin,
 } from "@prismengine/contracts-data";
 import {
   defineCapability,
   defineExtensionPoint,
+  type Engine,
   type Resource,
   type ValidationResult,
 } from "@prismengine/kernel";
@@ -112,12 +115,7 @@ export interface ProjectTestResult {
   readonly reportHash: string;
 }
 
-export interface ProjectArtifactDescriptor {
-  readonly hash: string;
-  readonly size: number;
-  readonly contentType: string;
-  readonly storageKey: string;
-}
+export type ProjectArtifactDescriptor = ArtifactRef;
 
 export interface ProjectReleaseDefinition extends ProjectReleaseManifest {
   readonly sourceRevision: number;
@@ -127,12 +125,18 @@ export interface ProjectReleaseDefinition extends ProjectReleaseManifest {
   readonly builderVersion: string;
   readonly nodeVersion: string;
   readonly pnpmVersion: string;
+  readonly runtimeAbiVersion: string;
+  readonly clientEntryExport: string;
+  readonly serverEntryExport: string;
+  readonly actionIds: readonly string[];
   readonly clientArtifact: ProjectArtifactDescriptor;
   readonly serverArtifact: ProjectArtifactDescriptor;
   readonly buildManifestArtifact: ProjectArtifactDescriptor;
   readonly testResult: ProjectTestResult;
+  readonly materialArtifacts: readonly ProjectArtifactDescriptor[];
   readonly diagnostics: readonly Diagnostic[];
-  readonly reproducibility: "DETERMINISTIC" | "BEST_EFFORT" | "NON_DETERMINISTIC";
+  readonly buildReproducibility: "DETERMINISTIC" | "BEST_EFFORT";
+  readonly runtimeReproducibility: "UNKNOWN" | "DETERMINISTIC" | "BEST_EFFORT" | "NON_DETERMINISTIC";
 }
 
 export interface ProjectBuildCapability {
@@ -166,6 +170,151 @@ export interface ProjectBuildCapability {
 
 export const ProjectBuildCapabilityToken = defineCapability<ProjectBuildCapability>({
   id: "project.build",
+  version: "1.0.0",
+});
+export const PROJECT_RUNTIME_ABI_VERSION = "1.0.0";
+
+export interface ProjectReleaseRef {
+  readonly resourceId: string;
+  readonly revision: number;
+  readonly fingerprint: string;
+}
+
+export interface ProjectClientRuntimeContext<TRoot = unknown> {
+  readonly projectId: string;
+  readonly release: ProjectReleaseRef;
+  readonly root: TRoot;
+  readonly actions: {
+    call(actionId: string, input: JsonValue): Promise<JsonValue>;
+  };
+  readonly logger: {
+    info(value: unknown): void;
+    warn(value: unknown): void;
+    error(value: unknown): void;
+  };
+}
+
+export interface ProjectClientModule<TRoot = unknown> {
+  mount(context: ProjectClientRuntimeContext<TRoot>): void | Promise<void>;
+}
+
+export interface ProjectPrincipal {
+  readonly id: string;
+  readonly roles: readonly string[];
+}
+
+export interface ProjectActionContext {
+  readonly projectId: string;
+  readonly release: ProjectReleaseRef;
+  readonly principal: ProjectPrincipal;
+  readonly engine: Engine;
+  readonly signal?: AbortSignal;
+  readonly logger: {
+    info(value: unknown): void;
+    warn(value: unknown): void;
+    error(value: unknown): void;
+  };
+}
+
+export type ProjectAction = (
+  input: JsonValue,
+  context: ProjectActionContext,
+) => JsonValue | Promise<JsonValue>;
+
+export interface ProjectServerModule {
+  readonly actions: Readonly<Record<string, ProjectAction>>;
+}
+
+
+export interface ActiveProjectRelease {
+  readonly id: string;
+  readonly projectId: string;
+  readonly release: ProjectReleaseRef;
+  readonly releaseIdentity: string;
+  readonly activatedAt: string;
+  readonly activatedBy: string;
+}
+
+export interface ProjectReleaseActivation {
+  readonly id: string;
+  readonly projectId: string;
+  readonly previousRelease: ProjectReleaseRef | null;
+  readonly nextRelease: ProjectReleaseRef;
+  readonly activatedBy: string;
+  readonly activatedAt: string;
+  readonly reason?: string;
+}
+
+export type ProjectRuntimeInstanceStatus =
+  | "STARTING"
+  | "READY"
+  | "DRAINING"
+  | "FAILED"
+  | "STOPPED";
+
+export interface ProjectRuntimeInstance {
+  readonly id: string;
+  readonly projectId: string;
+  readonly release: ProjectReleaseRef;
+  readonly workerPid: number;
+  readonly status: ProjectRuntimeInstanceStatus;
+  readonly startedAt: string;
+  readonly lastHeartbeatAt: string;
+  readonly stoppedAt?: string;
+  readonly exitCode?: number;
+  readonly restartCount: number;
+  readonly lastError?: string;
+}
+
+export interface ProjectActionRun {
+  readonly id: string;
+  readonly projectId: string;
+  readonly release: ProjectReleaseRef;
+  readonly actionId: string;
+  readonly status: "SUCCESS" | "FAILED";
+  readonly inputFingerprint: string;
+  readonly result?: JsonValue;
+  readonly error?: string;
+  readonly pin: RunPin;
+  readonly reproducibility: "DETERMINISTIC" | "BEST_EFFORT" | "NON_DETERMINISTIC";
+  readonly createdAt: string;
+}
+
+export interface ProjectRuntimeLog {
+  readonly id: string;
+  readonly projectId: string;
+  readonly release: ProjectReleaseRef;
+  readonly level: "info" | "warn" | "error";
+  readonly message: string;
+  readonly sourceFile?: string;
+  readonly line?: number;
+  readonly column?: number;
+  readonly timestamp: string;
+}
+
+export interface ProjectRuntimeCapability {
+  active(context: CallContext, projectId: string): Promise<ActiveProjectRelease | null>;
+  activate(
+    context: CallContext,
+    projectId: string,
+    releaseRevision: number,
+    expectedActiveRelease: ProjectReleaseRef | null,
+    reason?: string,
+  ): Promise<ActiveProjectRelease>;
+  invoke(
+    context: CallContext,
+    projectId: string,
+    release: ProjectReleaseRef,
+    actionId: string,
+    input: JsonValue,
+  ): Promise<ProjectActionRun>;
+  getRun(context: CallContext, runId: string): Promise<ProjectActionRun | null>;
+  logs(context: CallContext, projectId: string): Promise<readonly ProjectRuntimeLog[]>;
+  listRuns(context: CallContext, projectId: string): Promise<readonly ProjectActionRun[]>;
+}
+
+export const ProjectRuntimeCapabilityToken = defineCapability<ProjectRuntimeCapability>({
+  id: "project.runtime",
   version: "1.0.0",
 });
 

@@ -2,27 +2,23 @@ import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
 import {
-  cp,
   mkdir,
   mkdtemp,
   readFile,
   readdir,
   rm,
-  stat,
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { build as esbuild } from "esbuild";
 import { build as viteBuild } from "vite";
+import type { ProjectSourceFile } from "@prismengine/contracts-project";
 import type {
-  ProjectArtifactDescriptor,
-  ProjectSourceFile,
-} from "@prismengine/contracts-project";
-import type {
+  BuildArtifactPayload,
   BuildWorkerRequest,
   BuildWorkerResponse,
-  BuiltMaterialArtifact,
+  BuiltMaterialPayload,
 } from "./protocol.js";
 
 const require = createRequire(import.meta.url);
@@ -67,8 +63,12 @@ async function execute(request: BuildWorkerRequest): Promise<BuildWorkerResponse
       include: ["src/**/*", "tests/**/*"],
     }, null, 2));
     const tscPackage = require.resolve("@typescript/native/package.json");
-    const tscBin = join(dirname(tscPackage), "bin", "tsc");
-    await run(process.execPath, [tscBin, "--project", tsconfig], root, logs);
+    await run(
+      process.execPath,
+      [join(dirname(tscPackage), "bin", "tsc"), "--project", tsconfig],
+      root,
+      logs,
+    );
 
     const generatedTest = join(root, ".prism", "project.generated.test.ts");
     await mkdir(dirname(generatedTest), { recursive: true });
@@ -81,9 +81,8 @@ async function execute(request: BuildWorkerRequest): Promise<BuildWorkerResponse
       "",
     ].join("\n"));
     const reportPath = join(root, ".prism", "test-report.json");
-    const vitestBin = require.resolve("vitest/vitest.mjs");
     await run(process.execPath, [
-      vitestBin,
+      require.resolve("vitest/vitest.mjs"),
       "run",
       generatedTest,
       "--globals",
@@ -96,19 +95,12 @@ async function execute(request: BuildWorkerRequest): Promise<BuildWorkerResponse
       readonly numFailedTests?: number;
       readonly success?: boolean;
     };
-    const testReportArtifact = await persistBytes(
-      request.artifactRoot,
-      reportBytes,
-      "application/json",
-      "test-report.json",
-    );
-    const testResult = {
+    const testSummary = {
       passed: report.success === true || (report.numFailedTests ?? 0) === 0,
       total: report.numTotalTests ?? 0,
       failed: report.numFailedTests ?? 0,
-      reportHash: testReportArtifact.hash,
     };
-    if (!testResult.passed) throw new Error("Project tests failed.");
+    if (!testSummary.passed) throw new Error("Project tests failed.");
 
     const output = join(root, ".prism-output");
     const clientOutput = join(output, "client");
@@ -127,7 +119,8 @@ async function execute(request: BuildWorkerRequest): Promise<BuildWorkerResponse
         },
       },
     });
-    logs.push("Vite client build PASS");
+    await verifyExport(join(clientOutput, "client.js"), "mount", root, logs);
+    logs.push("Vite client build PASS; mount export verified");
 
     const serverOutput = join(output, "server");
     await mkdir(serverOutput, { recursive: true });
@@ -140,9 +133,10 @@ async function execute(request: BuildWorkerRequest): Promise<BuildWorkerResponse
       sourcemap: "external",
       target: "node24",
     });
-    logs.push("esbuild server build PASS");
+    const actionIds = await inspectActions(join(serverOutput, "server.js"), root, logs);
+    logs.push(`esbuild server build PASS; actions export verified (${actionIds.join(", ")})`);
 
-    const materialArtifacts: BuiltMaterialArtifact[] = [];
+    const materials: BuiltMaterialPayload[] = [];
     for (const manifest of request.materials) {
       const safeName = `${manifest.id}@${manifest.version}`.replace(/[^a-zA-Z0-9._@-]/g, "_");
       const materialFile = join(output, "materials", `${safeName}.js`);
@@ -156,61 +150,29 @@ async function execute(request: BuildWorkerRequest): Promise<BuildWorkerResponse
         target: manifest.runtimeTarget === "client" ? "es2022" : "node24",
       });
       await verifyExport(materialFile, manifest.exportName, root, logs);
-      materialArtifacts.push({
+      materials.push({
         manifest,
-        artifact: await persistBytes(
-          request.artifactRoot,
-          await readFile(materialFile),
-          "text/javascript",
-          `${safeName}.js`,
-        ),
+        artifact: {
+          contentType: "text/javascript",
+          files: [{ path: `${safeName}.js`, content: await readFile(materialFile) }],
+        },
       });
     }
 
-    const clientArtifact = await persistDirectory(
-      request.artifactRoot,
-      clientOutput,
-      "application/vnd.prism.client",
-    );
-    const serverArtifact = await persistDirectory(
-      request.artifactRoot,
-      serverOutput,
-      "application/vnd.prism.server",
-    );
-    const manifestBytes = Buffer.from(JSON.stringify({
-      schemaVersion: "1.0.0",
-      buildId: request.buildId,
-      projectId: request.projectId,
-      sourceRevision: request.sourceRevision,
-      sourceFingerprint: request.sourceFingerprint,
-      packageJsonHash,
-      dependencyLockHash,
-      builderVersion: request.builderVersion,
-      nodeVersion: process.version,
-      pnpmVersion,
-      clientArtifact,
-      serverArtifact,
-      testResult,
-      materials: materialArtifacts,
-    }, null, 2));
-    const buildManifestArtifact = await persistBytes(
-      request.artifactRoot,
-      manifestBytes,
-      "application/json",
-      "build-manifest.json",
-    );
-    logs.push(`Build artifact ${buildManifestArtifact.hash}`);
     return {
       type: "success",
-      clientArtifact,
-      serverArtifact,
-      buildManifestArtifact,
-      testReportArtifact,
-      testResult,
+      clientArtifact: await directoryPayload(clientOutput, "application/vnd.prism.client"),
+      serverArtifact: await directoryPayload(serverOutput, "application/vnd.prism.server"),
+      testReportArtifact: {
+        contentType: "application/json",
+        files: [{ path: "test-report.json", content: reportBytes }],
+      },
+      testSummary,
       packageJsonHash,
       dependencyLockHash,
       pnpmVersion,
-      materials: materialArtifacts,
+      materials,
+      actionIds,
       logs,
     };
   } catch (error) {
@@ -224,10 +186,7 @@ async function execute(request: BuildWorkerRequest): Promise<BuildWorkerResponse
   }
 }
 
-async function materialize(
-  root: string,
-  files: readonly ProjectSourceFile[],
-): Promise<void> {
+async function materialize(root: string, files: readonly ProjectSourceFile[]): Promise<void> {
   for (const file of files) {
     const target = join(root, ...file.path.split("/"));
     await mkdir(dirname(target), { recursive: true });
@@ -267,6 +226,23 @@ async function run(
   return promise;
 }
 
+async function inspectActions(
+  file: string,
+  cwd: string,
+  logs: string[],
+): Promise<readonly string[]> {
+  const outputFile = join(cwd, ".prism", "server-actions.json");
+  const script = [
+    "import { pathToFileURL } from 'node:url';",
+    "import { writeFile } from 'node:fs/promises';",
+    `const module = await import(pathToFileURL(${JSON.stringify(file)}));`,
+    "if (!module.actions || typeof module.actions !== 'object') throw new Error('Missing actions export');",
+    `await writeFile(${JSON.stringify(outputFile)}, JSON.stringify(Object.keys(module.actions).sort()));`,
+  ].join("\n");
+  await run(process.execPath, ["--input-type=module", "-e", script], cwd, logs);
+  return JSON.parse(await readFile(outputFile, "utf8")) as string[];
+}
+
 async function verifyExport(
   file: string,
   exportName: string,
@@ -283,53 +259,17 @@ async function verifyExport(
   await run(process.execPath, ["--input-type=module", "-e", script], cwd, logs);
 }
 
-async function persistDirectory(
-  artifactRoot: string,
+async function directoryPayload(
   directory: string,
   contentType: string,
-): Promise<ProjectArtifactDescriptor> {
-  const entries = await walk(directory);
-  const hash = createHash("sha256");
-  let size = 0;
-  for (const entry of entries) {
-    const bytes = await readFile(join(directory, ...entry.split("/")));
-    hash.update(entry);
-    hash.update("\u0000");
-    hash.update(bytes);
-    size += bytes.length;
-  }
-  const identity = hash.digest("hex");
-  const storageKey = join("sha256", identity.slice(0, 2), identity);
-  const target = join(artifactRoot, storageKey);
-  await mkdir(dirname(target), { recursive: true });
-  try {
-    await stat(target);
-  } catch {
-    await cp(directory, target, { recursive: true });
-  }
-  return { hash: identity, size, contentType, storageKey: storageKey.replace(/\\/g, "/") };
-}
-
-async function persistBytes(
-  artifactRoot: string,
-  bytes: Uint8Array,
-  contentType: string,
-  fileName: string,
-): Promise<ProjectArtifactDescriptor> {
-  const hash = sha(bytes);
-  const storageKey = join("sha256", hash.slice(0, 2), hash, fileName);
-  const target = join(artifactRoot, storageKey);
-  await mkdir(dirname(target), { recursive: true });
-  try {
-    await stat(target);
-  } catch {
-    await writeFile(target, bytes);
-  }
+): Promise<BuildArtifactPayload> {
+  const paths = await walk(directory);
   return {
-    hash,
-    size: bytes.byteLength,
     contentType,
-    storageKey: storageKey.replace(/\\/g, "/"),
+    files: await Promise.all(paths.map(async (path) => ({
+      path,
+      content: await readFile(join(directory, ...path.split("/"))),
+    }))),
   };
 }
 

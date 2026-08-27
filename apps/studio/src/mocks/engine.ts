@@ -1,5 +1,6 @@
 import type {
   Assignment,
+  ActiveProjectRelease,
   CodeProjectSpec,
   DraftMaterialCatalogItem,
   Diagnostic,
@@ -8,8 +9,10 @@ import type {
   Person,
   PipelineExecutionResponse,
   ProjectBuildRequest,
+  ProjectActionRun,
   ProjectReleaseDefinition,
   ProjectSourceDiff,
+  ProjectRuntimeLog,
   ProjectSourceDraft,
   ProjectSourceFile,
   PublishedProjectSource,
@@ -33,6 +36,9 @@ let sourceDraft: ProjectSourceDraft | null = null;
 const sourceRevisions: Resource<PublishedProjectSource>[] = [];
 const projectBuilds: ProjectBuildRequest[] = [];
 const projectReleases: Resource<ProjectReleaseDefinition>[] = [];
+let activeRelease: ActiveProjectRelease | null = null;
+const actionRuns: ProjectActionRun[] = [];
+const runtimeLogs: ProjectRuntimeLog[] = [];
 
 // Domain-neutral mock data. Hospital-specific resources live in the private
 // Solution repository; Core Studio exercises only the generic Resource model.
@@ -323,7 +329,7 @@ export const mockApi: StudioApi = {
       hash,
       size: 1,
       contentType: 'application/octet-stream',
-      storageKey: `sha256/${hash.slice(0, 2)}/${hash}`,
+      fileCount: 1,
     };
     const release: Resource<ProjectReleaseDefinition> = {
       id: `${projectId}:release`,
@@ -340,12 +346,18 @@ export const mockApi: StudioApi = {
         builderVersion: 'offline',
         nodeVersion: 'offline',
         pnpmVersion: 'offline',
+        runtimeAbiVersion: '1.0.0',
+        clientEntryExport: 'mount',
+        serverEntryExport: 'actions',
+        actionIds: [],
         clientArtifact: descriptor,
         serverArtifact: descriptor,
         buildManifestArtifact: descriptor,
+        materialArtifacts: [],
         testResult: { passed: true, total: 1, failed: 0, reportHash: hash },
         diagnostics: [],
-        reproducibility: 'DETERMINISTIC',
+        buildReproducibility: 'DETERMINISTIC',
+        runtimeReproducibility: 'UNKNOWN',
         materials: [],
       },
       createdAt: now,
@@ -375,6 +387,47 @@ export const mockApi: StudioApi = {
   },
   async listProjectReleases(projectId) {
     return cloneValue(projectReleases.filter((item) => item.spec.projectId === projectId));
+  },
+  async getActiveProjectRelease() {
+    return cloneValue(activeRelease);
+  },
+  async activateProjectRelease(projectId, releaseRevision) {
+    const release = {
+      resourceId: `${projectId}:release`,
+      revision: releaseRevision,
+      fingerprint: String(releaseRevision).padStart(64, 'f'),
+    };
+    activeRelease = {
+      id: projectId,
+      projectId,
+      release,
+      releaseIdentity: `${release.resourceId}@${release.revision}:${release.fingerprint}`,
+      activatedAt: new Date().toISOString(),
+      activatedBy: 'studio-builder',
+    };
+    return cloneValue(activeRelease);
+  },
+  async invokeProjectAction(projectId, release, actionId, input) {
+    const run: ProjectActionRun = {
+      id: nextId('run'),
+      projectId,
+      release,
+      actionId,
+      status: 'SUCCESS',
+      inputFingerprint: 'i'.repeat(64),
+      result: input,
+      pin: {},
+      reproducibility: 'DETERMINISTIC',
+      createdAt: new Date().toISOString(),
+    };
+    actionRuns.push(run);
+    return cloneValue(run);
+  },
+  async listProjectActionRuns(projectId) {
+    return cloneValue(actionRuns.filter((run) => run.projectId === projectId));
+  },
+  async listProjectRuntimeLogs(projectId) {
+    return cloneValue(runtimeLogs.filter((log) => log.projectId === projectId));
   },
   async executePipeline(): Promise<PipelineExecutionResponse> {
     return { status: 'success', outputs: {}, diagnostics: [], trace: emptyTrace, planHash: 'offline' };

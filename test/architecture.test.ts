@@ -149,6 +149,25 @@ describe("package architecture", () => {
     expect(violations).toEqual([]);
   });
 
+  test("Build, Artifact, and Runtime providers remain independently composable", () => {
+    const build = JSON.parse(readFileSync(
+      join(root, "packages/plugin-project-build/package.json"),
+      "utf8",
+    )) as PackageManifest;
+    const runtime = JSON.parse(readFileSync(
+      join(root, "packages/plugin-project-runtime/package.json"),
+      "utf8",
+    )) as PackageManifest;
+    expect(build.dependencies).toHaveProperty("@prismengine/contracts-artifact");
+    expect(build.dependencies).not.toHaveProperty("@prismengine/plugin-artifact-store-local");
+    expect(runtime.dependencies).toHaveProperty("@prismengine/contracts-artifact");
+    expect(runtime.dependencies).not.toHaveProperty("@prismengine/plugin-project-build");
+    expect(runtime.dependencies).not.toHaveProperty("@prismengine/plugin-artifact-store-local");
+    expect(runtime.dependencies).not.toHaveProperty("vite");
+    expect(runtime.dependencies).not.toHaveProperty("vitest");
+    expect(runtime.dependencies).not.toHaveProperty("esbuild");
+  });
+
   test("the open-source workspace declares and packages Apache-2.0 consistently", () => {
     const rootLicense = join(root, "LICENSE");
     const rootNotice = join(root, "NOTICE");

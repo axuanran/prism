@@ -5,6 +5,9 @@
       "path": "./packages/contracts-data"
     },
     {
+      "path": "./packages/contracts-artifact"
+    },
+    {
       "path": "./packages/contracts-project"
     },
     {
@@ -51,6 +54,12 @@
     },
     {
       "path": "./packages/plugin-project-build"
+    },
+    {
+      "path": "./packages/plugin-project-runtime"
+    },
+    {
+      "path": "./packages/plugin-artifact-store-local"
     },
     {
       "path": "./packages/plugin-sdk"

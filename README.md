@@ -50,6 +50,7 @@ packages/kernel                         plugin graph, lifecycle, registries
 packages/plugin-sdk                     supported plugin-authoring facade
 packages/platform                       compatible public distribution/composition
 packages/contracts-data                 JSON, Codec, Decimal, Arrow Dataset, RunPin
+packages/contracts-artifact             provider-neutral immutable Artifact contract
 packages/contracts-storage              Resource/Document storage contracts
 packages/contracts-calculation          PipelineSpec, analysis extensions, SemanticPlan
 packages/contracts-organization         generic organization contracts
@@ -64,6 +65,8 @@ packages/plugin-dataset-grain           optional Dataset/Plan grain analysis
 packages/plugin-material-registry       shared Material discovery for Studio and Runtime
 packages/plugin-code-project            source Draft CAS and immutable Source revisions
 packages/plugin-project-build           isolated Build Worker and immutable Project Releases
+packages/plugin-artifact-store-local     local content-addressed Artifact provider
+packages/plugin-project-runtime         Active Release CAS and App/Action worker runtime
 packages/testing                        engine/data/PG/conformance test fixtures
 apps/studio                             generic configuration/pipeline UI foundation
 ```

@@ -1,6 +1,7 @@
 import { mockApi } from '../mocks/engine';
 import type {
   Assignment,
+  ActiveProjectRelease,
   CodeProjectSpec,
   DatasetPayload,
   Diagnostic,
@@ -12,7 +13,10 @@ import type {
   PipelineExecutionResponse,
   PipelineSpec,
   ProjectBuildRequest,
+  ProjectActionRun,
   ProjectReleaseDefinition,
+  ProjectReleaseRef,
+  ProjectRuntimeLog,
   ProjectSourceDiff,
   ProjectSourceDraft,
   ProjectSourceFile,
@@ -301,6 +305,31 @@ class LiveStudioApi implements StudioApi {
 
   listProjectReleases(projectId: string): Promise<readonly Resource<ProjectReleaseDefinition>[]> {
     return this.#request(`/api/code-projects/${encodeURIComponent(projectId)}/releases`);
+  }
+  getActiveProjectRelease(projectId: string): Promise<ActiveProjectRelease | null> {
+    return this.#request(`/api/code-projects/${encodeURIComponent(projectId)}/active-release`);
+  }
+
+  activateProjectRelease(projectId: string, releaseRevision: number, expectedActiveRelease: ProjectReleaseRef | null): Promise<ActiveProjectRelease> {
+    return this.#request(`/api/code-projects/${encodeURIComponent(projectId)}/active-release`, {
+      method: 'POST',
+      body: JSON.stringify({ releaseRevision, expectedActiveRelease }),
+    });
+  }
+
+  invokeProjectAction(projectId: string, release: ProjectReleaseRef, actionId: string, input: unknown): Promise<ProjectActionRun> {
+    return this.#request(`/api/runtime/${encodeURIComponent(projectId)}/actions/${encodeURIComponent(actionId)}`, {
+      method: 'POST',
+      body: JSON.stringify({ release, input }),
+    });
+  }
+
+  listProjectActionRuns(projectId: string): Promise<readonly ProjectActionRun[]> {
+    return this.#request(`/api/runtime/${encodeURIComponent(projectId)}/runs`);
+  }
+
+  listProjectRuntimeLogs(projectId: string): Promise<readonly ProjectRuntimeLog[]> {
+    return this.#request(`/api/runtime/${encodeURIComponent(projectId)}/logs`);
   }
 }
 

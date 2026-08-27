@@ -2,12 +2,18 @@ import { fork } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { Type } from "@sinclair/typebox";
 import {
+  ArtifactStoreCapabilityToken,
+  type ArtifactRef,
+  type ArtifactStoreCapability,
+} from "@prismengine/contracts-artifact";
+import {
   PrismError,
   diagnostic,
   type CallContext,
 } from "@prismengine/contracts-data";
 import {
   ProjectBuildCapabilityToken,
+  PROJECT_RUNTIME_ABI_VERSION,
   validateProjectReleaseManifest,
   type DeclaredCodeMaterialManifest,
   type ProjectArtifactDescriptor,
@@ -15,6 +21,7 @@ import {
   type ProjectBuildRequest,
   type ProjectMaterialRef,
   type ProjectReleaseDefinition,
+  type ProjectTestResult,
 } from "@prismengine/contracts-project";
 import {
   AtomicWriteCapabilityToken,
@@ -48,7 +55,7 @@ export const PROJECT_RELEASE_KIND = "project.release";
 const BUILD_COLLECTION = "project.build-requests";
 const BUILD_LOG_COLLECTION = "project.build-logs";
 const ARTIFACT_COLLECTION = "project.artifacts";
-const BUILDER_VERSION = "0.1.10";
+const BUILDER_VERSION = "0.1.13";
 
 const ProjectReleaseSchema = Type.Object({
   projectId: Type.String({ minLength: 1 }),
@@ -60,12 +67,22 @@ const ProjectReleaseSchema = Type.Object({
   builderVersion: Type.String({ minLength: 1 }),
   nodeVersion: Type.String({ minLength: 1 }),
   pnpmVersion: Type.String({ minLength: 1 }),
+  runtimeAbiVersion: Type.String({ minLength: 1 }),
+  clientEntryExport: Type.String({ minLength: 1 }),
+  actionIds: Type.Array(Type.String()),
+  serverEntryExport: Type.String({ minLength: 1 }),
   clientArtifact: Type.Any(),
   serverArtifact: Type.Any(),
   buildManifestArtifact: Type.Any(),
+  materialArtifacts: Type.Array(Type.Any()),
   testResult: Type.Any(),
   diagnostics: Type.Array(Type.Any()),
-  reproducibility: Type.Union([
+  buildReproducibility: Type.Union([
+    Type.Literal("DETERMINISTIC"),
+    Type.Literal("BEST_EFFORT"),
+  ]),
+  runtimeReproducibility: Type.Union([
+    Type.Literal("UNKNOWN"),
     Type.Literal("DETERMINISTIC"),
     Type.Literal("BEST_EFFORT"),
     Type.Literal("NON_DETERMINISTIC"),
@@ -83,9 +100,6 @@ export const ProjectReleaseResource: ResourceTypeDefinition<ProjectReleaseDefini
   exposure: { configuration: false, frontend: true },
 };
 
-export interface ProjectBuildPluginOptions {
-  readonly artifactRoot: string;
-}
 
 interface BuildLogDocument {
   readonly id: string;
@@ -97,13 +111,27 @@ interface ArtifactDocument extends ProjectArtifactDescriptor {
   readonly createdAt: string;
 }
 
-export function projectBuildPlugin(options: ProjectBuildPluginOptions) {
+interface StoredBuildArtifacts {
+  readonly client: ArtifactRef;
+  readonly server: ArtifactRef;
+  readonly testReport: ArtifactRef;
+  readonly buildManifest: ArtifactRef;
+  readonly testResult: ProjectTestResult;
+  readonly materials: readonly {
+    readonly manifest: DeclaredCodeMaterialManifest;
+    readonly artifact: ArtifactRef;
+  }[];
+  readonly descriptors: readonly ArtifactRef[];
+}
+
+export function projectBuildPlugin() {
   return definePlugin({
     id: "project.build",
     version: BUILDER_VERSION,
     requires: {
       storage: StorageCapabilityToken,
       atomicWrite: AtomicWriteCapabilityToken,
+      artifacts: ArtifactStoreCapabilityToken,
       codeProjects: CodeProjectCapabilityToken,
     },
     provides: [ProjectBuildCapabilityToken],
@@ -112,8 +140,8 @@ export function projectBuildPlugin(options: ProjectBuildPluginOptions) {
       const capability = new DefaultProjectBuildCapability(
         context.dependencies.storage,
         context.dependencies.atomicWrite,
+        context.dependencies.artifacts,
         context.dependencies.codeProjects,
-        options.artifactRoot,
       );
       context.provide(ProjectBuildCapabilityToken, capability);
       for (const route of buildRoutes(capability)) {
@@ -130,8 +158,8 @@ class DefaultProjectBuildCapability implements ProjectBuildCapability {
   constructor(
     private readonly storage: StorageCapability,
     private readonly atomicWrite: AtomicWriteCapability,
+    private readonly artifacts: ArtifactStoreCapability,
     private readonly codeProjects: CodeProjectCapability,
-    private readonly artifactRoot: string,
   ) {
     this.builds = storage.collection<ProjectBuildRequest>(BUILD_COLLECTION);
     this.logs = storage.collection<BuildLogDocument>(BUILD_LOG_COLLECTION);
@@ -184,7 +212,6 @@ class DefaultProjectBuildCapability implements ProjectBuildCapability {
       sourceFingerprint: source.spec.fingerprint,
       files: source.spec.files,
       materials: parseMaterials(source),
-      artifactRoot: this.artifactRoot,
       builderVersion: BUILDER_VERSION,
     });
     if (response.type === "failure") {
@@ -201,7 +228,8 @@ class DefaultProjectBuildCapability implements ProjectBuildCapability {
       await this.finishBuild(context, running, failed, response.logs, []);
       return failed;
     }
-    const release = await this.publishRelease(context, source, response);
+    const stored = await this.storeArtifacts(context, source, response);
+    const release = await this.publishRelease(context, source, response, stored);
     const success: ProjectBuildRequest = {
       ...running,
       status: "SUCCESS",
@@ -214,7 +242,7 @@ class DefaultProjectBuildCapability implements ProjectBuildCapability {
       running,
       success,
       response.logs,
-      artifacts(response),
+      stored.descriptors,
     );
     return success;
   }
@@ -267,12 +295,71 @@ class DefaultProjectBuildCapability implements ProjectBuildCapability {
     return (await this.logs.get(context, buildId))?.lines ?? [];
   }
 
+  private async storeArtifacts(
+    context: CallContext,
+    source: Resource<PublishedProjectSource>,
+    response: BuildWorkerSuccess,
+  ): Promise<StoredBuildArtifacts> {
+    const [client, server, testReport] = await Promise.all([
+      this.artifacts.putImmutable(context, response.clientArtifact),
+      this.artifacts.putImmutable(context, response.serverArtifact),
+      this.artifacts.putImmutable(context, response.testReportArtifact),
+    ]);
+    const materials = await Promise.all(response.materials.map(async (item) => ({
+      manifest: item.manifest,
+      artifact: await this.artifacts.putImmutable(context, item.artifact),
+    })));
+    const testResult: ProjectTestResult = {
+      ...response.testSummary,
+      reportHash: testReport.hash,
+    };
+    const manifestContent = new TextEncoder().encode(JSON.stringify({
+      schemaVersion: "1.0.0",
+      projectId: source.spec.projectId,
+      sourceRevision: source.revision,
+      sourceFingerprint: source.spec.fingerprint,
+      packageJsonHash: response.packageJsonHash,
+      dependencyLockHash: response.dependencyLockHash,
+      builderVersion: BUILDER_VERSION,
+      nodeVersion: process.version,
+      pnpmVersion: response.pnpmVersion,
+      runtimeAbiVersion: PROJECT_RUNTIME_ABI_VERSION,
+      clientEntryExport: "mount",
+      serverEntryExport: "actions",
+      client,
+      server,
+      testResult,
+      actionIds: response.actionIds,
+      materials,
+    }, null, 2));
+    const buildManifest = await this.artifacts.putImmutable(context, {
+      contentType: "application/json",
+      files: [{ path: "build-manifest.json", content: manifestContent }],
+    });
+    return {
+      client,
+      server,
+      testReport,
+      buildManifest,
+      testResult,
+      materials,
+      descriptors: [
+        client,
+        server,
+        testReport,
+        buildManifest,
+        ...materials.map((item) => item.artifact),
+      ],
+    };
+  }
+
   private async publishRelease(
     context: CallContext,
     source: Resource<PublishedProjectSource>,
     response: BuildWorkerSuccess,
+    stored: StoredBuildArtifacts,
   ): Promise<Resource<ProjectReleaseDefinition>> {
-    const materials: ProjectMaterialRef[] = response.materials.map((item) => ({
+    const materials: ProjectMaterialRef[] = stored.materials.map((item) => ({
       materialId: item.manifest.id,
       materialVersion: item.manifest.version,
       source: {
@@ -296,12 +383,18 @@ class DefaultProjectBuildCapability implements ProjectBuildCapability {
       builderVersion: BUILDER_VERSION,
       nodeVersion: process.version,
       pnpmVersion: response.pnpmVersion,
-      clientArtifact: response.clientArtifact,
-      serverArtifact: response.serverArtifact,
-      buildManifestArtifact: response.buildManifestArtifact,
-      testResult: response.testResult,
+      runtimeAbiVersion: PROJECT_RUNTIME_ABI_VERSION,
+      clientEntryExport: "mount",
+      actionIds: response.actionIds,
+      serverEntryExport: "actions",
+      clientArtifact: stored.client,
+      serverArtifact: stored.server,
+      buildManifestArtifact: stored.buildManifest,
+      materialArtifacts: stored.materials.map((item) => item.artifact),
+      testResult: stored.testResult,
       diagnostics: [],
-      reproducibility: "DETERMINISTIC",
+      buildReproducibility: "DETERMINISTIC",
+      runtimeReproducibility: "UNKNOWN",
     };
     const validation = validateProjectReleaseManifest(spec);
     if (validation.diagnostics.length > 0) throw new PrismError(validation.diagnostics);
@@ -402,15 +495,6 @@ function parseMaterials(
   return parsed.materials ?? [];
 }
 
-function artifacts(response: BuildWorkerSuccess): readonly ProjectArtifactDescriptor[] {
-  return [
-    response.clientArtifact,
-    response.serverArtifact,
-    response.buildManifestArtifact,
-    response.testReportArtifact,
-    ...response.materials.map((item) => item.artifact),
-  ];
-}
 
 function put<T extends { readonly id: string }>(
   collection: string,

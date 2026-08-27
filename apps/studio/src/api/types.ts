@@ -316,16 +316,16 @@ export interface ProjectBuildRequest {
   readonly releaseId?: string;
   readonly diagnostics: readonly Diagnostic[];
 }
-
 export interface ProjectArtifactDescriptor {
   readonly hash: string;
   readonly size: number;
   readonly contentType: string;
-  readonly storageKey: string;
+  readonly fileCount: number;
 }
 
 export interface ProjectReleaseDefinition {
   readonly projectId: string;
+  readonly materials: readonly unknown[];
   readonly sourceRevision: number;
   readonly sourceFingerprint: string;
   readonly packageJsonHash: string;
@@ -333,9 +333,14 @@ export interface ProjectReleaseDefinition {
   readonly builderVersion: string;
   readonly nodeVersion: string;
   readonly pnpmVersion: string;
+  readonly runtimeAbiVersion: string;
+  readonly clientEntryExport: string;
+  readonly actionIds: readonly string[];
+  readonly serverEntryExport: string;
   readonly clientArtifact: ProjectArtifactDescriptor;
   readonly serverArtifact: ProjectArtifactDescriptor;
   readonly buildManifestArtifact: ProjectArtifactDescriptor;
+  readonly materialArtifacts: readonly ProjectArtifactDescriptor[];
   readonly testResult: {
     readonly passed: boolean;
     readonly total: number;
@@ -343,8 +348,46 @@ export interface ProjectReleaseDefinition {
     readonly reportHash: string;
   };
   readonly diagnostics: readonly Diagnostic[];
+  readonly buildReproducibility: 'DETERMINISTIC' | 'BEST_EFFORT';
+  readonly runtimeReproducibility: 'UNKNOWN' | 'DETERMINISTIC' | 'BEST_EFFORT' | 'NON_DETERMINISTIC';
+}
+
+export interface ProjectReleaseRef {
+  readonly resourceId: string;
+  readonly revision: number;
+  readonly fingerprint: string;
+}
+
+export interface ActiveProjectRelease {
+  readonly id: string;
+  readonly projectId: string;
+  readonly release: ProjectReleaseRef;
+  readonly releaseIdentity: string;
+  readonly activatedAt: string;
+  readonly activatedBy: string;
+}
+
+export interface ProjectActionRun {
+  readonly id: string;
+  readonly projectId: string;
+  readonly release: ProjectReleaseRef;
+  readonly actionId: string;
+  readonly status: 'SUCCESS' | 'FAILED';
+  readonly inputFingerprint: string;
+  readonly result?: unknown;
+  readonly error?: string;
+  readonly pin: Readonly<Record<string, unknown>>;
   readonly reproducibility: 'DETERMINISTIC' | 'BEST_EFFORT' | 'NON_DETERMINISTIC';
-  readonly materials: readonly unknown[];
+  readonly createdAt: string;
+}
+
+export interface ProjectRuntimeLog {
+  readonly id: string;
+  readonly projectId: string;
+  readonly release: ProjectReleaseRef;
+  readonly level: 'info' | 'warn' | 'error';
+  readonly message: string;
+  readonly timestamp: string;
 }
 
 export interface StudioApi {
@@ -379,4 +422,9 @@ export interface StudioApi {
   listProjectBuilds(projectId: string): Promise<readonly ProjectBuildRequest[]>;
   getProjectBuildLog(buildId: string): Promise<readonly string[]>;
   listProjectReleases(projectId: string): Promise<readonly Resource<ProjectReleaseDefinition>[]>;
+  getActiveProjectRelease(projectId: string): Promise<ActiveProjectRelease | null>;
+  activateProjectRelease(projectId: string, releaseRevision: number, expectedActiveRelease: ProjectReleaseRef | null): Promise<ActiveProjectRelease>;
+  invokeProjectAction(projectId: string, release: ProjectReleaseRef, actionId: string, input: unknown): Promise<ProjectActionRun>;
+  listProjectActionRuns(projectId: string): Promise<readonly ProjectActionRun[]>;
+  listProjectRuntimeLogs(projectId: string): Promise<readonly ProjectRuntimeLog[]>;
 }

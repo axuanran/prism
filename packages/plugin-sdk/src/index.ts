@@ -7,6 +7,7 @@
  * which host composition must run it.
  */
 export * from "@prismengine/kernel";
+export * from "@prismengine/contracts-artifact";
 export * from "@prismengine/contracts-data";
 export * from "@prismengine/contracts-storage";
 export * from "@prismengine/contracts-calculation";

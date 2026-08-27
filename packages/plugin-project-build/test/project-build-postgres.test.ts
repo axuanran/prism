@@ -1,10 +1,12 @@
-import { mkdtemp, rm, stat } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { systemCallContext } from "@prismengine/contracts-data";
+import { ArtifactStoreCapabilityToken } from "@prismengine/contracts-artifact";
 import { ProjectBuildCapabilityToken } from "@prismengine/contracts-project";
 import { createEngine, type Engine } from "@prismengine/kernel";
+import { localArtifactStorePlugin } from "@prismengine/plugin-artifact-store-local";
 import {
   CodeProjectCapabilityToken,
   codeProjectPlugin,
@@ -35,8 +37,9 @@ describePostgres("Project Build PostgreSQL recovery", () => {
       const engine = createEngine({
         plugins: [
           storagePostgresPlugin({ connectionString: scratch.url }),
+          localArtifactStorePlugin({ root: artifacts }),
           codeProjectPlugin,
-          projectBuildPlugin({ artifactRoot: artifacts }),
+          projectBuildPlugin(),
         ],
         migrationJournal: journal,
       });
@@ -73,8 +76,12 @@ describePostgres("Project Build PostgreSQL recovery", () => {
       expect(await restored.buildLog(context, completed.id)).toEqual(
         expect.arrayContaining([expect.stringContaining("Vite client build PASS")]),
       );
-      await expect(stat(join(artifacts, release!.spec.clientArtifact.storageKey)))
-        .resolves.toBeDefined();
+      await expect(
+        host.engine.capability(ArtifactStoreCapabilityToken).verify(
+          context,
+          release!.spec.clientArtifact,
+        ),
+      ).resolves.toBe(true);
     } finally {
       for (const host of running) {
         await host.engine.stop();

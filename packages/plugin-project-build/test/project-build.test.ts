@@ -1,10 +1,12 @@
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { systemCallContext } from "@prismengine/contracts-data";
+import { ArtifactStoreCapabilityToken } from "@prismengine/contracts-artifact";
 import { ProjectBuildCapabilityToken } from "@prismengine/contracts-project";
 import { createEngine } from "@prismengine/kernel";
+import { localArtifactStorePlugin } from "@prismengine/plugin-artifact-store-local";
 import {
   CodeProjectCapabilityToken,
   codeProjectPlugin,
@@ -20,8 +22,9 @@ describe("Project Build Worker", () => {
     const engine = createEngine({
       plugins: [
         storageMemoryPlugin,
+        localArtifactStorePlugin({ root: artifacts }),
         codeProjectPlugin,
-        projectBuildPlugin({ artifactRoot: artifacts }),
+        projectBuildPlugin(),
       ],
     });
     try {
@@ -82,7 +85,11 @@ describe("Project Build Worker", () => {
           sourceFingerprint: source.spec.fingerprint,
           builderVersion: expect.any(String),
           testResult: { passed: true, failed: 0 },
-          reproducibility: "DETERMINISTIC",
+          runtimeAbiVersion: "1.0.0",
+          clientEntryExport: "mount",
+          serverEntryExport: "actions",
+          buildReproducibility: "DETERMINISTIC",
+          runtimeReproducibility: "UNKNOWN",
           materials: [{
             materialId: "performance.coefficient",
             materialVersion: "1.0.0",
@@ -96,21 +103,24 @@ describe("Project Build Worker", () => {
           }],
         },
       });
+      const artifactStore = engine.capability(ArtifactStoreCapabilityToken);
       for (const descriptor of [
         release!.spec.clientArtifact,
         release!.spec.serverArtifact,
         release!.spec.buildManifestArtifact,
       ]) {
-        await expect(stat(join(artifacts, descriptor.storageKey))).resolves.toBeDefined();
+        await expect(artifactStore.verify(context, descriptor)).resolves.toBe(true);
       }
       expect(logs).toEqual(expect.arrayContaining([
         expect.stringContaining("Vite client build PASS"),
         expect.stringContaining("esbuild server build PASS"),
       ]));
-      const manifestBytes = await readFile(
-        join(artifacts, release!.spec.buildManifestArtifact.storageKey),
+      const manifestBytes = await artifactStore.read(
+        context,
+        release!.spec.buildManifestArtifact,
+        "build-manifest.json",
       );
-      expect(JSON.parse(manifestBytes.toString("utf8"))).toMatchObject({
+      expect(JSON.parse(new TextDecoder().decode(manifestBytes))).toMatchObject({
         sourceFingerprint: source.spec.fingerprint,
       });
     } finally {
@@ -124,8 +134,9 @@ describe("Project Build Worker", () => {
     const engine = createEngine({
       plugins: [
         storageMemoryPlugin,
+        localArtifactStorePlugin({ root: artifacts }),
         codeProjectPlugin,
-        projectBuildPlugin({ artifactRoot: artifacts }),
+        projectBuildPlugin(),
       ],
     });
     try {

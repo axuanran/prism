@@ -167,7 +167,7 @@ export const CodeProjectCapabilityToken = defineCapability<CodeProjectCapability
 
 export const codeProjectPlugin = definePlugin({
   id: "project.code",
-  version: "0.1.10",
+  version: "0.1.13",
   requires: {
     storage: StorageCapabilityToken,
     atomicWrite: AtomicWriteCapabilityToken,
@@ -871,7 +871,7 @@ function defaultFiles(command: CreateCodeProjectCommand): readonly ProjectSource
       "}",
       "",
     ].join("\n"), "text/typescript-jsx"),
-    textFile("src/server/index.ts", "export default {};\n", "text/typescript"),
+    textFile("src/server/index.ts", "export const actions = {};\n", "text/typescript"),
     textFile("tests/project.test.ts", "export default async () => ({ passed: true });\n", "text/typescript"),
   ];
 }
