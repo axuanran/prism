@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  validateVisualPipelineSpec,
+  type VisualPipelineSpec,
   validateMaterialManifest,
   type MaterialManifest,
   type VisualOperatorContract,
@@ -44,6 +46,47 @@ describe("Visual Operator Contract V1", () => {
     expect(result.valid).toBe(false);
     expect(result.diagnostics).toEqual(expect.arrayContaining([
       expect.objectContaining({ code: "MATERIAL_VISUAL_OPERATOR_UNSUPPORTED" }),
+    ]));
+  });
+
+  it("rejects cyclic node bindings", () => {
+    const material = {
+      projectId: "project",
+      buildId: "build",
+      buildFingerprint: "a".repeat(64),
+      sourceRevision: 1,
+      sourceFingerprint: "b".repeat(64),
+      dependencyLockHash: "c".repeat(64),
+      materialId: "performance.coefficient-adjust",
+      materialVersion: "1.0.0",
+      artifactHash: "d".repeat(64),
+      manifestFingerprint: "e".repeat(64),
+    };
+    const pipeline: VisualPipelineSpec = {
+      schemaVersion: "1.0.0",
+      code: "coefficient-pipeline",
+      name: "Coefficient Pipeline",
+      inputs: [],
+      nodes: [
+        {
+          nodeId: "a",
+          material,
+          configuration: {},
+          inputBindings: { input: { kind: "NODE_OUTPUT", nodeId: "b", output: "value" } },
+        },
+        {
+          nodeId: "b",
+          material,
+          configuration: {},
+          inputBindings: { input: { kind: "NODE_OUTPUT", nodeId: "a", output: "value" } },
+        },
+      ],
+      outputs: [],
+    };
+    const result = validateVisualPipelineSpec(pipeline);
+    expect(result.valid).toBe(false);
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: "VISUAL_PIPELINE_CYCLE" }),
     ]));
   });
 });

@@ -602,6 +602,84 @@ export function validateMaterialManifest(
   }
   return { valid: diagnostics.length === 0, diagnostics };
 }
+export function validateVisualPipelineSpec(
+  pipeline: VisualPipelineSpec,
+): ValidationResult {
+  const diagnostics: Diagnostic[] = [];
+  const inputs = new Set(pipeline.inputs.map((input) => input.name));
+  const nodes = new Map<string, VisualPipelineNode>();
+  pipeline.nodes.forEach((node, index) => {
+    if (nodes.has(node.nodeId)) {
+      diagnostics.push(diagnostic(
+        "VISUAL_PIPELINE_DUPLICATE_NODE",
+        "Visual Pipeline nodeId must be unique.",
+        { path: `/nodes/${index}/nodeId` },
+      ));
+    }
+    nodes.set(node.nodeId, node);
+    const exact = node.material;
+    if ([
+      exact.buildFingerprint,
+      exact.sourceFingerprint,
+      exact.dependencyLockHash,
+      exact.artifactHash,
+      exact.manifestFingerprint,
+    ].some((value) => !/^[0-9a-f]{64}$/.test(value))) {
+      diagnostics.push(diagnostic(
+        "VISUAL_PIPELINE_MATERIAL_REF_INVALID",
+        "Visual Pipeline Material references must use exact SHA-256 identities.",
+        { path: `/nodes/${index}/material` },
+      ));
+    }
+  });
+  const dependencies = new Map<string, Set<string>>();
+  pipeline.nodes.forEach((node, index) => {
+    const refs = new Set<string>();
+    for (const binding of Object.values(node.inputBindings)) {
+      if (binding.kind === "PIPELINE_INPUT") {
+        if (!inputs.has(binding.input)) {
+          diagnostics.push(diagnostic(
+            "VISUAL_PIPELINE_INPUT_UNAVAILABLE",
+            "Visual Pipeline binding references an unknown input.",
+            { path: `/nodes/${index}/inputBindings` },
+          ));
+        }
+      } else {
+        refs.add(binding.nodeId);
+        if (!nodes.has(binding.nodeId)) {
+          diagnostics.push(diagnostic(
+            "VISUAL_PIPELINE_NODE_UNAVAILABLE",
+            "Visual Pipeline binding references an unknown node.",
+            { path: `/nodes/${index}/inputBindings` },
+          ));
+        }
+      }
+    }
+    dependencies.set(node.nodeId, refs);
+  });
+  const visiting = new Set<string>();
+  const visited = new Set<string>();
+  const visit = (nodeId: string): boolean => {
+    if (visiting.has(nodeId)) return true;
+    if (visited.has(nodeId)) return false;
+    visiting.add(nodeId);
+    for (const dependency of dependencies.get(nodeId) ?? []) {
+      if (visit(dependency)) return true;
+    }
+    visiting.delete(nodeId);
+    visited.add(nodeId);
+    return false;
+  };
+  if ([...nodes.keys()].some(visit)) {
+    diagnostics.push(diagnostic(
+      "VISUAL_PIPELINE_CYCLE",
+      "Visual Pipeline graph must be acyclic.",
+      { path: "/nodes" },
+    ));
+  }
+  return { valid: diagnostics.length === 0, diagnostics };
+}
+
 
 export function validateProjectReleaseManifest(
   release: ProjectReleaseManifest,

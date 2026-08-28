@@ -7,7 +7,10 @@ import {
   type CallContext,
   type Diagnostic,
 } from "@prismengine/contracts-data";
-import { validateMaterialManifest } from "@prismengine/contracts-project";
+import {
+  validateMaterialManifest,
+  validateVisualPipelineSpec,
+} from "@prismengine/contracts-project";
 import type {
   CodeProjectDefinition,
   DeclaredCodeMaterialManifest,
@@ -107,7 +110,7 @@ export const VisualPipelineResource: ResourceTypeDefinition<VisualPipelineSpec> 
   kind: VISUAL_PIPELINE_KIND,
   title: "Visual Pipeline",
   description: "Visual composition of exact Code Material Artifacts.",
-  config: { schema: VisualPipelineSchema },
+  config: { schema: VisualPipelineSchema, validate: validateVisualPipelineSpec },
   exposure: { configuration: true, frontend: true },
 };
 
