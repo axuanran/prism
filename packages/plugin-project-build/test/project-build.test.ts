@@ -207,4 +207,47 @@ describe("Project Build Worker", () => {
       await rm(artifacts, { recursive: true, force: true });
     }
   }, 120_000);
+
+  it("rejects an SDK Types fingerprint that differs from the Build environment", async () => {
+    const artifacts = await mkdtemp(join(tmpdir(), "prism-sdk-types-mismatch-"));
+    const runtimeProfile = {
+      profileId: "test-profile",
+      contractVersion: "1.0.0",
+      semanticVersion: "1.0.0",
+      pluginIdentities: [],
+      sdkTypesFingerprint: "f".repeat(64),
+      profileFingerprint: "e".repeat(64),
+    };
+    const engine = createEngine({
+      plugins: [
+        storageMemoryPlugin,
+        localArtifactStorePlugin({ root: artifacts }),
+        codeProjectPlugin,
+        projectBuildPlugin({ runtimeProfile, sdkTypes: "" }),
+      ],
+    });
+    try {
+      await engine.start();
+      const projects = engine.capability(CodeProjectCapabilityToken);
+      const created = await projects.create(context, {
+        id: "sdk-types-mismatch",
+        slug: "sdk-types-mismatch",
+        name: "SDK Types Mismatch",
+      });
+      const source = await projects.publishDraft(
+        context,
+        created.project.id,
+        created.draft.draftVersion,
+      );
+      const builds = engine.capability(ProjectBuildCapabilityToken);
+      const build = await builds.build(context, created.project.id, source.revision);
+      expect(build.status).toBe("FAILED");
+      expect(build.diagnostics[0]?.code).toBe("PROJECT_SDK_TYPES_MISMATCH");
+      expect(await builds.artifactSet(context, build.id)).toBeNull();
+      expect(await builds.releases(context, created.project.id)).toEqual([]);
+    } finally {
+      await engine.stop();
+      await rm(artifacts, { recursive: true, force: true });
+    }
+  }, 120_000);
 });
