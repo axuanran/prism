@@ -308,6 +308,11 @@ export interface ProjectBuildCapability {
     context: CallContext,
     buildId: string,
   ): Promise<readonly string[]>;
+  validateVisualPipeline(
+    context: CallContext,
+    buildId: string,
+    pipeline: VisualPipelineSpec,
+  ): Promise<ValidationResult>;
 }
 
 export const ProjectBuildCapabilityToken = defineCapability<ProjectBuildCapability>({

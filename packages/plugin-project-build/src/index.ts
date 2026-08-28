@@ -16,6 +16,7 @@ import {
   ProjectBuildCapabilityToken,
   PROJECT_RUNTIME_ABI_VERSION,
   validateProjectReleaseManifest,
+  validateVisualPipelineSpec,
   type DeclaredCodeMaterialManifest,
   type ProjectArtifactDescriptor,
   type ProjectBuildArtifactSet,
@@ -27,6 +28,7 @@ import {
   type ProjectTestResult,
   type ProjectRuntimeProfileSdkTypes,
   type ProjectVisualResourceRef,
+  type VisualPipelineSpec,
 } from "@prismengine/contracts-project";
 import {
   AtomicWriteCapabilityToken,
@@ -40,6 +42,7 @@ import {
   definePlugin,
   type Resource,
   type ResourceTypeDefinition,
+  type ValidationResult,
 } from "@prismengine/kernel";
 import {
   CodeProjectCapabilityToken,
@@ -302,6 +305,64 @@ class DefaultProjectBuildCapability implements ProjectBuildCapability {
   ): Promise<ProjectBuildArtifactSet | null> {
     return this.artifactSets.get(context, buildId);
   }
+  async validateVisualPipeline(
+    context: CallContext,
+    buildId: string,
+    pipeline: VisualPipelineSpec,
+  ): Promise<ValidationResult> {
+    const structural = validateVisualPipelineSpec(pipeline);
+    if (!structural.valid) return structural;
+    const artifactSet = await this.artifactSets.get(context, buildId);
+    if (artifactSet === null) {
+      return {
+        valid: false,
+        diagnostics: [diagnostic(
+          "VISUAL_PIPELINE_BUILD_UNAVAILABLE",
+          "Visual Pipeline requires an exact successful Build Artifact Set.",
+        )],
+      };
+    }
+    const diagnostics = pipeline.nodes.flatMap((node, index) => {
+      const materialIndex = artifactSet.materialManifests.findIndex((manifest) =>
+        manifest.id === node.material.materialId &&
+        manifest.version === node.material.materialVersion);
+      const manifest = artifactSet.materialManifests[materialIndex];
+      const artifact = artifactSet.materialArtifacts[materialIndex];
+      if (manifest === undefined || artifact === undefined) {
+        return [diagnostic(
+          "VISUAL_PIPELINE_MATERIAL_UNAVAILABLE",
+          "Visual Pipeline Material is unavailable in the exact Build.",
+          { path: `/nodes/${index}/material` },
+        )];
+      }
+      if (
+        node.material.projectId !== artifactSet.projectId ||
+        node.material.buildId !== artifactSet.buildId ||
+        node.material.buildFingerprint !== artifactSet.buildFingerprint ||
+        node.material.sourceRevision !== artifactSet.sourceRevision ||
+        node.material.sourceFingerprint !== artifactSet.sourceFingerprint ||
+        node.material.dependencyLockHash !== artifactSet.dependencyLockHash ||
+        node.material.artifactHash !== artifact.hash ||
+        node.material.manifestFingerprint !== contentHash(manifest)
+      ) {
+        return [diagnostic(
+          "VISUAL_PIPELINE_MATERIAL_IDENTITY_MISMATCH",
+          "Visual Pipeline Material identity does not match the exact Build Artifact.",
+          { path: `/nodes/${index}/material` },
+        )];
+      }
+      if (manifest.visualOperator === undefined) {
+        return [diagnostic(
+          "VISUAL_PIPELINE_MATERIAL_NOT_VISUAL",
+          "Code Material does not declare a Visual Operator Contract.",
+          { path: `/nodes/${index}/material` },
+        )];
+      }
+      return [];
+    });
+    return { valid: diagnostics.length === 0, diagnostics };
+  }
+
 
   async profileSdkTypes(
     context: CallContext,
