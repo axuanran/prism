@@ -262,6 +262,9 @@ export const codeProjectPlugin = definePlugin({
     for (const route of codeProjectRoutes(capability)) {
       context.extensions.contribute(HttpRouteExtensionPoint, route);
     }
+    for (const route of visualPipelineRoutes(context.dependencies.storage)) {
+      context.extensions.contribute(HttpRouteExtensionPoint, route);
+    }
   },
 });
 
@@ -742,6 +745,57 @@ function putDraft(
     document: draft as unknown as AtomicDocument,
     mode,
   };
+}
+
+function visualPipelineRoutes(storage: StorageCapability): readonly HttpRoute[] {
+  return [
+    {
+      method: "POST",
+      path: "/api/visual-pipelines/:id/drafts",
+      summary: "Save and validate a Visual Pipeline Draft",
+      handler: async (request) => {
+        requireBuilder(request.call);
+        const params = record(request.params, "/params");
+        const body = record(request.body, "/body");
+        const input = record(body.spec, "/spec") as unknown as VisualPipelineSpec;
+        const spec: PublishedVisualPipeline = {
+          ...input,
+          configurationFingerprint: fingerprintVisualConfiguration(input),
+          fingerprint: fingerprintVisualPipeline(input),
+        };
+        const validation = validateVisualPipelineSpec(spec);
+        if (hasErrors(validation.diagnostics)) throw new PrismError(validation.diagnostics);
+        return {
+          status: 201,
+          body: await storage.resources.saveDraft(request.call, {
+            kind: VISUAL_PIPELINE_KIND,
+            id: string(params.id, "/params/id"),
+            name: string(body.name, "/body/name"),
+            spec,
+          }),
+        };
+      },
+    },
+    {
+      method: "POST",
+      path: "/api/visual-pipelines/:id/publish",
+      summary: "Publish an exact Visual Pipeline Draft revision",
+      handler: async (request) => {
+        requireBuilder(request.call);
+        const params = record(request.params, "/params");
+        const body = record(request.body, "/body");
+        return {
+          status: 201,
+          body: await storage.resources.publish(
+            request.call,
+            VISUAL_PIPELINE_KIND,
+            string(params.id, "/params/id"),
+            positiveInteger(body.revision, "/body/revision"),
+          ),
+        };
+      },
+    },
+  ];
 }
 
 function codeProjectRoutes(capability: CodeProjectCapability): readonly HttpRoute[] {
