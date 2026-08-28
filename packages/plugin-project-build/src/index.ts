@@ -321,7 +321,7 @@ class DefaultProjectBuildCapability implements ProjectBuildCapability {
         { projectId, buildId },
       );
     }
-    validateVisualResources(visualResources);
+    await validateVisualResources(this.storage, context, visualResources);
     const releaseFingerprint = contentHash({
       schemaVersion: "1.0.0",
       projectId,
@@ -644,7 +644,11 @@ function defaultRuntimeProfile(): ProjectRuntimeProfileIdentity {
   return { ...base, profileFingerprint: contentHash(base) };
 }
 
-function validateVisualResources(resources: readonly ProjectVisualResourceRef[]): void {
+async function validateVisualResources(
+  storage: StorageCapability,
+  context: CallContext,
+  resources: readonly ProjectVisualResourceRef[],
+): Promise<void> {
   const identities = new Set<string>();
   for (const resource of resources) {
     const identity = `${resource.kind}\u0000${resource.resourceId}`;
@@ -661,6 +665,32 @@ function validateVisualResources(resources: readonly ProjectVisualResourceRef[])
         "PROJECT_RELEASE_VISUAL_RESOURCE_INVALID",
         "Visual Resources must reference exact published revisions with SHA-256 fingerprints.",
         { identity },
+      );
+    }
+    const published = await storage.resources.get(
+      context,
+      resource.kind,
+      resource.resourceId,
+      resource.revision,
+    );
+    const publishedSpec = published?.spec;
+    const actualFingerprint = (
+      publishedSpec !== null &&
+      typeof publishedSpec === "object" &&
+      !Array.isArray(publishedSpec) &&
+      typeof (publishedSpec as Record<string, unknown>).fingerprint === "string"
+    )
+      ? (publishedSpec as Record<string, string>).fingerprint
+      : contentHash(publishedSpec);
+    if (
+      published === null ||
+      published.status !== "published" ||
+      actualFingerprint !== resource.fingerprint
+    ) {
+      throw PrismError.of(
+        "PROJECT_RELEASE_VISUAL_RESOURCE_UNAVAILABLE",
+        "Visual Resource must reference an exact published revision and fingerprint.",
+        { identity, revision: resource.revision },
       );
     }
   }

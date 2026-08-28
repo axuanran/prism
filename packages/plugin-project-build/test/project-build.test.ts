@@ -132,10 +132,10 @@ describe("Project Build Worker", () => {
         artifactSetFingerprint: expect.stringMatching(/^[0-9a-f]{64}$/),
       });
       const visualResources = [{
-        kind: "project.visual-pipeline",
-        resourceId: "coefficient-pipeline",
-        revision: 1,
-        fingerprint: "b".repeat(64),
+        kind: source.kind,
+        resourceId: source.id,
+        revision: source.revision,
+        fingerprint: source.spec.fingerprint,
       }];
       const release2 = await builds.composeRelease(
         context,
