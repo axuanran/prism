@@ -18,6 +18,7 @@ const host = ref<HTMLElement | null>(null);
 let editor: monaco.editor.IStandaloneCodeEditor | undefined;
 let model: monaco.editor.ITextModel | undefined;
 let suppress = false;
+let profileSdkTypesLib: monaco.IDisposable | undefined;
 
 const workerScope = self as unknown as {
   MonacoEnvironment?: {
@@ -67,6 +68,31 @@ monaco.languages.typescript.typescriptDefaults.addExtraLib(
   'prism-project-sdk.d.ts',
 );
 
+async function loadProfileSdkTypes(): Promise<void> {
+  const response = await fetch('/api/project-runtime-profile/sdk-types');
+  if (response.status === 404) return;
+  if (!response.ok) throw new Error(`Profile SDK Types request failed: ${response.status}`);
+  const profile = await response.json() as {
+    readonly identity: { readonly sdkTypesFingerprint: string };
+    readonly content: string;
+  };
+  const digest = await crypto.subtle.digest(
+    'SHA-256',
+    new TextEncoder().encode(profile.content),
+  );
+  const fingerprint = [...new Uint8Array(digest)]
+    .map((value) => value.toString(16).padStart(2, '0'))
+    .join('');
+  if (fingerprint !== profile.identity.sdkTypesFingerprint) {
+    throw new Error('PROJECT_SDK_TYPES_MISMATCH: Monaco SDK Types do not match Runtime Profile.');
+  }
+  profileSdkTypesLib?.dispose();
+  profileSdkTypesLib = monaco.languages.typescript.typescriptDefaults.addExtraLib(
+    profile.content,
+    `prism-profile-sdk-${fingerprint}.d.ts`,
+  );
+}
+
 function language(path: string): string {
   const extension = path.slice(path.lastIndexOf('.') + 1).toLowerCase();
   return {
@@ -92,7 +118,8 @@ function replaceModel(): void {
   editor.setModel(model);
 }
 
-onMounted(() => {
+onMounted(async () => {
+  await loadProfileSdkTypes();
   if (!host.value) return;
   editor = monaco.editor.create(host.value, {
     automaticLayout: true,
@@ -121,6 +148,7 @@ watch(() => props.modelValue, (value) => {
 onBeforeUnmount(() => {
   editor?.dispose();
   model?.dispose();
+  profileSdkTypesLib?.dispose();
 });
 </script>
 

@@ -130,6 +130,11 @@ export interface ProjectRuntimeProfileIdentity {
   readonly sdkTypesFingerprint: string;
   readonly profileFingerprint: string;
 }
+export interface ProjectRuntimeProfileSdkTypes {
+  readonly identity: ProjectRuntimeProfileIdentity;
+  readonly artifact: ProjectArtifactDescriptor;
+  readonly content: string;
+}
 
 export interface ProjectVisualResourceRef {
   readonly kind: string;
@@ -153,6 +158,7 @@ export interface ProjectBuildArtifactSet {
   readonly typescriptVersion: string;
   readonly runtimeAbiVersion: string;
   readonly runtimeProfile: ProjectRuntimeProfileIdentity;
+  readonly sdkTypesArtifact: ProjectArtifactDescriptor;
   readonly clientEntryExport: string;
   readonly serverEntryExport: string;
   readonly actionIds: readonly string[];
@@ -224,6 +230,7 @@ export interface ProjectBuildCapability {
     visualResources: readonly ProjectVisualResourceRef[],
     runtimeProfile: ProjectRuntimeProfileIdentity,
   ): Promise<Resource<ProjectReleaseDefinition>>;
+  profileSdkTypes(context: CallContext): Promise<ProjectRuntimeProfileSdkTypes>;
 
   release(
     context: CallContext,

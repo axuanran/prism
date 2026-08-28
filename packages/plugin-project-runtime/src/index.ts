@@ -779,6 +779,7 @@ class ReleaseWorker {
       releaseRevision: release.revision,
       releaseFingerprint: release.fingerprint,
       runtimeAbiVersion,
+      runtimeProfile,
       runtimeProfileFingerprint: runtimeProfile.profileFingerprint,
       serverArtifactHash,
       actions: [...actionIds].sort(),
@@ -791,6 +792,7 @@ class ReleaseWorker {
       handshake.releaseRevision !== expected.releaseRevision ||
       handshake.releaseFingerprint !== expected.releaseFingerprint ||
       handshake.runtimeAbiVersion !== expected.runtimeAbiVersion ||
+      JSON.stringify(handshake.runtimeProfile) !== JSON.stringify(expected.runtimeProfile) ||
       handshake.runtimeProfileFingerprint !== expected.runtimeProfileFingerprint ||
       handshake.serverArtifactHash !== expected.serverArtifactHash ||
       JSON.stringify(handshake.actions) !== JSON.stringify(expected.actions) ||

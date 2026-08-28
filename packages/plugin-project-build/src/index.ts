@@ -25,6 +25,7 @@ import {
   type ProjectReleaseDefinition,
   type ProjectRuntimeProfileIdentity,
   type ProjectTestResult,
+  type ProjectRuntimeProfileSdkTypes,
   type ProjectVisualResourceRef,
 } from "@prismengine/contracts-project";
 import {
@@ -126,6 +127,7 @@ interface StoredBuildArtifacts {
   readonly server: ArtifactRef;
   readonly testReport: ArtifactRef;
   readonly buildManifest: ArtifactRef;
+  readonly sdkTypes: ArtifactRef;
   readonly testResult: ProjectTestResult;
   readonly materials: readonly {
     readonly manifest: DeclaredCodeMaterialManifest;
@@ -301,6 +303,24 @@ class DefaultProjectBuildCapability implements ProjectBuildCapability {
     return this.artifactSets.get(context, buildId);
   }
 
+  async profileSdkTypes(
+    context: CallContext,
+  ): Promise<ProjectRuntimeProfileSdkTypes> {
+    const artifact = await this.artifacts.putImmutable(context, {
+      contentType: "text/typescript",
+      files: [{
+        path: "profile-sdk.d.ts",
+        content: new TextEncoder().encode(this.sdkTypes),
+      }],
+    });
+    if (shaText(this.sdkTypes) !== this.runtimeProfile.sdkTypesFingerprint) {
+      throw PrismError.of(
+        "PROJECT_SDK_TYPES_MISMATCH",
+        "Runtime Profile SDK Types Artifact does not match its declared fingerprint.",
+      );
+    }
+    return { identity: this.runtimeProfile, artifact, content: this.sdkTypes };
+  }
   async composeRelease(
     context: CallContext,
     projectId: string,
@@ -381,10 +401,17 @@ class DefaultProjectBuildCapability implements ProjectBuildCapability {
     source: Resource<PublishedProjectSource>,
     response: BuildWorkerSuccess,
   ): Promise<StoredBuildArtifacts> {
-    const [client, server, testReport] = await Promise.all([
+    const [client, server, testReport, sdkTypes] = await Promise.all([
       this.artifacts.putImmutable(context, response.clientArtifact),
       this.artifacts.putImmutable(context, response.serverArtifact),
       this.artifacts.putImmutable(context, response.testReportArtifact),
+      this.artifacts.putImmutable(context, {
+        contentType: "text/typescript",
+        files: [{
+          path: "profile-sdk.d.ts",
+          content: new TextEncoder().encode(this.sdkTypes),
+        }],
+      }),
     ]);
     const materials = await Promise.all(response.materials.map(async (item) => ({
       manifest: item.manifest,
@@ -405,6 +432,8 @@ class DefaultProjectBuildCapability implements ProjectBuildCapability {
       nodeVersion: process.version,
       pnpmVersion: response.pnpmVersion,
       runtimeAbiVersion: PROJECT_RUNTIME_ABI_VERSION,
+      runtimeProfile: this.runtimeProfile,
+      sdkTypes,
       clientEntryExport: "mount",
       serverEntryExport: "actions",
       client,
@@ -421,12 +450,14 @@ class DefaultProjectBuildCapability implements ProjectBuildCapability {
       client,
       server,
       testReport,
+      sdkTypes,
       buildManifest,
       testResult,
       materials,
       descriptors: [
         client,
         server,
+        sdkTypes,
         testReport,
         buildManifest,
         ...materials.map((item) => item.artifact),
@@ -454,6 +485,7 @@ class DefaultProjectBuildCapability implements ProjectBuildCapability {
       typescriptVersion: "7.0.0",
       runtimeAbiVersion: PROJECT_RUNTIME_ABI_VERSION,
       runtimeProfile: this.runtimeProfile,
+      sdkTypesArtifact: stored.sdkTypes,
       clientEntryExport: "mount",
       serverEntryExport: "actions",
       actionIds: response.actionIds,
@@ -824,6 +856,15 @@ function buildRoutes(capability: ProjectBuildCapability): readonly HttpRoute[] {
           ),
         };
       },
+    },
+    {
+      method: "GET",
+      path: "/api/project-runtime-profile/sdk-types",
+      summary: "Read exact Project Runtime Profile SDK Types",
+      handler: async (request) => ({
+        status: 200,
+        body: await capability.profileSdkTypes(request.call),
+      }),
     },
   ];
 }

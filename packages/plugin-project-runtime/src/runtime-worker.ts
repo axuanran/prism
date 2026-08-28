@@ -112,6 +112,7 @@ async function handle(message: RuntimeMessage): Promise<void> {
         releaseFingerprint: release.fingerprint,
         runtimeAbiVersion: message.runtimeAbiVersion,
         serverArtifactHash: message.serverArtifactHash,
+        runtimeProfile: message.runtimeProfile,
         runtimeProfileFingerprint: message.runtimeProfile.profileFingerprint,
         actions: Object.keys(actions).sort(),
         materialIdentities: [...materials.keys()].sort(),
