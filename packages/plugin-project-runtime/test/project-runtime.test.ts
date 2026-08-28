@@ -28,6 +28,14 @@ import { projectRuntimePlugin } from "@prismengine/plugin-project-runtime";
 import { storageMemoryPlugin } from "@prismengine/plugin-storage-memory";
 
 const context = systemCallContext({ correlationId: "project-runtime-test" });
+const TEST_PROFILE = {
+  profileId: "runtime-test",
+  contractVersion: "1.0.0",
+  semanticVersion: "1.0.0",
+  pluginIdentities: [],
+  sdkTypesFingerprint: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  profileFingerprint: "a".repeat(64),
+};
 
 function releaseFiles(
   files: readonly ProjectSourceFile[],
@@ -105,8 +113,8 @@ describe("Project App Runtime", () => {
         storageMemoryPlugin,
         localArtifactStorePlugin({ root: artifacts }),
         codeProjectPlugin,
-        projectBuildPlugin(),
-        projectRuntimePlugin(),
+        projectBuildPlugin({ runtimeProfile: TEST_PROFILE, sdkTypes: "" }),
+        projectRuntimePlugin({ profileIdentity: TEST_PROFILE }),
         http,
       ],
     });
@@ -115,6 +123,7 @@ describe("Project App Runtime", () => {
       const projects = engine.capability(CodeProjectCapabilityToken);
       const builds = engine.capability(ProjectBuildCapabilityToken);
       const runtime = engine.capability(ProjectRuntimeCapabilityToken);
+      const storage = engine.capability(StorageCapabilityToken);
       const created = await projects.create(context, {
         id: "runtime-performance",
         slug: "runtime-performance",
@@ -233,6 +242,38 @@ describe("Project App Runtime", () => {
         error: expect.stringContaining("PROJECT_ACTION_NOT_FOUND"),
       });
       expect(run2.pin.definitionFingerprint).not.toBe(run1.pin.definitionFingerprint);
+      const release2 = await builds.release(context, created.project.id, 2);
+      const wrongProfile = {
+        ...release2!.spec.runtimeProfile,
+        profileFingerprint: "b".repeat(64),
+      };
+      const mismatchDraft = await storage.resources.saveDraft(context, {
+        kind: ProjectReleaseResource.kind,
+        id: release2!.id,
+        name: "Runtime Profile Mismatch",
+        spec: {
+          ...release2!.spec,
+          runtimeProfile: wrongProfile,
+          buildArtifactSet: {
+            ...release2!.spec.buildArtifactSet,
+            runtimeProfile: wrongProfile,
+          },
+          releaseFingerprint: "c".repeat(64),
+        },
+      });
+      const mismatchRelease = await storage.resources.publish(
+        context,
+        ProjectReleaseResource.kind,
+        release2!.id,
+        mismatchDraft.revision,
+      );
+      await expect(runtime.activate(
+        context,
+        created.project.id,
+        mismatchRelease.revision,
+        active2.release,
+      )).rejects.toThrow("PROJECT_RUNTIME_PROFILE_MISMATCH");
+      expect(await runtime.active(context, created.project.id)).toEqual(active2);
 
       const rollback = await runtime.activate(
         context,
@@ -253,7 +294,6 @@ describe("Project App Runtime", () => {
         .toEqual(expect.arrayContaining([run1.id, run2.id, run3.id]));
       expect((await runtime.logs(context, created.project.id)).map((log) => log.message))
         .toEqual(expect.arrayContaining(["coefficient 1.1", "coefficient 1.2"]));
-      const storage = engine.capability(StorageCapabilityToken);
       await expect(storage.collection("project.release-activations").count(context))
         .resolves.toBe(3);
       await expect(storage.collection("project.runtime-instances").count(context))
