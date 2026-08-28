@@ -1,6 +1,6 @@
 {
   "name": "@prismengine/plugin-material-registry",
-  "version": "0.1.19",
+  "version": "0.1.20",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -8,9 +8,9 @@
   "files": ["dist", "LICENSE", "NOTICE"],
   "scripts": { "build": "tsc --build" },
   "dependencies": {
-    "@prismengine/contracts-data": "workspace:0.1.19",
-    "@prismengine/contracts-project": "workspace:0.1.19",
-    "@prismengine/kernel": "workspace:0.1.19"
+    "@prismengine/contracts-data": "workspace:0.1.20",
+    "@prismengine/contracts-project": "workspace:0.1.20",
+    "@prismengine/kernel": "workspace:0.1.20"
   },
   "license": "Apache-2.0",
   "repository": {
