@@ -41,6 +41,7 @@ export interface MaterialManifest {
   readonly configurationSchema?: JsonValue;
   readonly editorSchema?: JsonValue;
   readonly traceProjection?: JsonValue;
+  readonly visualOperator?: VisualOperatorContract;
 }
 
 export interface CodeProjectDefinition {
@@ -141,6 +142,68 @@ export interface ProjectVisualResourceRef {
   readonly resourceId: string;
   readonly revision: number;
   readonly fingerprint: string;
+}
+export type VisualExecutionModel = "ROW_MAP" | "FILTER" | "FLAT_MAP" | "AGGREGATE";
+export type VisualCardinality =
+  | "ONE_TO_ONE"
+  | "ONE_TO_ZERO_OR_ONE"
+  | "ONE_TO_MANY"
+  | "MANY_TO_ONE";
+export type VisualGrainEffect = "PRESERVE" | "FILTER_ONLY" | "DECLARE_OUTPUT";
+
+export interface VisualOperatorContract {
+  readonly inputSchema: JsonValue;
+  readonly outputSchema: JsonValue;
+  readonly configurationSchema: JsonValue;
+  readonly editorSchema?: JsonValue;
+  readonly executionModel: VisualExecutionModel;
+  readonly cardinality: VisualCardinality;
+  readonly grainEffect: VisualGrainEffect;
+  readonly supportedBackends: readonly string[];
+}
+
+export interface ExactProjectMaterialRef {
+  readonly projectId: string;
+  readonly buildId: string;
+  readonly buildFingerprint: string;
+  readonly sourceRevision: number;
+  readonly sourceFingerprint: string;
+  readonly dependencyLockHash: string;
+  readonly materialId: string;
+  readonly materialVersion: string;
+  readonly artifactHash: string;
+  readonly manifestFingerprint: string;
+}
+
+export interface VisualPipelineInput {
+  readonly name: string;
+  readonly schema: JsonValue;
+}
+
+export type VisualInputBinding =
+  | { readonly kind: "PIPELINE_INPUT"; readonly input: string }
+  | { readonly kind: "NODE_OUTPUT"; readonly nodeId: string; readonly output: string };
+
+export interface VisualPipelineNode {
+  readonly nodeId: string;
+  readonly material: ExactProjectMaterialRef;
+  readonly configuration: JsonValue;
+  readonly inputBindings: Readonly<Record<string, VisualInputBinding>>;
+  readonly outputAliases?: Readonly<Record<string, string>>;
+}
+
+export interface VisualPipelineOutput {
+  readonly name: string;
+  readonly binding: VisualInputBinding;
+}
+
+export interface VisualPipelineSpec {
+  readonly schemaVersion: "1.0.0";
+  readonly code: string;
+  readonly name: string;
+  readonly inputs: readonly VisualPipelineInput[];
+  readonly nodes: readonly VisualPipelineNode[];
+  readonly outputs: readonly VisualPipelineOutput[];
 }
 
 export interface ProjectBuildArtifactSet {
@@ -521,6 +584,21 @@ export function validateMaterialManifest(
       "Material version must be an exact semantic version.",
       { path: "/version" },
     ));
+  }
+  if (manifest.visualOperator !== undefined) {
+    const visual = manifest.visualOperator;
+    if (
+      visual.executionModel !== "ROW_MAP" ||
+      visual.cardinality !== "ONE_TO_ONE" ||
+      visual.grainEffect !== "PRESERVE" ||
+      !visual.supportedBackends.includes("calculation.memory")
+    ) {
+      diagnostics.push(diagnostic(
+        "MATERIAL_VISUAL_OPERATOR_UNSUPPORTED",
+        "Visual Operator V1 requires ROW_MAP, ONE_TO_ONE, PRESERVE, and calculation.memory.",
+        { path: "/visualOperator" },
+      ));
+    }
   }
   return { valid: diagnostics.length === 0, diagnostics };
 }
