@@ -216,6 +216,54 @@ describe("Code Project Source lifecycle", () => {
       project: { status: "published", spec: { slug: "browser-project" } },
       draft: { draftVersion: 1, baseSourceRevision: null },
     });
+    const visualDraft = await fetch(`${address}/api/visual-pipelines/browser-pipeline/drafts`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-principal-id": "builder-1",
+        "x-principal-roles": "BUILDER,USER",
+      },
+      body: JSON.stringify({
+        name: "Browser Pipeline",
+        spec: {
+          schemaVersion: "1.0.0",
+          code: "browser-pipeline",
+          name: "Browser Pipeline",
+          inputs: [],
+          nodes: [],
+          outputs: [],
+        },
+      }),
+    });
+    expect(visualDraft.status).toBe(201);
+    const visualDraftBody = await visualDraft.json() as {
+      readonly revision: number;
+      readonly spec: {
+        readonly configurationFingerprint: string;
+        readonly fingerprint: string;
+      };
+    };
+    expect(visualDraftBody.spec.configurationFingerprint).toMatch(/^[0-9a-f]{64}$/);
+    expect(visualDraftBody.spec.fingerprint).toMatch(/^[0-9a-f]{64}$/);
+    const publishedVisual = await fetch(
+      `${address}/api/visual-pipelines/browser-pipeline/publish`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-principal-id": "builder-1",
+          "x-principal-roles": "BUILDER,USER",
+        },
+        body: JSON.stringify({ revision: visualDraftBody.revision }),
+      },
+    );
+    expect(publishedVisual.status).toBe(201);
+    expect(await publishedVisual.json()).toMatchObject({
+      kind: "project.visual-pipeline",
+      id: "browser-pipeline",
+      status: "published",
+      revision: 1,
+    });
     await engine.stop();
   });
 
