@@ -795,6 +795,60 @@ function visualPipelineRoutes(storage: StorageCapability): readonly HttpRoute[] 
         };
       },
     },
+    {
+      method: "GET",
+      path: "/api/visual-pipelines/:id/diff",
+      summary: "Diff two published Visual Pipeline revisions",
+      handler: async (request) => {
+        const params = record(request.params, "/params");
+        const query = record(request.query, "/query");
+        const id = string(params.id, "/params/id");
+        const [from, to] = await Promise.all([
+          storage.resources.get<PublishedVisualPipeline>(
+            request.call,
+            VISUAL_PIPELINE_KIND,
+            id,
+            positiveInteger(query.from, "/query/from"),
+          ),
+          storage.resources.get<PublishedVisualPipeline>(
+            request.call,
+            VISUAL_PIPELINE_KIND,
+            id,
+            positiveInteger(query.to, "/query/to"),
+          ),
+        ]);
+        if (from === null || to === null) {
+          throw PrismError.of(
+            "VISUAL_PIPELINE_REVISION_UNAVAILABLE",
+            "Visual Pipeline diff requires two exact published revisions.",
+          );
+        }
+        const fromNodes = new Map(from.spec.nodes.map((node) => [node.nodeId, node]));
+        const toNodes = new Map(to.spec.nodes.map((node) => [node.nodeId, node]));
+        const added = [...toNodes.keys()].filter((id) => !fromNodes.has(id)).sort();
+        const removed = [...fromNodes.keys()].filter((id) => !toNodes.has(id)).sort();
+        const configurationChanged = [...toNodes.keys()].filter((nodeId) => {
+          const prior = fromNodes.get(nodeId);
+          const next = toNodes.get(nodeId);
+          return prior !== undefined && next !== undefined &&
+            fingerprintJson(prior.configuration) !== fingerprintJson(next.configuration);
+        }).sort();
+        return {
+          status: 200,
+          body: {
+            id,
+            from: from.revision,
+            to: to.revision,
+            added,
+            removed,
+            configurationChanged,
+            fromConfigurationFingerprint: from.spec.configurationFingerprint,
+            toConfigurationFingerprint: to.spec.configurationFingerprint,
+            pipelineChanged: from.spec.fingerprint !== to.spec.fingerprint,
+          },
+        };
+      },
+    },
   ];
 }
 
