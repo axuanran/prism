@@ -25,7 +25,7 @@ export interface LocalArtifactStoreOptions {
 export function localArtifactStorePlugin(options: LocalArtifactStoreOptions) {
   return definePlugin({
     id: "artifact.store.local",
-    version: "0.1.17",
+    version: "0.1.18",
     provides: [ArtifactStoreCapabilityToken],
     register(context) {
       context.provide(ArtifactStoreCapabilityToken, new LocalArtifactStore(options.root));

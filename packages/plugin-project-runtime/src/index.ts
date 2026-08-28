@@ -54,7 +54,7 @@ const ACTIVATION_COLLECTION = "project.release-activations";
 const INSTANCE_COLLECTION = "project.runtime-instances";
 const RUN_COLLECTION = "project.action-runs";
 const LOG_COLLECTION = "project.runtime-logs";
-const RUNTIME_VERSION = "0.1.17";
+const RUNTIME_VERSION = "0.1.18";
 const DEFAULT_ACTION_TIMEOUT_MS = 30_000;
 
 interface WorkerLog {

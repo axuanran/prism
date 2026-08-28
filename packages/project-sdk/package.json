@@ -1,6 +1,6 @@
 {
   "name": "@prismengine/project-sdk",
-  "version": "0.1.17",
+  "version": "0.1.18",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -8,8 +8,8 @@
   "files": ["dist", "LICENSE", "NOTICE"],
   "scripts": { "build": "tsc --build" },
   "dependencies": {
-    "@prismengine/contracts-data": "workspace:0.1.17",
-    "@prismengine/contracts-project": "workspace:0.1.17"
+    "@prismengine/contracts-data": "workspace:0.1.18",
+    "@prismengine/contracts-project": "workspace:0.1.18"
   },
   "license": "Apache-2.0",
   "repository": {
