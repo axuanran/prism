@@ -63,9 +63,15 @@ const ProjectSourceSchema = Type.Object({
     content: Type.String(),
   }, { additionalProperties: false }), { minItems: 1 }),
 }, { additionalProperties: false });
+export interface PublishedVisualPipeline extends VisualPipelineSpec {
+  readonly configurationFingerprint: string;
+  readonly fingerprint: string;
+}
 const VisualPipelineSchema = Type.Object({
   schemaVersion: Type.Literal("1.0.0"),
   code: Type.String({ minLength: 1 }),
+  configurationFingerprint: Type.String({ pattern: "^[0-9a-f]{64}$" }),
+  fingerprint: Type.String({ pattern: "^[0-9a-f]{64}$" }),
   name: Type.String({ minLength: 1 }),
   inputs: Type.Array(Type.Any()),
   nodes: Type.Array(Type.Any()),
@@ -106,13 +112,63 @@ export const ProjectSourceResource: ResourceTypeDefinition<PublishedProjectSourc
   },
   exposure: { configuration: false, frontend: true },
 };
-export const VisualPipelineResource: ResourceTypeDefinition<VisualPipelineSpec> = {
+export const VisualPipelineResource: ResourceTypeDefinition<PublishedVisualPipeline> = {
   kind: VISUAL_PIPELINE_KIND,
   title: "Visual Pipeline",
   description: "Visual composition of exact Code Material Artifacts.",
-  config: { schema: VisualPipelineSchema, validate: validateVisualPipelineSpec },
+  config: {
+    schema: VisualPipelineSchema,
+    validate(spec) {
+      const semantic = validateVisualPipelineSpec(spec);
+      const diagnostics = [...semantic.diagnostics];
+      if (spec.configurationFingerprint !== fingerprintVisualConfiguration(spec)) {
+        diagnostics.push(diagnostic(
+          "VISUAL_PIPELINE_CONFIGURATION_FINGERPRINT_MISMATCH",
+          "Visual Pipeline configuration fingerprint does not match node configuration.",
+          { path: "/configurationFingerprint" },
+        ));
+      }
+      if (spec.fingerprint !== fingerprintVisualPipeline(spec)) {
+        diagnostics.push(diagnostic(
+          "VISUAL_PIPELINE_FINGERPRINT_MISMATCH",
+          "Visual Pipeline fingerprint does not match canonical content.",
+          { path: "/fingerprint" },
+        ));
+      }
+      return { valid: diagnostics.length === 0, diagnostics };
+    },
+  },
   exposure: { configuration: true, frontend: true },
 };
+
+export function fingerprintVisualConfiguration(pipeline: VisualPipelineSpec): string {
+  return fingerprintJson(pipeline.nodes
+    .map((node) => ({ nodeId: node.nodeId, configuration: node.configuration }))
+    .sort((left, right) => left.nodeId.localeCompare(right.nodeId)));
+}
+
+export function fingerprintVisualPipeline(pipeline: VisualPipelineSpec): string {
+  return fingerprintJson({
+    schemaVersion: pipeline.schemaVersion,
+    code: pipeline.code,
+    inputs: pipeline.inputs,
+    nodes: pipeline.nodes,
+    outputs: pipeline.outputs,
+  });
+}
+function fingerprintJson(value: unknown): string {
+  const canonical = (item: unknown): unknown => {
+    if (Array.isArray(item)) return item.map(canonical);
+    if (item !== null && typeof item === "object") {
+      return Object.fromEntries(Object.entries(item as Record<string, unknown>)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, child]) => [key, canonical(child)]));
+    }
+    return item;
+  };
+  return createHash("sha256").update(JSON.stringify(canonical(value))).digest("hex");
+}
+
 
 
 export interface CreateCodeProjectCommand {

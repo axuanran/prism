@@ -4,8 +4,13 @@ import { createEngine } from "@prismengine/kernel";
 import {
   CodeProjectCapabilityToken,
   codeProjectPlugin,
+  fingerprintVisualConfiguration,
+  fingerprintVisualPipeline,
 } from "@prismengine/plugin-code-project";
-import type { ProjectSourceFile } from "@prismengine/contracts-project";
+import type {
+  ProjectSourceFile,
+  VisualPipelineSpec,
+} from "@prismengine/contracts-project";
 import {
   HttpCapabilityToken,
   createHttpPlugin,
@@ -212,5 +217,22 @@ describe("Code Project Source lifecycle", () => {
       draft: { draftVersion: 1, baseSourceRevision: null },
     });
     await engine.stop();
+  });
+
+  it("separates configuration identity from full Visual Pipeline identity", () => {
+    const pipeline: VisualPipelineSpec = {
+      schemaVersion: "1.0.0",
+      code: "coefficient",
+      name: "Coefficient",
+      inputs: [],
+      nodes: [],
+      outputs: [],
+    };
+    const renamed = { ...pipeline, name: "Renamed display label" };
+    expect(fingerprintVisualConfiguration(renamed))
+      .toBe(fingerprintVisualConfiguration(pipeline));
+    expect(fingerprintVisualPipeline(renamed)).toBe(fingerprintVisualPipeline(pipeline));
+    expect(fingerprintVisualPipeline({ ...pipeline, code: "other" }))
+      .not.toBe(fingerprintVisualPipeline(pipeline));
   });
 });
