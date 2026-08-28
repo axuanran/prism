@@ -755,7 +755,10 @@ function validateConfigurationSchema(schema: JsonValue, value: JsonValue): boole
   if (Array.isArray(definition.enum)) return definition.enum.some((item) => item === value);
   switch (definition.type) {
     case "string":
-      return typeof value === "string";
+      return typeof value === "string" && (
+        definition.format !== "decimal-string" ||
+        /^-?(?:0|[1-9]\d*)(?:\.\d+)?$/.test(value)
+      );
     case "boolean":
       return typeof value === "boolean";
     case "integer":

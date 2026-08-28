@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   validateVisualPipelineSpec,
+  visualPropertyFields,
   type VisualPipelineSpec,
   validateMaterialManifest,
   type MaterialManifest,
@@ -88,5 +89,33 @@ describe("Visual Operator Contract V1", () => {
     expect(result.diagnostics).toEqual(expect.arrayContaining([
       expect.objectContaining({ code: "VISUAL_PIPELINE_CYCLE" }),
     ]));
+  });
+
+  it("derives decimal property fields without JavaScript numbers", () => {
+    expect(visualPropertyFields({
+      type: "object",
+      properties: {
+        coefficients: {
+          type: "object",
+          properties: {
+            DOCTOR: { type: "string", format: "decimal-string" },
+          },
+          required: ["DOCTOR"],
+        },
+      },
+    }, {
+      properties: {
+        coefficients: {
+          properties: {
+            DOCTOR: { label: "Doctor coefficient" },
+          },
+        },
+      },
+    })).toEqual([{
+      path: "/coefficients/DOCTOR",
+      label: "Doctor coefficient",
+      control: "decimal-string",
+      required: true,
+    }]);
   });
 });

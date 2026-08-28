@@ -206,6 +206,26 @@ export interface VisualPipelineSpec {
   readonly outputs: readonly VisualPipelineOutput[];
 }
 
+export type VisualPropertyControl =
+  | "string"
+  | "boolean"
+  | "enum"
+  | "integer"
+  | "decimal-string"
+  | "field-reference"
+  | "dataset-reference"
+  | "material-reference"
+  | "array"
+  | "object";
+
+export interface VisualPropertyField {
+  readonly path: string;
+  readonly label: string;
+  readonly control: VisualPropertyControl;
+  readonly required: boolean;
+  readonly enumValues?: readonly JsonValue[];
+}
+
 export interface ProjectBuildArtifactSet {
   readonly id: string;
   readonly buildId: string;
@@ -607,6 +627,70 @@ export function validateMaterialManifest(
   }
   return { valid: diagnostics.length === 0, diagnostics };
 }
+export function visualPropertyFields(
+  configurationSchema: JsonValue,
+  editorSchema?: JsonValue,
+): readonly VisualPropertyField[] {
+  const walk = (
+    schemaValue: JsonValue,
+    editorValue: JsonValue | undefined,
+    path: string,
+    required: boolean,
+  ): VisualPropertyField[] => {
+    if (typeof schemaValue !== "object" || schemaValue === null || Array.isArray(schemaValue)) return [];
+    const schema = schemaValue as Record<string, JsonValue>;
+    const editor = typeof editorValue === "object" && editorValue !== null && !Array.isArray(editorValue)
+      ? editorValue as Record<string, JsonValue>
+      : {};
+    const label = typeof editor.label === "string"
+      ? editor.label
+      : path.split("/").at(-1) ?? "";
+    const format = typeof schema.format === "string" ? schema.format : undefined;
+    const knownFormats: Partial<Record<VisualPropertyControl, true>> = {
+      "decimal-string": true,
+      "field-reference": true,
+      "dataset-reference": true,
+      "material-reference": true,
+    };
+    const control: VisualPropertyControl | null = Array.isArray(schema.enum)
+      ? "enum"
+      : format !== undefined && knownFormats[format as VisualPropertyControl] === true
+      ? format as VisualPropertyControl
+      : schema.type === "string" || schema.type === "boolean" || schema.type === "integer" ||
+          schema.type === "array" || schema.type === "object"
+      ? schema.type
+      : null;
+    if (control === "object") {
+      const properties = typeof schema.properties === "object" &&
+        schema.properties !== null &&
+        !Array.isArray(schema.properties)
+        ? schema.properties as Record<string, JsonValue>
+        : {};
+      const requiredNames = new Set(
+        Array.isArray(schema.required)
+          ? schema.required.filter((item): item is string => typeof item === "string")
+          : [],
+      );
+      const editorProperties = typeof editor.properties === "object" &&
+        editor.properties !== null &&
+        !Array.isArray(editor.properties)
+        ? editor.properties as Record<string, JsonValue>
+        : {};
+      return Object.entries(properties).flatMap(([name, child]) =>
+        walk(child, editorProperties[name], `${path}/${name}`, requiredNames.has(name)));
+    }
+    if (control === null) return [];
+    return [{
+      path,
+      label,
+      control,
+      required,
+      ...(Array.isArray(schema.enum) ? { enumValues: schema.enum } : {}),
+    }];
+  };
+  return walk(configurationSchema, editorSchema, "", true);
+}
+
 export function validateVisualPipelineSpec(
   pipeline: VisualPipelineSpec,
 ): ValidationResult {
