@@ -493,4 +493,44 @@ describe("Project App Runtime", () => {
       await rm(artifacts, { recursive: true, force: true });
     }
   }, 120_000);
+
+  it("rejects an unavailable Runtime Profile module without changing Active", async () => {
+    const artifacts = await mkdtemp(join(tmpdir(), "prism-profile-unavailable-"));
+    const engine = createEngine({
+      plugins: [
+        storageMemoryPlugin,
+        localArtifactStorePlugin({ root: artifacts }),
+        codeProjectPlugin,
+        projectBuildPlugin({ runtimeProfile: TEST_PROFILE, sdkTypes: "" }),
+        projectRuntimePlugin({
+          profileIdentity: TEST_PROFILE,
+          profileModule: join(artifacts, "missing-runtime-profile.js"),
+        }),
+      ],
+    });
+    try {
+      await engine.start();
+      const projects = engine.capability(CodeProjectCapabilityToken);
+      const builds = engine.capability(ProjectBuildCapabilityToken);
+      const runtime = engine.capability(ProjectRuntimeCapabilityToken);
+      const created = await projects.create(context, {
+        id: "profile-unavailable",
+        slug: "profile-unavailable",
+        name: "Profile Unavailable",
+      });
+      const source = await projects.publishDraft(
+        context,
+        created.project.id,
+        created.draft.draftVersion,
+      );
+      expect((await builds.build(context, created.project.id, source.revision)).status)
+        .toBe("SUCCESS");
+      await expect(runtime.activate(context, created.project.id, 1, null))
+        .rejects.toThrow("PROJECT_RUNTIME_PROFILE_UNAVAILABLE");
+      expect(await runtime.active(context, created.project.id)).toBeNull();
+    } finally {
+      await engine.stop();
+      await rm(artifacts, { recursive: true, force: true });
+    }
+  }, 120_000);
 });
