@@ -241,7 +241,9 @@ class DefaultProjectBuildCapability implements ProjectBuildCapability {
         status: "FAILED",
         finishedAt: new Date().toISOString(),
         diagnostics: [diagnostic(
-          "PROJECT_BUILD_FAILED",
+          response.message.startsWith("PROJECT_SDK_TYPES_MISMATCH")
+            ? "PROJECT_SDK_TYPES_MISMATCH"
+            : "PROJECT_BUILD_FAILED",
           response.message,
           { details: { buildId } },
         )],

@@ -797,10 +797,15 @@ class ReleaseWorker {
       JSON.stringify(handshake.materialIdentities) !== JSON.stringify(expected.materialIdentities)
     ) {
       await worker.dispose();
-      throw PrismError.of(
-        "PROJECT_RUNTIME_MANIFEST_MISMATCH",
-        typeof handshake.error === "string" ? handshake.error : "Candidate Worker handshake does not match Project Release.",
-      );
+      const handshakeError = typeof handshake.error === "string"
+        ? handshake.error
+        : "Candidate Worker handshake does not match Project Release.";
+      const code = handshakeError.includes("PROJECT_RUNTIME_PROFILE_MISMATCH")
+        ? "PROJECT_RUNTIME_PROFILE_MISMATCH"
+        : handshake.type === "ready-failed" && profileModule !== undefined
+        ? "PROJECT_RUNTIME_PROFILE_UNAVAILABLE"
+        : "PROJECT_RUNTIME_MANIFEST_MISMATCH";
+      throw PrismError.of(code, handshakeError);
     }
     return worker;
   }
