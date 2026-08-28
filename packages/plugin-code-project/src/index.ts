@@ -15,6 +15,7 @@ import type {
   ProjectSourceDefinition,
   ProjectSourceDraft,
   ProjectSourceFile,
+  VisualPipelineSpec,
 } from "@prismengine/contracts-project";
 import {
   AtomicWriteCapabilityToken,
@@ -37,6 +38,7 @@ import {
 
 export const CODE_PROJECT_KIND = "project.code-project";
 export const PROJECT_SOURCE_KIND = "project.source";
+export const VISUAL_PIPELINE_KIND = "project.visual-pipeline";
 const SOURCE_DRAFT_COLLECTION = "project.source-drafts";
 const ALLOWED_EXTENSIONS = new Set([
   ".ts", ".tsx", ".js", ".jsx", ".json", ".css", ".md", ".sql", ".yaml", ".yml",
@@ -57,6 +59,14 @@ const ProjectSourceSchema = Type.Object({
     mediaType: Type.String({ minLength: 1 }),
     content: Type.String(),
   }, { additionalProperties: false }), { minItems: 1 }),
+}, { additionalProperties: false });
+const VisualPipelineSchema = Type.Object({
+  schemaVersion: Type.Literal("1.0.0"),
+  code: Type.String({ minLength: 1 }),
+  name: Type.String({ minLength: 1 }),
+  inputs: Type.Array(Type.Any()),
+  nodes: Type.Array(Type.Any()),
+  outputs: Type.Array(Type.Any()),
 }, { additionalProperties: false });
 
 export interface PublishedProjectSource extends ProjectSourceDefinition {
@@ -93,6 +103,14 @@ export const ProjectSourceResource: ResourceTypeDefinition<PublishedProjectSourc
   },
   exposure: { configuration: false, frontend: true },
 };
+export const VisualPipelineResource: ResourceTypeDefinition<VisualPipelineSpec> = {
+  kind: VISUAL_PIPELINE_KIND,
+  title: "Visual Pipeline",
+  description: "Visual composition of exact Code Material Artifacts.",
+  config: { schema: VisualPipelineSchema },
+  exposure: { configuration: true, frontend: true },
+};
+
 
 export interface CreateCodeProjectCommand {
   readonly id?: string;
@@ -176,6 +194,7 @@ export const codeProjectPlugin = definePlugin({
   register(context) {
     context.resources.define(CodeProjectResource);
     context.resources.define(ProjectSourceResource);
+    context.resources.define(VisualPipelineResource);
     const capability = new DefaultCodeProjectCapability(
       context.dependencies.storage,
       context.dependencies.atomicWrite,
