@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
 import { fork } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { Type } from "@sinclair/typebox";
+import { Value } from "@sinclair/typebox/value";
+import { Type, type TSchema } from "@sinclair/typebox";
 import {
   ArtifactStoreCapabilityToken,
   type ArtifactRef,
@@ -356,6 +357,16 @@ class DefaultProjectBuildCapability implements ProjectBuildCapability {
           "VISUAL_PIPELINE_MATERIAL_NOT_VISUAL",
           "Code Material does not declare a Visual Operator Contract.",
           { path: `/nodes/${index}/material` },
+        )];
+      }
+      if (!Value.Check(
+        manifest.visualOperator.configurationSchema as TSchema,
+        node.configuration,
+      )) {
+        return [diagnostic(
+          "VISUAL_PIPELINE_CONFIGURATION_INVALID",
+          "Visual Pipeline node configuration does not match the Material schema.",
+          { path: `/nodes/${index}/configuration` },
         )];
       }
       return [];
