@@ -1,8 +1,7 @@
 import { createHash } from "node:crypto";
 import { fork } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { Value } from "@sinclair/typebox/value";
-import { Type, type TSchema } from "@sinclair/typebox";
+import { Type } from "@sinclair/typebox";
 import {
   ArtifactStoreCapabilityToken,
   type ArtifactRef,
@@ -12,6 +11,7 @@ import {
   PrismError,
   diagnostic,
   type CallContext,
+  type JsonValue,
 } from "@prismengine/contracts-data";
 import {
   ProjectBuildCapabilityToken,
@@ -359,8 +359,8 @@ class DefaultProjectBuildCapability implements ProjectBuildCapability {
           { path: `/nodes/${index}/material` },
         )];
       }
-      if (!Value.Check(
-        manifest.visualOperator.configurationSchema as TSchema,
+      if (!validateConfigurationSchema(
+        manifest.visualOperator.configurationSchema,
         node.configuration,
       )) {
         return [diagnostic(
@@ -749,6 +749,39 @@ function defaultRuntimeProfile(): ProjectRuntimeProfileIdentity {
   };
   return { ...base, profileFingerprint: contentHash(base) };
 }
+function validateConfigurationSchema(schema: JsonValue, value: JsonValue): boolean {
+  if (typeof schema !== "object" || schema === null || Array.isArray(schema)) return false;
+  const definition = schema as Record<string, JsonValue>;
+  if (Array.isArray(definition.enum)) return definition.enum.some((item) => item === value);
+  switch (definition.type) {
+    case "string":
+      return typeof value === "string";
+    case "boolean":
+      return typeof value === "boolean";
+    case "integer":
+      return typeof value === "number" && Number.isInteger(value);
+    case "array":
+      return Array.isArray(value) && (
+        definition.items === undefined ||
+        value.every((item) => validateConfigurationSchema(definition.items!, item))
+      );
+    case "object": {
+      if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+      const object = value as Record<string, JsonValue>;
+      const required = Array.isArray(definition.required)
+        ? definition.required.filter((item): item is string => typeof item === "string")
+        : [];
+      if (required.some((key) => !(key in object))) return false;
+      const properties = definition.properties;
+      if (typeof properties !== "object" || properties === null || Array.isArray(properties)) return true;
+      return Object.entries(properties).every(([key, child]) =>
+        object[key] === undefined || validateConfigurationSchema(child, object[key]));
+    }
+    default:
+      return false;
+  }
+}
+
 
 async function validateVisualResources(
   storage: StorageCapability,

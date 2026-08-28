@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -15,6 +16,19 @@ import { projectBuildPlugin } from "@prismengine/plugin-project-build";
 import { storageMemoryPlugin } from "@prismengine/plugin-storage-memory";
 
 const context = systemCallContext({ correlationId: "project-build-test" });
+function fingerprint(value: unknown): string {
+  const canonical = (item: unknown): unknown => {
+    if (Array.isArray(item)) return item.map(canonical);
+    if (item !== null && typeof item === "object") {
+      return Object.fromEntries(Object.entries(item as Record<string, unknown>)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, child]) => [key, canonical(child)]));
+    }
+    return item;
+  };
+  return createHash("sha256").update(JSON.stringify(canonical(value))).digest("hex");
+}
+
 
 describe("Project Build Worker", () => {
   it("installs, typechecks, tests, builds, verifies exports, and publishes Release", async () => {
@@ -55,6 +69,19 @@ describe("Project Build Worker", () => {
             runtimeTarget: "pipeline",
             entry: materialEntry.path,
             exportName: "default",
+            visualOperator: {
+              inputSchema: { type: "number" },
+              outputSchema: { type: "number" },
+              configurationSchema: {
+                type: "object",
+                properties: { coefficient: { type: "string" } },
+                required: ["coefficient"],
+              },
+              executionModel: "ROW_MAP",
+              cardinality: "ONE_TO_ONE",
+              grainEffect: "PRESERVE",
+              supportedBackends: ["calculation.memory"],
+            },
           }],
         }, null, 2)}\n`,
       };
@@ -131,6 +158,35 @@ describe("Project Build Worker", () => {
         runtimeProfile: { profileId: "prism-default" },
         artifactSetFingerprint: expect.stringMatching(/^[0-9a-f]{64}$/),
       });
+      const visualMaterial = artifactSet!.materialManifests[0]!;
+      const validation = await builds.validateVisualPipeline(context, build.id, {
+        schemaVersion: "1.0.0",
+        code: "invalid-configuration",
+        name: "Invalid Configuration",
+        inputs: [],
+        nodes: [{
+          nodeId: "coefficient",
+          material: {
+            projectId: artifactSet!.projectId,
+            buildId: artifactSet!.buildId,
+            buildFingerprint: artifactSet!.buildFingerprint,
+            sourceRevision: artifactSet!.sourceRevision,
+            sourceFingerprint: artifactSet!.sourceFingerprint,
+            dependencyLockHash: artifactSet!.dependencyLockHash,
+            materialId: visualMaterial.id,
+            materialVersion: visualMaterial.version,
+            artifactHash: artifactSet!.materialArtifacts[0]!.hash,
+            manifestFingerprint: fingerprint(visualMaterial),
+          },
+          configuration: { coefficient: 1.1 },
+          inputBindings: {},
+        }],
+        outputs: [],
+      });
+      expect(validation.valid).toBe(false);
+      expect(validation.diagnostics).toEqual(expect.arrayContaining([
+        expect.objectContaining({ code: "VISUAL_PIPELINE_CONFIGURATION_INVALID" }),
+      ]));
       const visualResources = [{
         kind: source.kind,
         resourceId: source.id,
