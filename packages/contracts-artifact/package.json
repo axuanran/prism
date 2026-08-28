@@ -1,6 +1,6 @@
 {
   "name": "@prismengine/contracts-artifact",
-  "version": "0.1.16",
+  "version": "0.1.17",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -8,8 +8,8 @@
   "files": ["dist", "LICENSE", "NOTICE"],
   "scripts": { "build": "tsc --build" },
   "dependencies": {
-    "@prismengine/contracts-data": "workspace:0.1.16",
-    "@prismengine/kernel": "workspace:0.1.16"
+    "@prismengine/contracts-data": "workspace:0.1.17",
+    "@prismengine/kernel": "workspace:0.1.17"
   },
   "license": "Apache-2.0",
   "repository": {

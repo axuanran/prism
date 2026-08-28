@@ -18,7 +18,7 @@ import {
 } from "./registries.js";
 import type { ResourceTypeDefinition } from "./resource.js";
 
-export const ENGINE_VERSION = "0.1.16";
+export const ENGINE_VERSION = "0.1.17";
 
 /** Records which migrations already ran. Storage plugins supply a durable one. */
 export interface MigrationJournal {

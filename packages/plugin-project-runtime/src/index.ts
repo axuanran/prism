@@ -54,7 +54,7 @@ const ACTIVATION_COLLECTION = "project.release-activations";
 const INSTANCE_COLLECTION = "project.runtime-instances";
 const RUN_COLLECTION = "project.action-runs";
 const LOG_COLLECTION = "project.runtime-logs";
-const RUNTIME_VERSION = "0.1.16";
+const RUNTIME_VERSION = "0.1.17";
 const DEFAULT_ACTION_TIMEOUT_MS = 30_000;
 
 interface WorkerLog {
@@ -309,7 +309,10 @@ class DefaultProjectRuntime implements ProjectRuntimeCapability {
           engine: ENGINE_VERSION,
           operations: { [actionId]: release.spec.serverArtifact.hash },
           backend: { id: "project-runtime-worker", version: RUNTIME_VERSION },
-          components: { "project.runtime-abi": release.spec.runtimeAbiVersion },
+          components: {
+            "project.runtime-abi": release.spec.runtimeAbiVersion,
+            "project.runtime-profile": release.spec.runtimeProfile.profileFingerprint,
+          },
         },
         planHash: release.spec.buildManifestArtifact.hash,
       },
