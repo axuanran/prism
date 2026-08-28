@@ -105,6 +105,8 @@ export interface ProjectBuildRequest {
   readonly startedAt?: string;
   readonly finishedAt?: string;
   readonly releaseId?: string;
+  readonly artifactSetId?: string;
+
   readonly diagnostics: readonly Diagnostic[];
 }
 
@@ -114,10 +116,67 @@ export interface ProjectTestResult {
   readonly failed: number;
   readonly reportHash: string;
 }
+export interface ProjectRuntimePluginIdentity {
+  readonly pluginId: string;
+  readonly semanticVersion: string;
+  readonly implementationVersion?: string;
+}
+
+export interface ProjectRuntimeProfileIdentity {
+  readonly profileId: string;
+  readonly contractVersion: string;
+  readonly semanticVersion: string;
+  readonly pluginIdentities: readonly ProjectRuntimePluginIdentity[];
+  readonly sdkTypesFingerprint: string;
+  readonly profileFingerprint: string;
+}
+
+export interface ProjectVisualResourceRef {
+  readonly kind: string;
+  readonly resourceId: string;
+  readonly revision: number;
+  readonly fingerprint: string;
+}
+
+export interface ProjectBuildArtifactSet {
+  readonly id: string;
+  readonly buildId: string;
+  readonly buildFingerprint: string;
+  readonly projectId: string;
+  readonly sourceRevision: number;
+  readonly sourceFingerprint: string;
+  readonly packageJsonHash: string;
+  readonly dependencyLockHash: string;
+  readonly builderVersion: string;
+  readonly nodeVersion: string;
+  readonly pnpmVersion: string;
+  readonly typescriptVersion: string;
+  readonly runtimeAbiVersion: string;
+  readonly runtimeProfile: ProjectRuntimeProfileIdentity;
+  readonly clientEntryExport: string;
+  readonly serverEntryExport: string;
+  readonly actionIds: readonly string[];
+  readonly clientArtifact: ProjectArtifactDescriptor;
+  readonly serverArtifact: ProjectArtifactDescriptor;
+  readonly buildManifestArtifact: ProjectArtifactDescriptor;
+  readonly materialManifests: readonly DeclaredCodeMaterialManifest[];
+  readonly materialArtifacts: readonly ProjectArtifactDescriptor[];
+  readonly testResult: ProjectTestResult;
+  readonly diagnostics: readonly Diagnostic[];
+  readonly buildReproducibility: "DETERMINISTIC" | "BEST_EFFORT";
+  readonly runtimeReproducibility: "UNKNOWN" | "DETERMINISTIC" | "BEST_EFFORT" | "NON_DETERMINISTIC";
+  readonly artifactSetFingerprint: string;
+}
+
 
 export type ProjectArtifactDescriptor = ArtifactRef;
 
 export interface ProjectReleaseDefinition extends ProjectReleaseManifest {
+  readonly buildArtifactSet: ProjectBuildArtifactSet;
+  readonly visualResources: readonly ProjectVisualResourceRef[];
+  readonly runtimeProfile: ProjectRuntimeProfileIdentity;
+  readonly releaseFingerprint: string;
+
   readonly sourceRevision: number;
   readonly sourceFingerprint: string;
   readonly packageJsonHash: string;
@@ -154,6 +213,18 @@ export interface ProjectBuildCapability {
     context: CallContext,
     projectId: string,
   ): Promise<readonly ProjectBuildRequest[]>;
+  artifactSet(
+    context: CallContext,
+    buildId: string,
+  ): Promise<ProjectBuildArtifactSet | null>;
+  composeRelease(
+    context: CallContext,
+    projectId: string,
+    buildId: string,
+    visualResources: readonly ProjectVisualResourceRef[],
+    runtimeProfile: ProjectRuntimeProfileIdentity,
+  ): Promise<Resource<ProjectReleaseDefinition>>;
+
   release(
     context: CallContext,
     projectId: string,
@@ -289,6 +360,8 @@ export interface ProjectRuntimeInstance {
   readonly release: ProjectReleaseRef;
   readonly workerPid: number;
   readonly status: ProjectRuntimeInstanceStatus;
+  readonly runtimeProfileFingerprint: string;
+
   readonly startedAt: string;
   readonly lastHeartbeatAt: string;
   readonly stoppedAt?: string;
@@ -302,6 +375,8 @@ export interface ProjectActionRun {
   readonly projectId: string;
   readonly release: ProjectReleaseRef;
   readonly actionId: string;
+  readonly runtimeProfileFingerprint: string;
+
   readonly status: "SUCCESS" | "FAILED";
   readonly inputFingerprint: string;
   readonly result?: JsonValue;

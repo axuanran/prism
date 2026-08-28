@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { fork } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { Type } from "@sinclair/typebox";
@@ -17,11 +18,14 @@ import {
   validateProjectReleaseManifest,
   type DeclaredCodeMaterialManifest,
   type ProjectArtifactDescriptor,
+  type ProjectBuildArtifactSet,
   type ProjectBuildCapability,
   type ProjectBuildRequest,
   type ProjectMaterialRef,
   type ProjectReleaseDefinition,
+  type ProjectRuntimeProfileIdentity,
   type ProjectTestResult,
+  type ProjectVisualResourceRef,
 } from "@prismengine/contracts-project";
 import {
   AtomicWriteCapabilityToken,
@@ -54,12 +58,17 @@ import type {
 export const PROJECT_RELEASE_KIND = "project.release";
 const BUILD_COLLECTION = "project.build-requests";
 const BUILD_LOG_COLLECTION = "project.build-logs";
+const ARTIFACT_SET_COLLECTION = "project.build-artifact-sets";
 const ARTIFACT_COLLECTION = "project.artifacts";
-const BUILDER_VERSION = "0.1.15";
+const BUILDER_VERSION = "0.1.16";
 
 const ProjectReleaseSchema = Type.Object({
   projectId: Type.String({ minLength: 1 }),
   materials: Type.Array(Type.Any()),
+  buildArtifactSet: Type.Any(),
+  visualResources: Type.Array(Type.Any()),
+  runtimeProfile: Type.Any(),
+  releaseFingerprint: Type.String({ pattern: "^[0-9a-f]{64}$" }),
   sourceRevision: Type.Integer({ minimum: 1 }),
   sourceFingerprint: Type.String({ pattern: "^[0-9a-f]{64}$" }),
   packageJsonHash: Type.String({ pattern: "^[0-9a-f]{64}$" }),
@@ -125,7 +134,10 @@ interface StoredBuildArtifacts {
   readonly descriptors: readonly ArtifactRef[];
 }
 
-export function projectBuildPlugin() {
+export function projectBuildPlugin(options: {
+  readonly runtimeProfile?: ProjectRuntimeProfileIdentity;
+  readonly sdkTypes?: string;
+} = {}) {
   return definePlugin({
     id: "project.build",
     version: BUILDER_VERSION,
@@ -143,6 +155,8 @@ export function projectBuildPlugin() {
         context.dependencies.atomicWrite,
         context.dependencies.artifacts,
         context.dependencies.codeProjects,
+        options.runtimeProfile ?? defaultRuntimeProfile(),
+        options.sdkTypes ?? "",
       );
       context.provide(ProjectBuildCapabilityToken, capability);
       for (const route of buildRoutes(capability)) {
@@ -155,15 +169,19 @@ export function projectBuildPlugin() {
 class DefaultProjectBuildCapability implements ProjectBuildCapability {
   private readonly builds;
   private readonly logs;
+  private readonly artifactSets;
 
   constructor(
     private readonly storage: StorageCapability,
     private readonly atomicWrite: AtomicWriteCapability,
     private readonly artifacts: ArtifactStoreCapability,
     private readonly codeProjects: CodeProjectCapability,
+    private readonly runtimeProfile: ProjectRuntimeProfileIdentity,
+    private readonly sdkTypes: string,
   ) {
     this.builds = storage.collection<ProjectBuildRequest>(BUILD_COLLECTION);
     this.logs = storage.collection<BuildLogDocument>(BUILD_LOG_COLLECTION);
+    this.artifactSets = storage.collection<ProjectBuildArtifactSet>(ARTIFACT_SET_COLLECTION);
   }
 
   async build(
@@ -214,6 +232,8 @@ class DefaultProjectBuildCapability implements ProjectBuildCapability {
       files: source.spec.files,
       materials: parseMaterials(source),
       builderVersion: BUILDER_VERSION,
+      sdkTypes: this.sdkTypes,
+      sdkTypesFingerprint: this.runtimeProfile.sdkTypesFingerprint,
     });
     if (response.type === "failure") {
       const failed: ProjectBuildRequest = {
@@ -230,10 +250,18 @@ class DefaultProjectBuildCapability implements ProjectBuildCapability {
       return failed;
     }
     const stored = await this.storeArtifacts(context, source, response);
-    const release = await this.publishRelease(context, source, response, stored);
+    const artifactSet = await this.createArtifactSet(context, buildId, source, response, stored);
+    const release = await this.composeRelease(
+      context,
+      projectId,
+      buildId,
+      [],
+      this.runtimeProfile,
+    );
     const success: ProjectBuildRequest = {
       ...running,
       status: "SUCCESS",
+      artifactSetId: artifactSet.id,
       releaseId: `${release.id}@${release.revision}`,
       finishedAt: new Date().toISOString(),
       diagnostics: [],
@@ -264,6 +292,56 @@ class DefaultProjectBuildCapability implements ProjectBuildCapability {
       orderBy: [{ field: "createdAt", direction: "desc" }],
     });
   }
+  async artifactSet(
+    context: CallContext,
+    buildId: string,
+  ): Promise<ProjectBuildArtifactSet | null> {
+    return this.artifactSets.get(context, buildId);
+  }
+
+  async composeRelease(
+    context: CallContext,
+    projectId: string,
+    buildId: string,
+    visualResources: readonly ProjectVisualResourceRef[],
+    runtimeProfile: ProjectRuntimeProfileIdentity,
+  ): Promise<Resource<ProjectReleaseDefinition>> {
+    const artifactSet = await this.artifactSets.get(context, buildId);
+    if (artifactSet === null || artifactSet.projectId !== projectId) {
+      throw PrismError.of(
+        "PROJECT_BUILD_ARTIFACT_SET_UNAVAILABLE",
+        "Release composition requires an exact successful Build Artifact Set.",
+        { projectId, buildId },
+      );
+    }
+    if (runtimeProfile.profileFingerprint !== artifactSet.runtimeProfile.profileFingerprint) {
+      throw PrismError.of(
+        "PROJECT_BUILD_RUNTIME_PROFILE_MISMATCH",
+        "Project Release Runtime Profile must match the Build Artifact Set.",
+        { projectId, buildId },
+      );
+    }
+    validateVisualResources(visualResources);
+    const releaseFingerprint = contentHash({
+      schemaVersion: "1.0.0",
+      projectId,
+      artifactSetId: artifactSet.id,
+      artifactSetFingerprint: artifactSet.artifactSetFingerprint,
+      runtimeProfileFingerprint: runtimeProfile.profileFingerprint,
+      visualResources: canonicalVisualResources(visualResources),
+    });
+    const prior = await this.releases(context, projectId);
+    const existing = prior.find((item) => item.spec.releaseFingerprint === releaseFingerprint);
+    if (existing !== undefined) return existing;
+    return this.publishRelease(
+      context,
+      artifactSet,
+      canonicalVisualResources(visualResources),
+      runtimeProfile,
+      releaseFingerprint,
+    );
+  }
+
 
   async release(
     context: CallContext,
@@ -354,29 +432,16 @@ class DefaultProjectBuildCapability implements ProjectBuildCapability {
     };
   }
 
-  private async publishRelease(
+  private async createArtifactSet(
     context: CallContext,
+    buildId: string,
     source: Resource<PublishedProjectSource>,
     response: BuildWorkerSuccess,
     stored: StoredBuildArtifacts,
-  ): Promise<Resource<ProjectReleaseDefinition>> {
-    const materials: ProjectMaterialRef[] = stored.materials.map((item) => ({
-      materialId: item.manifest.id,
-      materialVersion: item.manifest.version,
-      source: {
-        authoringMode: "CODE",
-        module: {
-          projectId: source.spec.projectId,
-          sourceRevision: source.revision,
-          sourceFingerprint: source.spec.fingerprint,
-          artifactHash: item.artifact.hash,
-          dependencyLockHash: response.dependencyLockHash,
-        },
-      },
-    }));
-    const spec: ProjectReleaseDefinition = {
+  ): Promise<ProjectBuildArtifactSet> {
+    const identity = {
+      buildId,
       projectId: source.spec.projectId,
-      materials,
       sourceRevision: source.revision,
       sourceFingerprint: source.spec.fingerprint,
       packageJsonHash: response.packageJsonHash,
@@ -384,27 +449,97 @@ class DefaultProjectBuildCapability implements ProjectBuildCapability {
       builderVersion: BUILDER_VERSION,
       nodeVersion: process.version,
       pnpmVersion: response.pnpmVersion,
+      typescriptVersion: "7.0.0",
       runtimeAbiVersion: PROJECT_RUNTIME_ABI_VERSION,
+      runtimeProfile: this.runtimeProfile,
       clientEntryExport: "mount",
-      actionIds: response.actionIds,
       serverEntryExport: "actions",
+      actionIds: response.actionIds,
       clientArtifact: stored.client,
       serverArtifact: stored.server,
       buildManifestArtifact: stored.buildManifest,
-      materialArtifacts: stored.materials.map((item) => item.artifact),
       materialManifests: stored.materials.map((item) => item.manifest),
+      materialArtifacts: stored.materials.map((item) => item.artifact),
       testResult: stored.testResult,
       diagnostics: [],
-      buildReproducibility: "DETERMINISTIC",
-      runtimeReproducibility: "UNKNOWN",
+      buildReproducibility: "DETERMINISTIC" as const,
+      runtimeReproducibility: "UNKNOWN" as const,
+    };
+    const artifactSetFingerprint = contentHash(identity);
+    const artifactSet: ProjectBuildArtifactSet = {
+      id: buildId,
+      ...identity,
+      buildFingerprint: artifactSetFingerprint,
+      artifactSetFingerprint,
+    };
+    await this.atomicWrite.execute(context, {
+      requestId: `create-project-build-artifact-set:${buildId}`,
+      preconditions: [{
+        kind: "document-absent",
+        collection: ARTIFACT_SET_COLLECTION,
+        id: buildId,
+      }],
+      operations: [put(ARTIFACT_SET_COLLECTION, artifactSet, "create")],
+    });
+    return artifactSet;
+  }
+
+  private async publishRelease(
+    context: CallContext,
+    artifactSet: ProjectBuildArtifactSet,
+    visualResources: readonly ProjectVisualResourceRef[],
+    runtimeProfile: ProjectRuntimeProfileIdentity,
+    releaseFingerprint: string,
+  ): Promise<Resource<ProjectReleaseDefinition>> {
+    const materials: ProjectMaterialRef[] = artifactSet.materialManifests.map((manifest, index) => ({
+      materialId: manifest.id,
+      materialVersion: manifest.version,
+      source: {
+        authoringMode: "CODE",
+        module: {
+          projectId: artifactSet.projectId,
+          sourceRevision: artifactSet.sourceRevision,
+          sourceFingerprint: artifactSet.sourceFingerprint,
+          artifactHash: artifactSet.materialArtifacts[index]!.hash,
+          dependencyLockHash: artifactSet.dependencyLockHash,
+        },
+      },
+    }));
+    const spec: ProjectReleaseDefinition = {
+      projectId: artifactSet.projectId,
+      materials,
+      buildArtifactSet: artifactSet,
+      visualResources,
+      runtimeProfile,
+      releaseFingerprint,
+      sourceRevision: artifactSet.sourceRevision,
+      sourceFingerprint: artifactSet.sourceFingerprint,
+      packageJsonHash: artifactSet.packageJsonHash,
+      dependencyLockHash: artifactSet.dependencyLockHash,
+      builderVersion: artifactSet.builderVersion,
+      nodeVersion: artifactSet.nodeVersion,
+      pnpmVersion: artifactSet.pnpmVersion,
+      runtimeAbiVersion: artifactSet.runtimeAbiVersion,
+      clientEntryExport: artifactSet.clientEntryExport,
+      actionIds: artifactSet.actionIds,
+      serverEntryExport: artifactSet.serverEntryExport,
+      clientArtifact: artifactSet.clientArtifact,
+      serverArtifact: artifactSet.serverArtifact,
+      buildManifestArtifact: artifactSet.buildManifestArtifact,
+      materialArtifacts: artifactSet.materialArtifacts,
+      materialManifests: artifactSet.materialManifests,
+      testResult: artifactSet.testResult,
+      diagnostics: artifactSet.diagnostics,
+      buildReproducibility: artifactSet.buildReproducibility,
+      runtimeReproducibility: artifactSet.runtimeReproducibility,
     };
     const validation = validateProjectReleaseManifest(spec);
     if (validation.diagnostics.length > 0) throw new PrismError(validation.diagnostics);
-    const id = releaseResourceId(source.spec.projectId);
+    const id = releaseResourceId(artifactSet.projectId);
     const draft = await this.storage.resources.saveDraft(context, {
       kind: PROJECT_RELEASE_KIND,
       id,
-      name: `${source.spec.projectId} Release`,
+      name: `${artifactSet.projectId} Release`,
       spec,
     });
     return this.storage.resources.publish(
@@ -498,6 +633,65 @@ function parseMaterials(
 }
 
 
+function defaultRuntimeProfile(): ProjectRuntimeProfileIdentity {
+  const base = {
+    profileId: "prism-default",
+    contractVersion: "1.0.0",
+    semanticVersion: "1.0.0",
+    pluginIdentities: [],
+    sdkTypesFingerprint: shaText(""),
+  };
+  return { ...base, profileFingerprint: contentHash(base) };
+}
+
+function validateVisualResources(resources: readonly ProjectVisualResourceRef[]): void {
+  const identities = new Set<string>();
+  for (const resource of resources) {
+    const identity = `${resource.kind}\u0000${resource.resourceId}`;
+    if (identities.has(identity)) {
+      throw PrismError.of(
+        "PROJECT_RELEASE_DUPLICATE_VISUAL_RESOURCE",
+        "Project Release contains a duplicate Visual Resource identity.",
+        { identity },
+      );
+    }
+    identities.add(identity);
+    if (resource.revision < 1 || !/^[0-9a-f]{64}$/.test(resource.fingerprint)) {
+      throw PrismError.of(
+        "PROJECT_RELEASE_VISUAL_RESOURCE_INVALID",
+        "Visual Resources must reference exact published revisions with SHA-256 fingerprints.",
+        { identity },
+      );
+    }
+  }
+}
+
+function canonicalVisualResources(
+  resources: readonly ProjectVisualResourceRef[],
+): readonly ProjectVisualResourceRef[] {
+  return [...resources].sort((left, right) =>
+    `${left.kind}\u0000${left.resourceId}\u0000${left.revision}`
+      .localeCompare(`${right.kind}\u0000${right.resourceId}\u0000${right.revision}`));
+}
+
+function contentHash(value: unknown): string {
+  return createHash("sha256").update(JSON.stringify(canonical(value))).digest("hex");
+}
+
+function canonical(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonical);
+  if (value !== null && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, item]) => [key, canonical(item)]));
+  }
+  return value;
+}
+
+function shaText(value: string): string {
+  return createHash("sha256").update(value, "utf8").digest("hex");
+}
+
 function put<T extends { readonly id: string }>(
   collection: string,
   document: T,
@@ -567,6 +761,37 @@ function buildRoutes(capability: ProjectBuildCapability): readonly HttpRoute[] {
           string(record(request.params).id),
         ),
       }),
+    },
+    {
+      method: "GET",
+      path: "/api/project-builds/:id/artifact-set",
+      summary: "Read immutable Project Build Artifact Set",
+      handler: async (request) => {
+        const artifactSet = await capability.artifactSet(
+          request.call,
+          string(record(request.params).id),
+        );
+        return { status: artifactSet === null ? 404 : 200, body: artifactSet };
+      },
+    },
+    {
+      method: "POST",
+      path: "/api/code-projects/:id/releases",
+      summary: "Compose immutable Project Release from successful Build",
+      handler: async (request) => {
+        requireBuilder(request.call);
+        const body = record(request.body);
+        return {
+          status: 201,
+          body: await capability.composeRelease(
+            request.call,
+            string(record(request.params).id),
+            string(body.buildId),
+            body.visualResources as readonly ProjectVisualResourceRef[],
+            body.runtimeProfile as ProjectRuntimeProfileIdentity,
+          ),
+        };
+      },
     },
   ];
 }

@@ -28,6 +28,7 @@ import {
   type ProjectReleaseActivation,
   type ProjectReleaseDefinition,
   type ProjectReleaseRef,
+  type ProjectRuntimeProfileIdentity,
   type ProjectRuntimeCapability,
   type ProjectRuntimeInstance,
   type ProjectRuntimeLog,
@@ -53,7 +54,7 @@ const ACTIVATION_COLLECTION = "project.release-activations";
 const INSTANCE_COLLECTION = "project.runtime-instances";
 const RUN_COLLECTION = "project.action-runs";
 const LOG_COLLECTION = "project.runtime-logs";
-const RUNTIME_VERSION = "0.1.15";
+const RUNTIME_VERSION = "0.1.16";
 const DEFAULT_ACTION_TIMEOUT_MS = 30_000;
 
 interface WorkerLog {
@@ -83,6 +84,7 @@ interface PendingInvocation {
 export interface ProjectRuntimePluginOptions {
   readonly actionTimeoutMs?: number;
   readonly profileModule?: string;
+  readonly profileIdentity?: ProjectRuntimeProfileIdentity;
 }
 
 export function projectRuntimePlugin(options: ProjectRuntimePluginOptions = {}) {
@@ -107,6 +109,7 @@ export function projectRuntimePlugin(options: ProjectRuntimePluginOptions = {}) 
         context.dependencies.codeProjects,
         options.actionTimeoutMs ?? DEFAULT_ACTION_TIMEOUT_MS,
         options.profileModule,
+        options.profileIdentity,
       );
       context.provide(ProjectRuntimeCapabilityToken, runtime);
       for (const route of runtimeRoutes(runtime, context.dependencies.codeProjects)) {
@@ -141,6 +144,7 @@ class DefaultProjectRuntime implements ProjectRuntimeCapability {
     private readonly codeProjects: CodeProjectCapability,
     private readonly actionTimeoutMs: number,
     private readonly profileModule?: string,
+    private readonly profileIdentity?: ProjectRuntimeProfileIdentity,
   ) {
     this.activeReleases = storage.collection<ActiveProjectRelease>(ACTIVE_COLLECTION);
     this.activations = storage.collection<ProjectReleaseActivation>(ACTIVATION_COLLECTION);
@@ -287,6 +291,7 @@ class DefaultProjectRuntime implements ProjectRuntimeCapability {
       projectId,
       release: active.release,
       actionId,
+      runtimeProfileFingerprint: release.spec.runtimeProfile.profileFingerprint,
       status: response.ok ? "SUCCESS" : "FAILED",
       inputFingerprint,
       ...(result === undefined ? {} : { result }),
@@ -472,6 +477,7 @@ class DefaultProjectRuntime implements ProjectRuntimeCapability {
       release: ref,
       workerPid: 0,
       status: "STARTING",
+      runtimeProfileFingerprint: release.spec.runtimeProfile.profileFingerprint,
       startedAt,
       lastHeartbeatAt: startedAt,
       restartCount,
@@ -501,6 +507,7 @@ class DefaultProjectRuntime implements ProjectRuntimeCapability {
         release.spec.projectId,
         ref,
         release.spec.runtimeAbiVersion,
+        release.spec.runtimeProfile,
         release.spec.serverArtifact.hash,
         release.spec.actionIds,
         materialModules,
@@ -519,6 +526,7 @@ class DefaultProjectRuntime implements ProjectRuntimeCapability {
         projectId: release.spec.projectId,
         release: ref,
         workerPid: 0,
+        runtimeProfileFingerprint: release.spec.runtimeProfile.profileFingerprint,
         status: "FAILED",
         startedAt,
         lastHeartbeatAt: now,
@@ -534,8 +542,45 @@ class DefaultProjectRuntime implements ProjectRuntimeCapability {
     context: CallContext,
     release: Resource<ProjectReleaseDefinition>,
   ): Promise<void> {
+    if (
+      !isRuntimeRecord(release.spec.runtimeProfile) ||
+      typeof release.spec.runtimeProfile.profileFingerprint !== "string" ||
+      !isRuntimeRecord(release.spec.buildArtifactSet)
+    ) {
+      throw PrismError.of(
+        "PROJECT_RUNTIME_PROFILE_UNAVAILABLE",
+        "Legacy Project Release has no resolved Runtime Profile or Build Artifact Set.",
+        { projectId: release.spec.projectId, legacyStatus: "LEGACY_PROFILE_UNRESOLVED" },
+      );
+    }
     if (release.spec.runtimeAbiVersion !== PROJECT_RUNTIME_ABI_VERSION) {
       throw abiMismatch(release.spec.projectId);
+    }
+    const releaseProfile = release.spec.runtimeProfile;
+    const buildProfile = release.spec.buildArtifactSet.runtimeProfile;
+    if (releaseProfile.profileFingerprint !== buildProfile.profileFingerprint) {
+      throw PrismError.of(
+        "PROJECT_BUILD_RUNTIME_PROFILE_MISMATCH",
+        "Project Release Runtime Profile does not match its Build Artifact Set.",
+        { projectId: release.spec.projectId },
+      );
+    }
+    if (this.profileModule !== undefined && this.profileIdentity === undefined) {
+      throw PrismError.of(
+        "PROJECT_RUNTIME_PROFILE_UNAVAILABLE",
+        "Runtime Profile module requires an exact Profile identity.",
+        { projectId: release.spec.projectId },
+      );
+    }
+    if (
+      this.profileIdentity !== undefined &&
+      this.profileIdentity.profileFingerprint !== releaseProfile.profileFingerprint
+    ) {
+      throw PrismError.of(
+        "PROJECT_RUNTIME_PROFILE_MISMATCH",
+        "Configured Runtime Profile does not match the Project Release.",
+        { projectId: release.spec.projectId },
+      );
     }
     if (release.spec.materialManifests.length !== release.spec.materialArtifacts.length) {
       throw PrismError.of(
@@ -599,6 +644,7 @@ class DefaultProjectRuntime implements ProjectRuntimeCapability {
       projectId,
       release,
       workerPid: 0,
+      runtimeProfileFingerprint: "LEGACY_PROFILE_UNRESOLVED",
       status: "FAILED",
       startedAt: now,
       lastHeartbeatAt: now,
@@ -658,6 +704,7 @@ class ReleaseWorker {
     projectId: string,
     release: ProjectReleaseRef,
     runtimeAbiVersion: string,
+    runtimeProfile: ProjectRuntimeProfileIdentity,
     serverArtifactHash: string,
     actionIds: readonly string[],
     materialModules: readonly RuntimeMaterialModule[],
@@ -687,6 +734,7 @@ class ReleaseWorker {
       id: instanceId,
       projectId,
       release,
+      runtimeProfileFingerprint: runtimeProfile.profileFingerprint,
       workerPid: child.pid ?? 0,
       status: "READY",
       startedAt: now,
@@ -715,6 +763,7 @@ class ReleaseWorker {
       release,
       runtimeAbiVersion,
       serverArtifactHash,
+      runtimeProfile,
       actionIds,
       materials,
       ...(profileModule === undefined ? {} : { profileModule }),
@@ -727,6 +776,7 @@ class ReleaseWorker {
       releaseRevision: release.revision,
       releaseFingerprint: release.fingerprint,
       runtimeAbiVersion,
+      runtimeProfileFingerprint: runtimeProfile.profileFingerprint,
       serverArtifactHash,
       actions: [...actionIds].sort(),
       materialIdentities: materialModules
@@ -738,6 +788,7 @@ class ReleaseWorker {
       handshake.releaseRevision !== expected.releaseRevision ||
       handshake.releaseFingerprint !== expected.releaseFingerprint ||
       handshake.runtimeAbiVersion !== expected.runtimeAbiVersion ||
+      handshake.runtimeProfileFingerprint !== expected.runtimeProfileFingerprint ||
       handshake.serverArtifactHash !== expected.serverArtifactHash ||
       JSON.stringify(handshake.actions) !== JSON.stringify(expected.actions) ||
       JSON.stringify(handshake.materialIdentities) !== JSON.stringify(expected.materialIdentities)

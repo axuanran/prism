@@ -8,6 +8,7 @@ import type {
   ProjectCodeMaterial,
   ProjectPrincipal,
   ProjectReleaseRef,
+  ProjectRuntimeProfileIdentity,
 } from "@prismengine/contracts-project";
 
 interface InitMessage {
@@ -17,6 +18,7 @@ interface InitMessage {
   readonly release: ProjectReleaseRef;
   readonly runtimeAbiVersion: string;
   readonly serverArtifactHash: string;
+  readonly runtimeProfile: ProjectRuntimeProfileIdentity;
   readonly materials: readonly {
     readonly manifest: DeclaredCodeMaterialManifest;
     readonly artifactPath: string;
@@ -70,8 +72,12 @@ async function handle(message: RuntimeMessage): Promise<void> {
       let additionalPlugins: readonly AnyPluginDefinition[] = [];
       if (message.profileModule !== undefined) {
         const profile = await import(pathToFileURL(message.profileModule).href) as {
+          readonly runtimeProfileIdentity?: ProjectRuntimeProfileIdentity;
           readonly createRuntimePlugins?: () => readonly AnyPluginDefinition[];
         };
+        if (profile.runtimeProfileIdentity?.profileFingerprint !== message.runtimeProfile.profileFingerprint) {
+          throw new Error("PROJECT_RUNTIME_PROFILE_MISMATCH: Runtime Profile module identity does not match release.");
+        }
         additionalPlugins = profile.createRuntimePlugins?.() ?? [];
       }
       runtimeEngine = createEngine({ plugins: prismPlatform({ additionalPlugins }) });
@@ -106,6 +112,7 @@ async function handle(message: RuntimeMessage): Promise<void> {
         releaseFingerprint: release.fingerprint,
         runtimeAbiVersion: message.runtimeAbiVersion,
         serverArtifactHash: message.serverArtifactHash,
+        runtimeProfileFingerprint: message.runtimeProfile.profileFingerprint,
         actions: Object.keys(actions).sort(),
         materialIdentities: [...materials.keys()].sort(),
       });

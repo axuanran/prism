@@ -12,6 +12,8 @@ export interface BuildWorkerRequest {
   readonly files: readonly ProjectSourceFile[];
   readonly materials: readonly DeclaredCodeMaterialManifest[];
   readonly builderVersion: string;
+  readonly sdkTypes: string;
+  readonly sdkTypesFingerprint: string;
 }
 
 export interface BuildArtifactPayload {

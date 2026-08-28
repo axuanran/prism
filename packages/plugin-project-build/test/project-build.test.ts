@@ -123,6 +123,51 @@ describe("Project Build Worker", () => {
       expect(JSON.parse(new TextDecoder().decode(manifestBytes))).toMatchObject({
         sourceFingerprint: source.spec.fingerprint,
       });
+      const artifactSet = await builds.artifactSet(context, build.id);
+      expect(artifactSet).toMatchObject({
+        id: build.id,
+        buildId: build.id,
+        projectId: created.project.id,
+        runtimeProfile: { profileId: "prism-default" },
+        artifactSetFingerprint: expect.stringMatching(/^[0-9a-f]{64}$/),
+      });
+      const visualResources = [{
+        kind: "project.visual-pipeline",
+        resourceId: "coefficient-pipeline",
+        revision: 1,
+        fingerprint: "b".repeat(64),
+      }];
+      const release2 = await builds.composeRelease(
+        context,
+        created.project.id,
+        build.id,
+        visualResources,
+        artifactSet!.runtimeProfile,
+      );
+      expect(release2.revision).toBe(2);
+      expect(release2.spec.buildArtifactSet.id).toBe(release!.spec.buildArtifactSet.id);
+      expect(release2.spec.serverArtifact.hash).toBe(release!.spec.serverArtifact.hash);
+      expect(release2.spec.releaseFingerprint).not.toBe(release!.spec.releaseFingerprint);
+      const duplicate = await builds.composeRelease(
+        context,
+        created.project.id,
+        build.id,
+        visualResources,
+        artifactSet!.runtimeProfile,
+      );
+      expect(duplicate.revision).toBe(release2.revision);
+      await expect(builds.composeRelease(
+        context,
+        created.project.id,
+        build.id,
+        [],
+        { ...artifactSet!.runtimeProfile, profileFingerprint: "c".repeat(64) },
+      )).rejects.toMatchObject({
+        diagnostics: expect.arrayContaining([
+          expect.objectContaining({ code: "PROJECT_BUILD_RUNTIME_PROFILE_MISMATCH" }),
+        ]),
+      });
+      expect(await builds.listBuilds(context, created.project.id)).toHaveLength(1);
     } finally {
       await engine.stop();
       await rm(artifacts, { recursive: true, force: true });

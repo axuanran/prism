@@ -40,6 +40,12 @@ async function execute(request: BuildWorkerRequest): Promise<BuildWorkerResponse
   const root = await mkdtemp(join(tmpdir(), "prism-build-"));
   try {
     await materialize(root, request.files);
+    if (sha(new TextEncoder().encode(request.sdkTypes)) !== request.sdkTypesFingerprint) {
+      throw new Error("PROJECT_SDK_TYPES_MISMATCH: Build SDK Types do not match Runtime Profile identity.");
+    }
+    const sdkTypesPath = join(root, ".prism", "profile-sdk.d.ts");
+    await mkdir(dirname(sdkTypesPath), { recursive: true });
+    await writeFile(sdkTypesPath, request.sdkTypes, "utf8");
     const packageJson = await readFile(join(root, "package.json"));
     const lockfile = await readFile(join(root, "pnpm-lock.yaml"));
     const packageJsonHash = sha(packageJson);
@@ -60,7 +66,7 @@ async function execute(request: BuildWorkerRequest): Promise<BuildWorkerResponse
         strict: true,
         target: "ES2022",
       },
-      include: ["src/**/*", "tests/**/*"],
+      include: ["src/**/*", "tests/**/*", ".prism/profile-sdk.d.ts"],
     }, null, 2));
     const tscPackage = require.resolve("@typescript/native/package.json");
     await run(
