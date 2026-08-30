@@ -15,9 +15,7 @@ const DEFAULT_TEST_PRINCIPAL = Object.freeze({
 });
 
 /** Deterministic capability-call context for tests. */
-export function testCallContext(
-  overrides: Partial<CallContext> = {},
-): CallContext {
+export function testCallContext(overrides: Partial<CallContext> = {}): CallContext {
   return {
     principal: DEFAULT_TEST_PRINCIPAL,
     asOf: { validAt: "2025-01-15" },
@@ -43,16 +41,8 @@ export interface DecimalColumnOptions {
 }
 
 /** Declares the common decimal test column without omitting precision or scale. */
-export function decimalColumn(
-  name: string,
-  options: DecimalColumnOptions = {},
-): FieldType {
-  const {
-    precision = 28,
-    scale = 6,
-    nullable,
-    annotations,
-  } = options;
+export function decimalColumn(name: string, options: DecimalColumnOptions = {}): FieldType {
+  const { precision = 28, scale = 6, nullable, annotations } = options;
   return {
     name,
     type: {

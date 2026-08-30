@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed } from "vue";
 
 interface DecisionRule {
   readonly id: string;
@@ -7,18 +7,25 @@ interface DecisionRule {
   readonly outputs: Readonly<Record<string, { readonly text: string }>>;
 }
 
-const props = withDefaults(defineProps<{
-  modelValue: unknown;
-  disabled?: boolean;
-}>(), { disabled: false });
+const props = withDefaults(
+  defineProps<{
+    modelValue: unknown;
+    disabled?: boolean;
+  }>(),
+  { disabled: false },
+);
 
 const emit = defineEmits<{
-  'update:modelValue': [value: unknown];
+  "update:modelValue": [value: unknown];
 }>();
 
 const rules = computed<readonly DecisionRule[]>(() => {
   if (Array.isArray(props.modelValue)) return props.modelValue.filter(isDecisionRule);
-  if (typeof props.modelValue === 'object' && props.modelValue !== null && 'rules' in props.modelValue) {
+  if (
+    typeof props.modelValue === "object" &&
+    props.modelValue !== null &&
+    "rules" in props.modelValue
+  ) {
     const candidate = (props.modelValue as { readonly rules?: unknown }).rules;
     return Array.isArray(candidate) ? candidate.filter(isDecisionRule) : [];
   }
@@ -27,27 +34,51 @@ const rules = computed<readonly DecisionRule[]>(() => {
 
 const outputNames = computed<readonly string[]>(() => {
   const names = new Set(rules.value.flatMap((rule) => Object.keys(rule.outputs)));
-  return names.size > 0 ? [...names] : ['结果'];
+  return names.size > 0 ? [...names] : ["结果"];
 });
 
 function isDecisionRule(value: unknown): value is DecisionRule {
-  if (typeof value !== 'object' || value === null || !('id' in value) || typeof value.id !== 'string') return false;
-  if (!('when' in value) || typeof value.when !== 'object' || value.when === null || !('text' in value.when) || typeof value.when.text !== 'string') return false;
-  if (!('outputs' in value) || typeof value.outputs !== 'object' || value.outputs === null || Array.isArray(value.outputs)) return false;
-  return Object.values(value.outputs).every((output) =>
-    typeof output === 'object' && output !== null && 'text' in output && typeof output.text === 'string');
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    !("id" in value) ||
+    typeof value.id !== "string"
+  )
+    return false;
+  if (
+    !("when" in value) ||
+    typeof value.when !== "object" ||
+    value.when === null ||
+    !("text" in value.when) ||
+    typeof value.when.text !== "string"
+  )
+    return false;
+  if (
+    !("outputs" in value) ||
+    typeof value.outputs !== "object" ||
+    value.outputs === null ||
+    Array.isArray(value.outputs)
+  )
+    return false;
+  return Object.values(value.outputs).every(
+    (output) =>
+      typeof output === "object" &&
+      output !== null &&
+      "text" in output &&
+      typeof output.text === "string",
+  );
 }
 
 function commit(nextRules: readonly DecisionRule[]): void {
   const value = Array.isArray(props.modelValue) ? nextRules : { rules: nextRules };
-  emit('update:modelValue', value);
+  emit("update:modelValue", value);
 }
 
 function createRule(): DecisionRule {
-  const outputs = Object.fromEntries(outputNames.value.map((name) => [name, { text: '' }]));
+  const outputs = Object.fromEntries(outputNames.value.map((name) => [name, { text: "" }]));
   return {
     id: `rule-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
-    when: { text: '' },
+    when: { text: "" },
     outputs,
   };
 }
@@ -73,13 +104,21 @@ function moveRule(index: number, offset: -1 | 1): void {
 }
 
 function updateCondition(index: number, text: string): void {
-  commit(rules.value.map((rule, itemIndex) => itemIndex === index ? { ...rule, when: { text } } : rule));
+  commit(
+    rules.value.map((rule, itemIndex) =>
+      itemIndex === index ? { ...rule, when: { text } } : rule,
+    ),
+  );
 }
 
 function updateOutput(index: number, name: string, text: string): void {
-  commit(rules.value.map((rule, itemIndex) => itemIndex === index
-    ? { ...rule, outputs: { ...rule.outputs, [name]: { text } } }
-    : rule));
+  commit(
+    rules.value.map((rule, itemIndex) =>
+      itemIndex === index
+        ? { ...rule, outputs: { ...rule.outputs, [name]: { text } } }
+        : rule,
+    ),
+  );
 }
 </script>
 
@@ -113,24 +152,56 @@ function updateOutput(index: number, name: string, text: string): void {
                 :disabled="disabled"
                 :aria-label="`${name}表达式`"
                 placeholder="填写输出表达式"
-                @input="updateOutput(index, name, ($event.target as HTMLInputElement).value)"
+                @input="
+                  updateOutput(index, name, ($event.target as HTMLInputElement).value)
+                "
               />
             </td>
             <td>
               <div class="decision-editor__actions">
-                <button type="button" :disabled="disabled || index === 0" aria-label="上移规则" @click="moveRule(index, -1)">↑</button>
-                <button type="button" :disabled="disabled || index === rules.length - 1" aria-label="下移规则" @click="moveRule(index, 1)">↓</button>
-                <button type="button" :disabled="disabled" aria-label="删除规则" @click="removeRule(index)">删除</button>
+                <button
+                  type="button"
+                  :disabled="disabled || index === 0"
+                  aria-label="上移规则"
+                  @click="moveRule(index, -1)"
+                >
+                  ↑
+                </button>
+                <button
+                  type="button"
+                  :disabled="disabled || index === rules.length - 1"
+                  aria-label="下移规则"
+                  @click="moveRule(index, 1)"
+                >
+                  ↓
+                </button>
+                <button
+                  type="button"
+                  :disabled="disabled"
+                  aria-label="删除规则"
+                  @click="removeRule(index)"
+                >
+                  删除
+                </button>
               </div>
             </td>
           </tr>
           <tr v-if="rules.length === 0">
-            <td :colspan="outputNames.length + 3" class="decision-editor__empty">尚无规则。添加后将按从上到下的顺序匹配第一条规则。</td>
+            <td :colspan="outputNames.length + 3" class="decision-editor__empty">
+              尚无规则。添加后将按从上到下的顺序匹配第一条规则。
+            </td>
           </tr>
         </tbody>
       </table>
     </div>
-    <button class="button button--secondary" type="button" :disabled="disabled" @click="addRule">添加规则</button>
+    <button
+      class="button button--secondary"
+      type="button"
+      :disabled="disabled"
+      @click="addRule"
+    >
+      添加规则
+    </button>
   </div>
 </template>
 

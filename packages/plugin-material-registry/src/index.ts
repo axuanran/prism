@@ -11,6 +11,7 @@ import { definePlugin, type ExtensionRegistry } from "@prismengine/kernel";
 export const materialRegistryPlugin = definePlugin({
   id: "project.material-registry",
   version: "0.1.20",
+  engineRange: "^0.1.20",
   provides: [MaterialRegistryCapabilityToken],
   register(context) {
     context.provide(
@@ -39,13 +40,16 @@ class DefaultMaterialRegistry implements MaterialRegistryCapability {
       }
       identities.add(identity);
     }
-    return [...values].sort((left, right) =>
-      left.id.localeCompare(right.id) || compareVersion(left.version, right.version));
+    return [...values].sort(
+      (left, right) =>
+        left.id.localeCompare(right.id) || compareVersion(left.version, right.version),
+    );
   }
 
   get(id: string, version?: string): MaterialManifest | null {
-    const matches = this.list().filter((value) =>
-      value.id === id && (version === undefined || value.version === version));
+    const matches = this.list().filter(
+      (value) => value.id === id && (version === undefined || value.version === version),
+    );
     return matches.at(-1) ?? null;
   }
 }

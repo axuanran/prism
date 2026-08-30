@@ -1,0 +1,41 @@
+{
+  "name": "@prismengine/host",
+  "version": "0.1.20",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc --build",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@prismengine/contracts-artifact": "workspace:0.1.20",
+    "@prismengine/contracts-data": "workspace:0.1.20",
+    "@prismengine/contracts-governance": "workspace:0.1.20",
+    "@prismengine/contracts-secret": "workspace:0.1.20",
+    "@prismengine/contracts-storage": "workspace:0.1.20",
+    "@prismengine/contracts-worker": "workspace:0.1.20",
+    "@prismengine/kernel": "workspace:0.1.20",
+    "@prismengine/platform": "workspace:0.1.20",
+    "@prismengine/plugin-artifact-store-s3": "workspace:0.1.20",
+    "@prismengine/plugin-audit-export-s3": "workspace:0.1.20",
+    "@prismengine/plugin-governance-approval": "workspace:0.1.20",
+    "@prismengine/plugin-code-project": "workspace:0.1.20",
+    "@prismengine/plugin-http-fastify": "workspace:0.1.20",
+    "@prismengine/plugin-observability-otel": "workspace:0.1.20",
+    "@prismengine/plugin-organization-basic": "workspace:0.1.20",
+    "@prismengine/plugin-studio-api": "workspace:0.1.20",
+    "@prismengine/plugin-project-build": "workspace:0.1.20",
+    "@prismengine/plugin-project-runtime": "workspace:0.1.20",
+    "@prismengine/plugin-secret-vault": "workspace:0.1.20",
+    "@prismengine/plugin-storage-postgres": "workspace:0.1.20",
+    "@prismengine/plugin-worker-container": "workspace:0.1.20",
+    "dockerode": "^4.0.7"
+  },
+  "devDependencies": {
+    "@prismengine/plugin-storage-memory": "workspace:0.1.20",
+    "@types/dockerode": "^3.3.42"
+  },
+  "license": "Apache-2.0"
+}

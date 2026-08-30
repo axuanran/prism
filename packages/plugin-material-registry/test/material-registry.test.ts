@@ -47,6 +47,7 @@ describe("unified project material registry", () => {
     const consumer = definePlugin({
       id: "material-consumer",
       version: "0.1.0",
+      engineRange: "^0.1.20",
       requires: { materials: MaterialRegistryCapabilityToken },
       start(context) {
         discovered = context.dependencies.materials.list();
@@ -66,38 +67,40 @@ describe("unified project material registry", () => {
       ["statistics.percentile", "CODE"],
     ]);
     const hash = "a".repeat(64);
-    expect(validateProjectReleaseManifest({
-      projectId: "hospital-performance",
-      materials: [
-        {
-          materialId: visualMaterial.id,
-          materialVersion: visualMaterial.version,
-          source: {
-            authoringMode: "VISUAL",
-            resource: {
-              kind: "performance.formula",
-              id: "workload-point",
-              revision: 2,
-              fingerprint: hash,
+    expect(
+      validateProjectReleaseManifest({
+        projectId: "hospital-performance",
+        materials: [
+          {
+            materialId: visualMaterial.id,
+            materialVersion: visualMaterial.version,
+            source: {
+              authoringMode: "VISUAL",
+              resource: {
+                kind: "performance.formula",
+                id: "workload-point",
+                revision: 2,
+                fingerprint: hash,
+              },
             },
           },
-        },
-        {
-          materialId: codeMaterial.id,
-          materialVersion: codeMaterial.version,
-          source: {
-            authoringMode: "CODE",
-            module: {
-              projectId: "hospital-performance",
-              sourceRevision: 3,
-              sourceFingerprint: hash,
-              artifactHash: "b".repeat(64),
-              dependencyLockHash: "c".repeat(64),
+          {
+            materialId: codeMaterial.id,
+            materialVersion: codeMaterial.version,
+            source: {
+              authoringMode: "CODE",
+              module: {
+                projectId: "hospital-performance",
+                sourceRevision: 3,
+                sourceFingerprint: hash,
+                artifactHash: "b".repeat(64),
+                dependencyLockHash: "c".repeat(64),
+              },
             },
           },
-        },
-      ],
-    }).valid).toBe(true);
+        ],
+      }).valid,
+    ).toBe(true);
     await engine.stop();
   });
 

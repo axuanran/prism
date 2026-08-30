@@ -1,11 +1,16 @@
-import { PrismError } from "@prismengine/contracts-data";
-import { StorageDiagnosticCode } from "@prismengine/contracts-storage";
+import { createHash } from "node:crypto";
 import type { Migration } from "@prismengine/kernel";
+import { StorageDiagnosticCode } from "@prismengine/contracts-storage";
 import type { Kysely } from "kysely";
 import { sql } from "kysely";
 import type { PostgresDatabase } from "./database.js";
+import { postgresProviderFailure } from "./provider-failure.js";
 
 export const INITIAL_STORAGE_MIGRATION_ID = "0001_storage_schema";
+
+function migrationChecksum(identity: string): string {
+  return createHash("sha256").update(identity, "utf8").digest("hex");
+}
 
 export async function ensureMigrationJournalTable(
   db: Kysely<PostgresDatabase>,
@@ -18,9 +23,14 @@ export async function ensureMigrationJournalTable(
     .ifNotExists()
     .addColumn("plugin_id", "text", (column) => column.notNull())
     .addColumn("migration_id", "text", (column) => column.notNull())
+    .addColumn("checksum", "text")
     .addColumn("applied_at", "timestamptz", (column) => column.notNull())
     .addPrimaryKeyConstraint("prism_migration_pk", ["plugin_id", "migration_id"])
     .execute();
+  await sql`
+    alter table ${sql.id(schema, "prism_migration")}
+      add column if not exists checksum text
+  `.execute(db);
 }
 
 async function createStorageSchema(
@@ -166,6 +176,81 @@ async function hardenRevisionStatusTransitions(
 }
 
 export const IMMUTABLE_STATUS_MIGRATION_ID = "0002_immutable_revision_status";
+export const AUDIT_JOURNAL_MIGRATION_ID = "0003_append_only_audit_journal";
+export const AUDIT_APPROVAL_MIGRATION_ID = "0004_audit_approval_identity";
+
+async function createAuditJournal(
+  db: Kysely<PostgresDatabase>,
+  schema: string,
+): Promise<void> {
+  await db.schema
+    .withSchema(schema)
+    .createTable("audit_journal")
+    .ifNotExists()
+    .addColumn("sequence", "bigserial", (column) => column.primaryKey())
+    .addColumn("id", "text", (column) => column.notNull().unique())
+    .addColumn("recorded_at", "timestamptz", (column) => column.notNull())
+    .addColumn("principal_id", "text", (column) => column.notNull())
+    .addColumn("action", "text", (column) => column.notNull())
+    .addColumn("target_kind", "text", (column) => column.notNull())
+    .addColumn("target_id", "text", (column) => column.notNull())
+    .addColumn("before_fingerprint", "text")
+    .addColumn("after_fingerprint", "text")
+    .addColumn("reason", "text")
+    .addColumn("correlation_id", "text", (column) => column.notNull())
+    .addColumn("previous_hash", "text")
+    .addColumn("entry_hash", "text", (column) => column.notNull())
+    .execute();
+  await db.schema
+    .withSchema(schema)
+    .createIndex("audit_journal_target_idx")
+    .ifNotExists()
+    .on("audit_journal")
+    .columns(["target_kind", "target_id", "sequence"])
+    .execute();
+  await sql`
+    create or replace function ${sql.id(schema, "protect_audit_journal")}()
+    returns trigger
+    language plpgsql
+    as $function$
+    begin
+      raise exception 'audit journal is append-only'
+        using errcode = '23000';
+    end
+    $function$;
+
+    do $block$
+    begin
+      if not exists (
+        select 1
+        from pg_trigger
+        where tgname = 'audit_journal_append_only'
+          and tgrelid = ${sql.lit(`${schema}.audit_journal`)}::regclass
+      ) then
+        create trigger audit_journal_append_only
+          before update or delete on ${sql.id(schema, "audit_journal")}
+          for each row execute function ${sql.id(schema, "protect_audit_journal")}();
+      end if;
+    end
+    $block$
+  `.execute(db);
+}
+async function addAuditApprovalIdentity(
+  db: Kysely<PostgresDatabase>,
+  schema: string,
+): Promise<void> {
+  await sql`
+    alter table ${sql.id(schema, "audit_journal")}
+      add column if not exists approval_id text
+  `.execute(db);
+  await db.schema
+    .withSchema(schema)
+    .createIndex("audit_journal_approval_idx")
+    .ifNotExists()
+    .on("audit_journal")
+    .column("approval_id")
+    .execute();
+}
 
 /** V0.1 migrations are forward-only. There is deliberately no down migration. */
 export function postgresStorageMigrations(
@@ -175,30 +260,72 @@ export function postgresStorageMigrations(
   return [
     {
       id: INITIAL_STORAGE_MIGRATION_ID,
+      checksum: migrationChecksum("0001_storage_schema:v1:resource-revision-document"),
+      risk: "medium",
+      requiresBackup: false,
+      externalEffects: [],
       async up(): Promise<void> {
         try {
           await createStorageSchema(db, schema);
         } catch (error) {
-          if (error instanceof PrismError) throw error;
-          throw PrismError.of(
+          throw postgresProviderFailure(
+            error,
             StorageDiagnosticCode.RESOURCE_VALIDATION_FAILED,
             "PostgreSQL storage schema migration failed.",
-            { cause: error instanceof Error ? error.message : String(error) },
           );
         }
       },
     },
     {
       id: IMMUTABLE_STATUS_MIGRATION_ID,
+      checksum: migrationChecksum("0002_immutable_revision_status:v1:status-trigger"),
+      risk: "low",
+      requiresBackup: false,
+      externalEffects: [],
       async up(): Promise<void> {
         try {
           await hardenRevisionStatusTransitions(db, schema);
         } catch (error) {
-          if (error instanceof PrismError) throw error;
-          throw PrismError.of(
+          throw postgresProviderFailure(
+            error,
             StorageDiagnosticCode.RESOURCE_VALIDATION_FAILED,
             "PostgreSQL revision-status migration failed.",
-            { cause: error instanceof Error ? error.message : String(error) },
+          );
+        }
+      },
+    },
+    {
+      id: AUDIT_JOURNAL_MIGRATION_ID,
+      checksum: migrationChecksum("0003_append_only_audit_journal:v1:hash-chain-trigger"),
+      risk: "low",
+      requiresBackup: false,
+      externalEffects: [],
+      async up(): Promise<void> {
+        try {
+          await createAuditJournal(db, schema);
+        } catch (error) {
+          throw postgresProviderFailure(
+            error,
+            StorageDiagnosticCode.RESOURCE_VALIDATION_FAILED,
+            "PostgreSQL audit-journal migration failed.",
+          );
+        }
+      },
+    },
+    {
+      id: AUDIT_APPROVAL_MIGRATION_ID,
+      checksum: migrationChecksum("0004_audit_approval_identity:v1:approval-column-index"),
+      risk: "low",
+      requiresBackup: false,
+      externalEffects: [],
+      async up(): Promise<void> {
+        try {
+          await addAuditApprovalIdentity(db, schema);
+        } catch (error) {
+          throw postgresProviderFailure(
+            error,
+            StorageDiagnosticCode.RESOURCE_VALIDATION_FAILED,
+            "PostgreSQL audit-approval migration failed.",
           );
         }
       },

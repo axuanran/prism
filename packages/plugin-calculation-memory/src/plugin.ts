@@ -16,6 +16,7 @@ import { createCalculationCapability } from "./runtime.js";
 export const calculationPlugin = definePlugin({
   id: "calculation.memory",
   version: "0.1.0",
+  engineRange: "^0.1.20",
   description: "Deterministic decimal expression and calculation pipeline runtime.",
   provides: [CalculationCapabilityToken],
   register(context) {
@@ -44,6 +45,9 @@ export const calculationPlugin = definePlugin({
       config: { schema: DecisionTableResourceSchema },
       exposure: { configuration: true, frontend: true },
     });
-    context.provide(CalculationCapabilityToken, createCalculationCapability(context.extensions));
+    context.provide(
+      CalculationCapabilityToken,
+      createCalculationCapability(context.extensions),
+    );
   },
 });

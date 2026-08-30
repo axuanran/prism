@@ -1,0 +1,173 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": [
+    "hostImage",
+    "workerImage",
+    "deployment",
+    "postgres",
+    "oidc",
+    "s3",
+    "vault",
+    "worker",
+    "otel",
+    "evidence",
+    "networkPolicy"
+  ],
+  "properties": {
+    "replicaCount": { "const": 1 },
+    "hostImage": { "$ref": "#/definitions/image" },
+    "workerImage": { "$ref": "#/definitions/image" },
+    "deployment": {
+      "type": "object",
+      "required": ["id", "environment"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "environment": { "type": "string", "minLength": 1 }
+      }
+    },
+    "postgres": {
+      "type": "object",
+      "required": ["secretName", "urlKey", "schema"],
+      "properties": {
+        "secretName": { "type": "string", "minLength": 1 },
+        "urlKey": { "type": "string", "minLength": 1 },
+        "schema": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" }
+      }
+    },
+    "oidc": {
+      "type": "object",
+      "required": ["issuer", "audience", "jwksUri"],
+      "properties": {
+        "issuer": { "type": "string", "pattern": "^https://" },
+        "audience": { "type": "string", "minLength": 1 },
+        "jwksUri": { "type": "string", "pattern": "^https://" }
+      }
+    },
+    "s3": {
+      "type": "object",
+      "required": ["region", "artifactBucket", "auditBucket"],
+      "properties": {
+        "region": { "type": "string", "minLength": 1 },
+        "endpoint": { "type": "string", "pattern": "^$|^https://" },
+        "artifactBucket": { "type": "string", "minLength": 1 },
+        "auditBucket": { "type": "string", "minLength": 1 },
+        "artifactRetentionDays": { "type": "integer", "minimum": 1 },
+        "auditRetentionDays": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "vault": {
+      "type": "object",
+      "required": ["address", "kvMount", "kubernetesRole", "kubernetesMount"],
+      "properties": {
+        "address": { "type": "string", "pattern": "^https://" },
+        "kvMount": { "type": "string", "minLength": 1 },
+        "kubernetesRole": { "type": "string", "minLength": 1 },
+        "kubernetesMount": { "type": "string", "minLength": 1 }
+      }
+    },
+    "worker": {
+      "type": "object",
+      "required": ["user", "dockerRemoteUrl", "dockerTlsSecretName"],
+      "properties": {
+        "user": { "type": "string", "pattern": "^(?!0(?::0)?$)(?!root$).+" },
+        "dockerRemoteUrl": { "type": "string", "pattern": "^https://" },
+        "dockerTlsSecretName": { "type": "string", "minLength": 1 },
+        "memoryBytes": { "type": "integer", "minimum": 134217728 },
+        "nanoCpus": { "type": "integer", "minimum": 100000000 },
+        "pidsLimit": { "type": "integer", "minimum": 16 },
+        "tmpfsBytes": { "type": "integer", "minimum": 16777216 },
+        "staticMounts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["source", "target", "readOnly"],
+            "properties": {
+              "source": { "type": "string", "minLength": 1 },
+              "target": { "type": "string", "pattern": "^/" },
+              "readOnly": { "const": true }
+            }
+          }
+        }
+      }
+    },
+    "otel": {
+      "type": "object",
+      "required": [
+        "serviceName",
+        "traceEndpoint",
+        "metricEndpoint",
+        "healthUrl",
+        "headersSecretName"
+      ],
+      "properties": {
+        "serviceName": { "type": "string", "minLength": 1 },
+        "traceEndpoint": { "type": "string", "pattern": "^https://" },
+        "metricEndpoint": { "type": "string", "pattern": "^https://" },
+        "healthUrl": { "type": "string", "pattern": "^https://" },
+        "headersSecretName": { "type": "string", "minLength": 1 }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "required": ["secretName", "files"],
+      "properties": {
+        "secretName": { "type": "string", "minLength": 1 },
+        "maxAgeDays": { "type": "integer", "minimum": 1, "maximum": 365 },
+        "files": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["name", "sha256"],
+            "properties": {
+              "name": { "type": "string", "pattern": "^[A-Za-z0-9._-]+$" },
+              "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+            }
+          }
+        }
+      }
+    },
+    "networkPolicy": {
+      "type": "object",
+      "required": ["clientNamespaceLabel", "egress"],
+      "properties": {
+        "clientNamespaceLabel": { "type": "string", "minLength": 1 },
+        "egress": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["cidr", "ports"],
+            "properties": {
+              "cidr": { "type": "string", "minLength": 1 },
+              "ports": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "required": ["port", "protocol"],
+                  "properties": {
+                    "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+                    "protocol": { "enum": ["TCP", "UDP"] }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "image": {
+      "type": "object",
+      "required": ["repository", "digest"],
+      "properties": {
+        "repository": { "type": "string", "minLength": 1 },
+        "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "pullPolicy": { "enum": ["IfNotPresent", "Always", "Never"] }
+      }
+    }
+  }
+}

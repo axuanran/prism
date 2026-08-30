@@ -1,19 +1,7 @@
-import {
-  D,
-  collectRows,
-  decimalToJson,
-  PrismError,
-} from "@prismengine/contracts-data";
+import { D, collectRows, decimalToJson, PrismError } from "@prismengine/contracts-data";
 import { definePlugin } from "@prismengine/kernel";
-import {
-  diagnosticCodesFrom,
-  withEngine,
-} from "../src/engine.js";
-import {
-  decimalColumn,
-  testCallContext,
-  testDataset,
-} from "../src/fixtures.js";
+import { diagnosticCodesFrom, withEngine } from "../src/engine.js";
+import { decimalColumn, testCallContext, testDataset } from "../src/fixtures.js";
 import { describe, expect, it } from "vitest";
 
 describe("engine test harness", () => {
@@ -22,22 +10,27 @@ describe("engine test harness", () => {
     const plugin = definePlugin({
       id: "testing.lifecycle",
       version: "0.1.0",
+      engineRange: "^0.1.20",
       start: () => void events.push("start"),
       stop: () => void events.push("stop"),
     });
     const failure = new Error("body failed");
 
-    await expect(withEngine([plugin], () => {
-      throw failure;
-    })).rejects.toBe(failure);
+    await expect(
+      withEngine([plugin], () => {
+        throw failure;
+      }),
+    ).rejects.toBe(failure);
 
     expect(events).toEqual(["start", "stop"]);
   });
 
   it("collects codes from a thrown PrismError", async () => {
-    await expect(diagnosticCodesFrom(() => {
-      throw PrismError.of("TEST_FAILURE", "Expected test failure.");
-    })).resolves.toEqual(["TEST_FAILURE"]);
+    await expect(
+      diagnosticCodesFrom(() => {
+        throw PrismError.of("TEST_FAILURE", "Expected test failure.");
+      }),
+    ).resolves.toEqual(["TEST_FAILURE"]);
   });
 });
 
@@ -78,10 +71,12 @@ describe("deterministic fixtures", () => {
       precision: 28,
       scale: 2,
     });
-    expect(rows.map((row) => ({
-      person: row.person,
-      amount: decimalToJson(row.amount as InstanceType<typeof D>),
-    }))).toEqual([
+    expect(
+      rows.map((row) => ({
+        person: row.person,
+        amount: decimalToJson(row.amount as InstanceType<typeof D>),
+      })),
+    ).toEqual([
       { person: "张三", amount: "12.34" },
       { person: "李四", amount: "56.78" },
     ]);

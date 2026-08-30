@@ -46,6 +46,7 @@ let engine: Engine;
 const consumerPlugin = definePlugin({
   id: "calculation-test-consumer",
   version: "0.1.0",
+  engineRange: "^0.1.20",
   requires: { calculation: CalculationCapabilityToken },
   start(pluginContext) {
     capability = pluginContext.dependencies.calculation;
@@ -65,9 +66,16 @@ function dataset(name: string, schema: TableType, rows: readonly Row[]): Dataset
   return datasetFromRows(name, schema, rows);
 }
 
-async function execute(spec: PipelineSpec, datasets: Readonly<Record<string, Dataset>>, traceLevel: "none" | "errors" | "summary" | "full" = "summary") {
+async function execute(
+  spec: PipelineSpec,
+  datasets: Readonly<Record<string, Dataset>>,
+  traceLevel: "none" | "errors" | "summary" | "full" = "summary",
+) {
   const validation = await capability.validatePipeline(context, spec);
-  expect(validation.valid, validation.diagnostics.map((item) => `${item.code}: ${item.message}`).join("\n")).toBe(true);
+  expect(
+    validation.valid,
+    validation.diagnostics.map((item) => `${item.code}: ${item.message}`).join("\n"),
+  ).toBe(true);
   const plan = await capability.compilePipeline(context, spec);
   return capability.executePipeline(context, plan, { datasets }, { traceLevel });
 }
@@ -100,7 +108,9 @@ describe("expression engine", () => {
     const spec = oneInputPipeline("decimal-expression", schema, "calculation.formula", {
       columns: [{ name: "equal", expression: { text: "0.1 + 0.2 == 0.3" } }],
     });
-    const result = await execute(spec, { source: dataset("source", schema, [{ id: "one" }]) });
+    const result = await execute(spec, {
+      source: dataset("source", schema, [{ id: "one" }]),
+    });
     expect(result.status).toBe("success");
     const rows = await collectRows(result.outputs.result!, context);
     expect(rows[0]?.equal).toBe(true);
@@ -111,9 +121,13 @@ describe("expression engine", () => {
     const spec = oneInputPipeline("division-zero", schema, "calculation.formula", {
       columns: [{ name: "result", expression: { text: "amount / 0" } }],
     });
-    const result = await execute(spec, { source: dataset("source", schema, [{ amount: new D(10) }]) });
+    const result = await execute(spec, {
+      source: dataset("source", schema, [{ amount: new D(10) }]),
+    });
     expect(result.status).toBe("failed");
-    expect(result.diagnostics.map((item) => item.code)).toContain(CalculationDiagnosticCode.DIVISION_BY_ZERO);
+    expect(result.diagnostics.map((item) => item.code)).toContain(
+      CalculationDiagnosticCode.DIVISION_BY_ZERO,
+    );
   });
 
   it.each([
@@ -124,7 +138,8 @@ describe("expression engine", () => {
   ] as const)("diagnoses %s with %s", (text, scope, code) => {
     const compiled = capability.compileExpression(context, { text }, scope);
     expect("diagnostics" in compiled).toBe(true);
-    if ("diagnostics" in compiled) expect(compiled.diagnostics.map((item) => item.code)).toContain(code);
+    if ("diagnostics" in compiled)
+      expect(compiled.diagnostics.map((item) => item.code)).toContain(code);
   });
 
   it("exposes the fixed function registry", () => {
@@ -142,14 +157,29 @@ describe("expression engine", () => {
 describe("relational operations", () => {
   it("fails a declared many-to-one join when the right side is one-to-many", async () => {
     const leftSchema = tableType([{ name: "id", type: STRING }]);
-    const rightSchema = tableType([{ name: "id", type: STRING }, { name: "label", type: STRING }]);
+    const rightSchema = tableType([
+      { name: "id", type: STRING },
+      { name: "label", type: STRING },
+    ]);
     const spec: PipelineSpec = {
       id: "join-cardinality",
-      inputs: [{ name: "left", schema: leftSchema }, { name: "right", schema: rightSchema }],
+      inputs: [
+        { name: "left", schema: leftSchema },
+        { name: "right", schema: rightSchema },
+      ],
       nodes: [
         { id: "left", operation: "calculation.input", config: { name: "left" } },
         { id: "right", operation: "calculation.input", config: { name: "right" } },
-        { id: "join", operation: "calculation.join", config: { kind: "left", leftKey: "id", rightKey: "id", expectedCardinality: "many-to-one" } },
+        {
+          id: "join",
+          operation: "calculation.join",
+          config: {
+            kind: "left",
+            leftKey: "id",
+            rightKey: "id",
+            expectedCardinality: "many-to-one",
+          },
+        },
         { id: "output", operation: "calculation.output", config: {} },
       ],
       edges: [
@@ -161,20 +191,35 @@ describe("relational operations", () => {
     };
     const result = await execute(spec, {
       left: dataset("left", leftSchema, [{ id: "A" }]),
-      right: dataset("right", rightSchema, [{ id: "A", label: "first" }, { id: "A", label: "second" }]),
+      right: dataset("right", rightSchema, [
+        { id: "A", label: "first" },
+        { id: "A", label: "second" },
+      ]),
     });
     expect(result.status).toBe("failed");
-    expect(result.diagnostics.map((item) => item.code)).toContain(CalculationDiagnosticCode.JOIN_CARDINALITY_VIOLATION);
+    expect(result.diagnostics.map((item) => item.code)).toContain(
+      CalculationDiagnosticCode.JOIN_CARDINALITY_VIOLATION,
+    );
     const detail = result.trace.nodes.find((node) => node.nodeId === "join")?.detail;
-    expect(detail).toMatchObject({ kind: "join", expected: "many-to-one", actual: "one-to-many" });
+    expect(detail).toMatchObject({
+      kind: "join",
+      expected: "many-to-one",
+      actual: "one-to-many",
+    });
   });
 
   it("implements every lookup missing and multiple policy", async () => {
     const inputSchema = tableType([{ name: "key", type: STRING }]);
-    const lookupSchema = tableType([{ name: "key", type: STRING }, { name: "value", type: STRING }]);
+    const lookupSchema = tableType([
+      { name: "key", type: STRING },
+      { name: "value", type: STRING },
+    ]);
     const makeSpec = (config: unknown): PipelineSpec => ({
       id: `lookup-${JSON.stringify(config)}`,
-      inputs: [{ name: "input", schema: inputSchema }, { name: "lookup", schema: lookupSchema }],
+      inputs: [
+        { name: "input", schema: inputSchema },
+        { name: "lookup", schema: lookupSchema },
+      ],
       nodes: [
         { id: "input", operation: "calculation.input", config: { name: "input" } },
         { id: "table", operation: "calculation.input", config: { name: "lookup" } },
@@ -188,42 +233,77 @@ describe("relational operations", () => {
       ],
       outputs: [{ name: "result", fromNode: "output", fromPort: "out" }],
     });
-    const base = { key: { input: "key", lookup: "key" }, output: { field: "value", as: "found" } };
+    const base = {
+      key: { input: "key", lookup: "key" },
+      output: { field: "value", as: "found" },
+    };
     const missingInput = dataset("input", inputSchema, [{ key: "missing" }]);
     const emptyLookup = dataset("lookup", lookupSchema, []);
 
-    const missingError = await execute(makeSpec({ ...base, missingPolicy: "error" }), { input: missingInput, lookup: emptyLookup });
+    const missingError = await execute(makeSpec({ ...base, missingPolicy: "error" }), {
+      input: missingInput,
+      lookup: emptyLookup,
+    });
     expect(missingError.status).toBe("failed");
-    expect(missingError.diagnostics.map((item) => item.code)).toContain(CalculationDiagnosticCode.LOOKUP_MISSING);
+    expect(missingError.diagnostics.map((item) => item.code)).toContain(
+      CalculationDiagnosticCode.LOOKUP_MISSING,
+    );
 
-    const missingNull = await execute(makeSpec({ ...base, missingPolicy: "null" }), { input: missingInput, lookup: emptyLookup });
+    const missingNull = await execute(makeSpec({ ...base, missingPolicy: "null" }), {
+      input: missingInput,
+      lookup: emptyLookup,
+    });
     expect((await collectRows(missingNull.outputs.result!, context))[0]?.found).toBeNull();
 
-    const missingDefault = await execute(makeSpec({ ...base, missingPolicy: "default", defaultValue: "fallback" }), { input: missingInput, lookup: emptyLookup });
-    expect((await collectRows(missingDefault.outputs.result!, context))[0]?.found).toBe("fallback");
+    const missingDefault = await execute(
+      makeSpec({ ...base, missingPolicy: "default", defaultValue: "fallback" }),
+      { input: missingInput, lookup: emptyLookup },
+    );
+    expect((await collectRows(missingDefault.outputs.result!, context))[0]?.found).toBe(
+      "fallback",
+    );
 
-    const duplicateLookup = dataset("lookup", lookupSchema, [{ key: "A", value: "first" }, { key: "A", value: "second" }]);
+    const duplicateLookup = dataset("lookup", lookupSchema, [
+      { key: "A", value: "first" },
+      { key: "A", value: "second" },
+    ]);
     const matchedInput = dataset("input", inputSchema, [{ key: "A" }]);
-    const ambiguousError = await execute(makeSpec({ ...base, multiplePolicy: "error" }), { input: matchedInput, lookup: duplicateLookup });
+    const ambiguousError = await execute(makeSpec({ ...base, multiplePolicy: "error" }), {
+      input: matchedInput,
+      lookup: duplicateLookup,
+    });
     expect(ambiguousError.status).toBe("failed");
-    expect(ambiguousError.diagnostics.map((item) => item.code)).toContain(CalculationDiagnosticCode.LOOKUP_AMBIGUOUS);
+    expect(ambiguousError.diagnostics.map((item) => item.code)).toContain(
+      CalculationDiagnosticCode.LOOKUP_AMBIGUOUS,
+    );
 
-    const ambiguousFirst = await execute(makeSpec({ ...base, multiplePolicy: "first" }), { input: matchedInput, lookup: duplicateLookup });
-    expect((await collectRows(ambiguousFirst.outputs.result!, context))[0]?.found).toBe("first");
-    expect(ambiguousFirst.trace.nodes.find((node) => node.nodeId === "lookup")?.detail).toMatchObject({ kind: "lookup", ambiguous: 1, matched: 1 });
+    const ambiguousFirst = await execute(makeSpec({ ...base, multiplePolicy: "first" }), {
+      input: matchedInput,
+      lookup: duplicateLookup,
+    });
+    expect((await collectRows(ambiguousFirst.outputs.result!, context))[0]?.found).toBe(
+      "first",
+    );
+    expect(
+      ambiguousFirst.trace.nodes.find((node) => node.nodeId === "lookup")?.detail,
+    ).toMatchObject({ kind: "lookup", ambiguous: 1, matched: 1 });
   });
 
   it("uses first-match decision semantics and traces the selected rule id", async () => {
     const schema = tableType([{ name: "score", type: DECIMAL }]);
     const spec = oneInputPipeline("decision-first", schema, "calculation.decision", {
       rules: [
-        { id: "first", when: { text: "score >= 10" }, outputs: { band: { text: "\"A\"" } } },
-        { id: "second", when: { text: "score >= 1" }, outputs: { band: { text: "\"B\"" } } },
+        { id: "first", when: { text: "score >= 10" }, outputs: { band: { text: '"A"' } } },
+        { id: "second", when: { text: "score >= 1" }, outputs: { band: { text: '"B"' } } },
       ],
     });
-    const result = await execute(spec, { source: dataset("source", schema, [{ score: new D(20) }]) });
+    const result = await execute(spec, {
+      source: dataset("source", schema, [{ score: new D(20) }]),
+    });
     expect((await collectRows(result.outputs.result!, context))[0]?.band).toBe("A");
-    expect(result.trace.nodes.find((node) => node.nodeId === "operation")?.detail).toMatchObject({
+    expect(
+      result.trace.nodes.find((node) => node.nodeId === "operation")?.detail,
+    ).toMatchObject({
       kind: "decision",
       matchedRules: { first: 1 },
       unmatched: 0,
@@ -256,7 +336,9 @@ describe("relational operations", () => {
       assert: [{ id: "positive", expression: { text: "amount > 0" } }],
     });
     const validated = await execute(validateSpec, { source });
-    const failure = validated.diagnostics.find((item) => item.code === CalculationDiagnosticCode.VALIDATION_FAILED);
+    const failure = validated.diagnostics.find(
+      (item) => item.code === CalculationDiagnosticCode.VALIDATION_FAILED,
+    );
     expect(validated.status).toBe("failed");
     expect(failure?.path).toBe("/rows/1");
   });
@@ -269,7 +351,11 @@ describe("relational operations", () => {
       division: { precision: 4, rounding: "half-up" },
     });
     const result = await execute(spec, {
-      source: dataset("source", schema, [{ amount: new D(1) }, { amount: new D(0) }, { amount: new D(0) }]),
+      source: dataset("source", schema, [
+        { amount: new D(1) },
+        { amount: new D(0) },
+        { amount: new D(0) },
+      ]),
     });
     const average = (await collectRows(result.outputs.result!, context))[0]?.average;
     expect((average as Decimal).toFixed()).toBe("0.3333");
@@ -299,7 +385,11 @@ describe("allocation", () => {
       const equal = caseIndex % 11 === 1;
       const zero = caseIndex % 17 === 0;
       for (let rowIndex = 0; rowIndex < length; rowIndex += 1) {
-        const weight = zero ? new D(0) : equal ? new D(1) : new D(Math.floor(random() * 50));
+        const weight = zero
+          ? new D(0)
+          : equal
+            ? new D(1)
+            : new D(Math.floor(random() * 50));
         rows.push({ caseId, rowId: String(rowIndex).padStart(3, "0"), total, weight });
       }
     }
@@ -322,7 +412,9 @@ describe("allocation", () => {
       },
     });
     const result = await execute(spec, { source: dataset("source", schema, rows) });
-    expect(result.status, result.diagnostics.map((item) => item.message).join("\n")).toBe("success");
+    expect(result.status, result.diagnostics.map((item) => item.message).join("\n")).toBe(
+      "success",
+    );
     const output = await collectRows(result.outputs.result!, context);
     const actual = new Map<string, Decimal>();
     for (const row of output) {
@@ -331,10 +423,15 @@ describe("allocation", () => {
       expect(Decimal.isDecimal(part)).toBe(true);
       actual.set(caseId, (actual.get(caseId) ?? new D(0)).plus(part as Decimal));
     }
-    for (const [caseId, total] of expected) expect(actual.get(caseId)?.equals(total), caseId).toBe(true);
+    for (const [caseId, total] of expected)
+      expect(actual.get(caseId)?.equals(total), caseId).toBe(true);
     const fixed = output.filter((row) => row.caseId === "fixed");
-    expect((fixed.find((row) => row.rowId === "a")?.part as Decimal).toFixed(2)).toBe("0.01");
-    expect((fixed.find((row) => row.rowId === "b")?.part as Decimal).toFixed(2)).toBe("0.00");
+    expect((fixed.find((row) => row.rowId === "a")?.part as Decimal).toFixed(2)).toBe(
+      "0.01",
+    );
+    expect((fixed.find((row) => row.rowId === "b")?.part as Decimal).toFixed(2)).toBe(
+      "0.00",
+    );
   });
 
   it("implements to-row and reject remainder policies", async () => {
@@ -353,32 +450,48 @@ describe("allocation", () => {
       output: "part",
       sortBy: ["rowId"],
     };
-    const toRowSpec = oneInputPipeline("allocation-to-row", schema, "calculation.allocate", {
-      ...base,
-      policy: {
-        scale: 2,
-        rounding: "down",
-        remainder: { kind: "to-row", rowKey: "b" },
-        onZeroWeight: "error",
+    const toRowSpec = oneInputPipeline(
+      "allocation-to-row",
+      schema,
+      "calculation.allocate",
+      {
+        ...base,
+        policy: {
+          scale: 2,
+          rounding: "down",
+          remainder: { kind: "to-row", rowKey: "b" },
+          onZeroWeight: "error",
+        },
       },
-    });
+    );
     const toRow = await execute(toRowSpec, { source });
     const parts = await collectRows(toRow.outputs.result!, context);
-    expect((parts.find((row) => row.rowId === "a")?.part as Decimal).toFixed(2)).toBe("0.00");
-    expect((parts.find((row) => row.rowId === "b")?.part as Decimal).toFixed(2)).toBe("0.01");
+    expect((parts.find((row) => row.rowId === "a")?.part as Decimal).toFixed(2)).toBe(
+      "0.00",
+    );
+    expect((parts.find((row) => row.rowId === "b")?.part as Decimal).toFixed(2)).toBe(
+      "0.01",
+    );
 
-    const rejectSpec = oneInputPipeline("allocation-reject", schema, "calculation.allocate", {
-      ...base,
-      policy: {
-        scale: 2,
-        rounding: "down",
-        remainder: { kind: "reject" },
-        onZeroWeight: "error",
+    const rejectSpec = oneInputPipeline(
+      "allocation-reject",
+      schema,
+      "calculation.allocate",
+      {
+        ...base,
+        policy: {
+          scale: 2,
+          rounding: "down",
+          remainder: { kind: "reject" },
+          onZeroWeight: "error",
+        },
       },
-    });
+    );
     const rejected = await execute(rejectSpec, { source });
     expect(rejected.status).toBe("failed");
-    expect(rejected.diagnostics.map((item) => item.code)).toContain(CalculationDiagnosticCode.ALLOCATION_CONSERVATION_VIOLATION);
+    expect(rejected.diagnostics.map((item) => item.code)).toContain(
+      CalculationDiagnosticCode.ALLOCATION_CONSERVATION_VIOLATION,
+    );
   });
 });
 
@@ -397,24 +510,42 @@ describe("semantic lowering", () => {
         expect(typeof value).not.toBe("function");
         return;
       }
-      expect(Array.isArray(value) || Object.getPrototypeOf(value) === Object.prototype).toBe(true);
-      for (const child of Object.values(value as Readonly<Record<string, unknown>>)) assertPlainJsonValue(child);
+      expect(
+        Array.isArray(value) || Object.getPrototypeOf(value) === Object.prototype,
+      ).toBe(true);
+      for (const child of Object.values(value as Readonly<Record<string, unknown>>))
+        assertPlainJsonValue(child);
     };
     assertPlainJsonValue(compiled.plan);
-    expect(serialized).toContain("\"kind\":\"binary\"");
+    expect(serialized).toContain('"kind":"binary"');
     expect(serialized).not.toContain("function");
   });
 
   it("makes join keys and declared cardinality inspectable without execution", async () => {
     const leftSchema = tableType([{ name: "personId", type: STRING }]);
-    const rightSchema = tableType([{ name: "personId", type: STRING }, { name: "name", type: STRING }]);
+    const rightSchema = tableType([
+      { name: "personId", type: STRING },
+      { name: "name", type: STRING },
+    ]);
     const spec: PipelineSpec = {
       id: "inspectable-join",
-      inputs: [{ name: "left", schema: leftSchema }, { name: "right", schema: rightSchema }],
+      inputs: [
+        { name: "left", schema: leftSchema },
+        { name: "right", schema: rightSchema },
+      ],
       nodes: [
         { id: "left", operation: "calculation.input", config: { name: "left" } },
         { id: "right", operation: "calculation.input", config: { name: "right" } },
-        { id: "join", operation: "calculation.join", config: { kind: "left", leftKey: "personId", rightKey: "personId", expectedCardinality: "many-to-one" } },
+        {
+          id: "join",
+          operation: "calculation.join",
+          config: {
+            kind: "left",
+            leftKey: "personId",
+            rightKey: "personId",
+            expectedCardinality: "many-to-one",
+          },
+        },
       ],
       edges: [
         { fromNode: "left", fromPort: "out", toNode: "join", toPort: "left" },
@@ -432,7 +563,10 @@ describe("semantic lowering", () => {
   });
 
   it("declares allocation parameters in JSON IR and evaluates the bound parameter", async () => {
-    const schema = tableType([{ name: "rowId", type: STRING }, { name: "weight", type: DECIMAL }]);
+    const schema = tableType([
+      { name: "rowId", type: STRING },
+      { name: "weight", type: DECIMAL },
+    ]);
     const base = oneInputPipeline("parameter-allocation", schema, "calculation.allocate", {
       amount: { parameter: "budget" },
       weight: { text: "weight" },
@@ -448,10 +582,12 @@ describe("semantic lowering", () => {
     });
     const unknown = await capability.validatePipeline(context, base);
     expect(unknown.valid).toBe(false);
-    expect(unknown.diagnostics).toContainEqual(expect.objectContaining({
-      code: CalculationDiagnosticCode.EXPRESSION_UNKNOWN_FIELD,
-      message: expect.stringContaining("parameter"),
-    }));
+    expect(unknown.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: CalculationDiagnosticCode.EXPRESSION_UNKNOWN_FIELD,
+        message: expect.stringContaining("parameter"),
+      }),
+    );
 
     const spec: PipelineSpec = { ...base, parameters: [{ name: "budget", type: DECIMAL }] };
     const compiled = await capability.compilePipeline(context, spec);
@@ -461,28 +597,34 @@ describe("semantic lowering", () => {
       kind: "allocate",
       amount: { kind: "expression", expression: { kind: "parameter", name: "budget" } },
     });
-    const result = await capability.executePipeline(
-      context,
-      compiled,
-      {
-        datasets: {
-          source: dataset("source", schema, [
-            { rowId: "a", weight: new D(1) },
-            { rowId: "b", weight: new D(1) },
-          ]),
-        },
-        parameters: { budget: new D("0.01") },
+    const result = await capability.executePipeline(context, compiled, {
+      datasets: {
+        source: dataset("source", schema, [
+          { rowId: "a", weight: new D(1) },
+          { rowId: "b", weight: new D(1) },
+        ]),
       },
-    );
+      parameters: { budget: new D("0.01") },
+    });
     const rows = await collectRows(result.outputs.result!, context);
     expect(result.status).toBe("success");
-    expect(rows.reduce((sum, row) => sum.plus(row.part as Decimal), new D(0)).equals(new D("0.01"))).toBe(true);
+    expect(
+      rows
+        .reduce((sum, row) => sum.plus(row.part as Decimal), new D(0))
+        .equals(new D("0.01")),
+    ).toBe(true);
   });
 
   it("lowers and executes decision drop as an explicit cardinality rule", async () => {
     const schema = tableType([{ name: "score", type: DECIMAL }]);
     const spec = oneInputPipeline("decision-drop", schema, "calculation.decision", {
-      rules: [{ id: "positive", when: { text: "score > 0" }, outputs: { band: { text: "\"positive\"" } } }],
+      rules: [
+        {
+          id: "positive",
+          when: { text: "score > 0" },
+          outputs: { band: { text: '"positive"' } },
+        },
+      ],
       unmatchedPolicy: "drop",
     });
     const compiled = await capability.compilePipeline(context, spec);
@@ -519,6 +661,7 @@ describe("semantic lowering", () => {
     const contributor = definePlugin({
       id: "test.hidden-operation",
       version: "0.1.0",
+      engineRange: "^0.1.20",
       register(pluginContext) {
         pluginContext.extensions.contribute(OperationExtensionPoint, hidden);
       },
@@ -605,6 +748,7 @@ describe("semantic lowering", () => {
     const backendPlugin = definePlugin({
       id: "calculation-test-backend",
       version: "0.1.0",
+      engineRange: "^0.1.20",
       register(pluginContext) {
         pluginContext.extensions.contribute(BackendExtensionPoint, stubBackend);
       },
@@ -612,29 +756,46 @@ describe("semantic lowering", () => {
     const selectedConsumer = definePlugin({
       id: "calculation-test-backend-consumer",
       version: "0.1.0",
+      engineRange: "^0.1.20",
       requires: { calculation: CalculationCapabilityToken },
       start(pluginContext) {
         selectedCapability = pluginContext.dependencies.calculation;
       },
     });
-    const selectionEngine = createEngine({ plugins: [backendPlugin, calculationPlugin, selectedConsumer] });
+    const selectionEngine = createEngine({
+      plugins: [backendPlugin, calculationPlugin, selectedConsumer],
+    });
     await selectionEngine.start();
     try {
-      const schema = tableType([{ name: "active", type: BOOLEAN }, { name: "weight", type: DECIMAL }]);
-      const filter = oneInputPipeline("stub-supported", schema, "calculation.filter", { where: { text: "active == true" } });
-      const allocate = oneInputPipeline("stub-unsupported", schema, "calculation.allocate", {
-        amount: { value: "1" },
-        weight: { text: "weight" },
-        partitionBy: [],
-        policy: {
-          scale: 2,
-          rounding: "half-up",
-          remainder: { kind: "largest-remainder" },
-          onZeroWeight: "error",
-        },
+      const schema = tableType([
+        { name: "active", type: BOOLEAN },
+        { name: "weight", type: DECIMAL },
+      ]);
+      const filter = oneInputPipeline("stub-supported", schema, "calculation.filter", {
+        where: { text: "active == true" },
       });
-      expect((await selectedCapability!.compilePipeline(context, filter)).backendId).toBe("stub-no-allocate");
-      expect((await selectedCapability!.compilePipeline(context, allocate)).backendId).toBe("memory");
+      const allocate = oneInputPipeline(
+        "stub-unsupported",
+        schema,
+        "calculation.allocate",
+        {
+          amount: { value: "1" },
+          weight: { text: "weight" },
+          partitionBy: [],
+          policy: {
+            scale: 2,
+            rounding: "half-up",
+            remainder: { kind: "largest-remainder" },
+            onZeroWeight: "error",
+          },
+        },
+      );
+      expect((await selectedCapability!.compilePipeline(context, filter)).backendId).toBe(
+        "stub-no-allocate",
+      );
+      expect((await selectedCapability!.compilePipeline(context, allocate)).backendId).toBe(
+        "memory",
+      );
     } finally {
       await selectionEngine.stop();
     }
@@ -644,8 +805,12 @@ describe("semantic lowering", () => {
 describe("pipeline runtime", () => {
   it("produces stable plan hashes and changes the hash when config changes", async () => {
     const schema = tableType([{ name: "active", type: BOOLEAN }]);
-    const firstSpec = oneInputPipeline("hash", schema, "calculation.filter", { where: { text: "active == true" } });
-    const secondSpec = oneInputPipeline("hash", schema, "calculation.filter", { where: { text: "active != true" } });
+    const firstSpec = oneInputPipeline("hash", schema, "calculation.filter", {
+      where: { text: "active == true" },
+    });
+    const secondSpec = oneInputPipeline("hash", schema, "calculation.filter", {
+      where: { text: "active != true" },
+    });
     const first = await capability.compilePipeline(context, firstSpec);
     const repeat = await capability.compilePipeline(context, firstSpec);
     const changed = await capability.compilePipeline(context, secondSpec);
@@ -672,12 +837,16 @@ describe("pipeline runtime", () => {
     };
     const validation = await capability.validatePipeline(context, spec);
     expect(validation.valid).toBe(false);
-    expect(validation.diagnostics.map((item) => item.code)).toContain(CalculationDiagnosticCode.PIPELINE_CYCLE);
+    expect(validation.diagnostics.map((item) => item.code)).toContain(
+      CalculationDiagnosticCode.PIPELINE_CYCLE,
+    );
   });
 
   it("honours a zero-millisecond timeout with a structured cancellation diagnostic", async () => {
     const schema = tableType([{ name: "active", type: BOOLEAN }]);
-    const spec = oneInputPipeline("timeout", schema, "calculation.filter", { where: { text: "active == true" } });
+    const spec = oneInputPipeline("timeout", schema, "calculation.filter", {
+      where: { text: "active == true" },
+    });
     const plan = await capability.compilePipeline(context, spec);
     const result = await capability.executePipeline(
       context,
@@ -686,7 +855,9 @@ describe("pipeline runtime", () => {
       { timeoutMs: 0 },
     );
     expect(result.status).toBe("failed");
-    expect(result.diagnostics.map((item) => item.code)).toContain(CalculationDiagnosticCode.EXECUTION_CANCELLED);
+    expect(result.diagnostics.map((item) => item.code)).toContain(
+      CalculationDiagnosticCode.EXECUTION_CANCELLED,
+    );
   });
 
   it("runs input -> lookup -> formula -> output and returns 1200 exactly", async () => {
@@ -702,10 +873,17 @@ describe("pipeline runtime", () => {
     ]);
     const spec: PipelineSpec = {
       id: "reference-allocation",
-      inputs: [{ name: "workload", schema: workloadSchema }, { name: "coefficients", schema: coefficientSchema }],
+      inputs: [
+        { name: "workload", schema: workloadSchema },
+        { name: "coefficients", schema: coefficientSchema },
+      ],
       nodes: [
         { id: "input", operation: "calculation.input", config: { name: "workload" } },
-        { id: "coefficient-input", operation: "calculation.input", config: { name: "coefficients" } },
+        {
+          id: "coefficient-input",
+          operation: "calculation.input",
+          config: { name: "coefficients" },
+        },
         {
           id: "lookup",
           operation: "calculation.lookup",
@@ -716,32 +894,65 @@ describe("pipeline runtime", () => {
             multiplePolicy: "error",
           },
         },
-        { id: "formula", operation: "calculation.formula", config: { columns: [{ name: "performance", expression: { text: "workload * pointValue * coefficient" } }] } },
+        {
+          id: "formula",
+          operation: "calculation.formula",
+          config: {
+            columns: [
+              {
+                name: "performance",
+                expression: { text: "workload * pointValue * coefficient" },
+              },
+            ],
+          },
+        },
         { id: "output", operation: "calculation.output", config: {} },
       ],
       edges: [
         { fromNode: "input", fromPort: "out", toNode: "lookup", toPort: "in" },
-        { fromNode: "coefficient-input", fromPort: "out", toNode: "lookup", toPort: "lookup" },
+        {
+          fromNode: "coefficient-input",
+          fromPort: "out",
+          toNode: "lookup",
+          toPort: "lookup",
+        },
         { fromNode: "lookup", fromPort: "out", toNode: "formula", toPort: "in" },
         { fromNode: "formula", fromPort: "out", toNode: "output", toPort: "in" },
       ],
       outputs: [{ name: "result", fromNode: "output", fromPort: "out" }],
     };
-    const result = await execute(spec, {
-      workload: dataset("workload", workloadSchema, [{ employee: "张三", title: "主任医师", workload: new D(100), pointValue: new D(10) }]),
-      coefficients: dataset("coefficients", coefficientSchema, [{ title: "主任医师", coefficient: new D("1.2") }]),
-    }, "full");
+    const result = await execute(
+      spec,
+      {
+        workload: dataset("workload", workloadSchema, [
+          {
+            employee: "张三",
+            title: "主任医师",
+            workload: new D(100),
+            pointValue: new D(10),
+          },
+        ]),
+        coefficients: dataset("coefficients", coefficientSchema, [
+          { title: "主任医师", coefficient: new D("1.2") },
+        ]),
+      },
+      "full",
+    );
     expect(result.status).toBe("success");
     const rows = await collectRows(result.outputs.result!, context);
     const performance = rows[0]?.performance;
     expect(Decimal.isDecimal(performance)).toBe(true);
     expect((performance as Decimal).equals(new D(1200))).toBe(true);
-    expect(result.trace.nodes.every((node) => (node.sampleRows?.length ?? 0) <= 20)).toBe(true);
+    expect(result.trace.nodes.every((node) => (node.sampleRows?.length ?? 0) <= 20)).toBe(
+      true,
+    );
     expect(result.input.datasets.map((item) => [item.name, item.rowCount])).toEqual([
       ["coefficients", 1],
       ["workload", 1],
     ]);
-    expect(result.input.datasets.every((item) => /^[a-f0-9]{64}$/u.test(item.fingerprint))).toBe(true);
+    expect(
+      result.input.datasets.every((item) => /^[a-f0-9]{64}$/u.test(item.fingerprint)),
+    ).toBe(true);
   });
 
   it("registers the complete V0.1 operation palette", () => {
@@ -760,13 +971,20 @@ describe("pipeline runtime", () => {
   });
 
   it("registers exposed calculation resource types", () => {
-    const resourceTypes = engine.inspect().resourceTypes.filter((resource) => resource.kind.startsWith("calculation."));
+    const resourceTypes = engine
+      .inspect()
+      .resourceTypes.filter((resource) => resource.kind.startsWith("calculation."));
     expect(resourceTypes.map((resource) => resource.kind).sort()).toEqual([
       "calculation.decision-table",
       "calculation.lookup-table",
       "calculation.pipeline",
     ]);
-    expect(resourceTypes.every((resource) => resource.exposure.configuration === true && resource.exposure.frontend === true)).toBe(true);
+    expect(
+      resourceTypes.every(
+        (resource) =>
+          resource.exposure.configuration === true && resource.exposure.frontend === true,
+      ),
+    ).toBe(true);
   });
 });
 
@@ -788,12 +1006,12 @@ describe("compiler analysis extensions", () => {
     kind: "decimal",
     precision: 28,
     scale: 6,
-    semanticAnnotations: [
-      semanticAnnotation(QuantityFact, { dimension: "TEST" }),
-    ],
+    semanticAnnotations: [semanticAnnotation(QuantityFact, { dimension: "TEST" })],
   };
 
-  function pipeline(requiredAnalyzers: PipelineSpec["requiredAnalyzers"] = []): PipelineSpec {
+  function pipeline(
+    requiredAnalyzers: PipelineSpec["requiredAnalyzers"] = [],
+  ): PipelineSpec {
     return {
       ...oneInputPipeline(
         "analysis-extension",
@@ -837,6 +1055,7 @@ describe("compiler analysis extensions", () => {
     const contributor = definePlugin({
       id: `analysis-contributor-${Math.random().toString(36).slice(2)}`,
       version: "0.1.0",
+      engineRange: "^0.1.20",
       register(pluginContext) {
         for (const contribution of contributions) {
           if (contribution.kind === "type") {
@@ -864,15 +1083,16 @@ describe("compiler analysis extensions", () => {
   }
 
   it("installs type semantics through a public extension and persists its identity", async () => {
-    const { engine: isolated, compiled } = await compileWith([
-      { kind: "type", extension: quantityAnalyzer("1.2.0") },
-    ], pipeline([
-      {
-        id: "test.quantity-analyzer",
-        kind: "type",
-        contractVersion: TypeAnalysisExtensionPoint.version,
-      },
-    ]));
+    const { engine: isolated, compiled } = await compileWith(
+      [{ kind: "type", extension: quantityAnalyzer("1.2.0") }],
+      pipeline([
+        {
+          id: "test.quantity-analyzer",
+          kind: "type",
+          contractVersion: TypeAnalysisExtensionPoint.version,
+        },
+      ]),
+    );
 
     expect(compiled.diagnostics).toEqual([]);
     expect(compiled.plan.analysis.extensions).toEqual({
@@ -883,21 +1103,25 @@ describe("compiler analysis extensions", () => {
       },
     });
     const formula = compiled.plan.nodes.find((node) => node.kind === "formula");
-    expect(formula?.outputType.columns.find((column) => column.name === "total")?.type)
-      .toMatchObject({ semanticAnnotations: quantityType.semanticAnnotations });
+    expect(
+      formula?.outputType.columns.find((column) => column.name === "total")?.type,
+    ).toMatchObject({ semanticAnnotations: quantityType.semanticAnnotations });
     expect(JSON.parse(JSON.stringify(compiled.plan))).toEqual(compiled.plan);
 
     await isolated.stop();
   });
 
   it("rejects a required analyzer when the plugin is absent", async () => {
-    const { engine: isolated, compiled } = await compileWith([], pipeline([
-      {
-        id: "test.quantity-analyzer",
-        kind: "type",
-        contractVersion: TypeAnalysisExtensionPoint.version,
-      },
-    ]));
+    const { engine: isolated, compiled } = await compileWith(
+      [],
+      pipeline([
+        {
+          id: "test.quantity-analyzer",
+          kind: "type",
+          contractVersion: TypeAnalysisExtensionPoint.version,
+        },
+      ]),
+    );
 
     expect(compiled.diagnostics).toContainEqual(
       expect.objectContaining({
@@ -933,10 +1157,12 @@ describe("compiler analysis extensions", () => {
       { kind: "type", extension: quantityAnalyzer("1.0.1") },
     ]);
 
-    expect(first.compiled.plan.analysis.extensions["test.quantity-analyzer"]?.semanticVersion)
-      .toBe("1.0.0");
-    expect(second.compiled.plan.analysis.extensions["test.quantity-analyzer"]?.semanticVersion)
-      .toBe("1.0.1");
+    expect(
+      first.compiled.plan.analysis.extensions["test.quantity-analyzer"]?.semanticVersion,
+    ).toBe("1.0.0");
+    expect(
+      second.compiled.plan.analysis.extensions["test.quantity-analyzer"]?.semanticVersion,
+    ).toBe("1.0.1");
     expect(first.compiled.planHash).not.toBe(second.compiled.planHash);
 
     await first.engine.stop();
@@ -978,10 +1204,13 @@ describe("compiler analysis extensions", () => {
         contractVersion: PlanAnalysisExtensionPoint.version,
       },
     ]);
-    const { engine: isolated, compiled } = await compileWith([
-      { kind: "type", extension: quantityAnalyzer("1.0.0") },
-      { kind: "plan", extension: grainAnalyzer },
-    ], spec);
+    const { engine: isolated, compiled } = await compileWith(
+      [
+        { kind: "type", extension: quantityAnalyzer("1.0.0") },
+        { kind: "plan", extension: grainAnalyzer },
+      ],
+      spec,
+    );
 
     expect(compiled.diagnostics).toEqual([]);
     const formula = compiled.plan.nodes.find((node) => node.kind === "formula");

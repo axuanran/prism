@@ -1,1 +1,1 @@
-export type { EngineInspection, PluginInfo } from '../api/types';
+export type { EngineInspection, PluginInfo } from "../api/types";

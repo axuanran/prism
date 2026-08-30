@@ -12,6 +12,7 @@
     { "path": "../contracts-data" },
     { "path": "../contracts-project" },
     { "path": "../contracts-storage" },
+    { "path": "../contracts-worker" },
     { "path": "../kernel" },
     { "path": "../plugin-code-project" },
     { "path": "../plugin-http-fastify" }

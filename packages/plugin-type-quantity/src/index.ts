@@ -38,11 +38,10 @@ export interface QuantitySpec extends JsonObject {
   readonly denominator: readonly QuantityFactor[];
 }
 
-export const QuantityAnnotation =
-  defineSemanticAnnotationContract<QuantitySpec>({
-    id: "type.quantity",
-    version: QUANTITY_ANNOTATION_VERSION,
-  });
+export const QuantityAnnotation = defineSemanticAnnotationContract<QuantitySpec>({
+  id: "type.quantity",
+  version: QUANTITY_ANNOTATION_VERSION,
+});
 
 export interface QuantityCapability {
   annotate<T extends ValueType>(type: T, quantity: QuantitySpec): T;
@@ -76,10 +75,7 @@ const capability: QuantityCapability = {
     };
   },
   read(type) {
-    return findSemanticAnnotation(
-      type.semanticAnnotations,
-      QuantityAnnotation,
-    )?.spec;
+    return findSemanticAnnotation(type.semanticAnnotations, QuantityAnnotation)?.spec;
   },
   normalize,
 };
@@ -95,19 +91,15 @@ export const quantityTypeAnalyzer: TypeAnalysisExtension = {
 export const quantityPlugin = definePlugin({
   id: "type.quantity",
   version: QUANTITY_PLUGIN_VERSION,
+  engineRange: "^0.1.20",
   provides: [QuantityCapabilityToken],
   register(context) {
-    context.extensions.contribute(
-      TypeAnalysisExtensionPoint,
-      quantityTypeAnalyzer,
-    );
+    context.extensions.contribute(TypeAnalysisExtensionPoint, quantityTypeAnalyzer);
     context.provide(QuantityCapabilityToken, capability);
   },
 });
 
-function analyzeUnary(
-  request: UnaryTypeAnalysisRequest,
-): AnalysisResult<ValueType> {
+function analyzeUnary(request: UnaryTypeAnalysisRequest): AnalysisResult<ValueType> {
   const quantity = capability.read(request.operand);
   if (quantity === undefined) return NOT_APPLICABLE;
   if (request.operator !== "-" || !isNumeric(request.operand)) {
@@ -116,9 +108,7 @@ function analyzeUnary(
   return handled(capability.annotate(request.operand, quantity));
 }
 
-function analyzeBinary(
-  request: BinaryTypeAnalysisRequest,
-): AnalysisResult<ValueType> {
+function analyzeBinary(request: BinaryTypeAnalysisRequest): AnalysisResult<ValueType> {
   const leftQuantity = capability.read(request.left);
   const rightQuantity = capability.read(request.right);
   if (leftQuantity === undefined && rightQuantity === undefined) {
@@ -140,7 +130,10 @@ function analyzeBinary(
       );
     }
     return handled(
-      capability.annotate(arithmeticType(request.left, request.right, request.operator), leftQuantity),
+      capability.annotate(
+        arithmeticType(request.left, request.right, request.operator),
+        leftQuantity,
+      ),
     );
   }
 
@@ -171,9 +164,7 @@ function analyzeBinary(
   return invalid(`Operator '${request.operator}' is not defined for quantities.`);
 }
 
-function analyzeFunction(
-  request: FunctionTypeAnalysisRequest,
-): AnalysisResult<ValueType> {
+function analyzeFunction(request: FunctionTypeAnalysisRequest): AnalysisResult<ValueType> {
   const quantities = request.arguments.map((argument) => capability.read(argument));
   if (quantities.every((quantity) => quantity === undefined)) return NOT_APPLICABLE;
 
@@ -190,11 +181,15 @@ function analyzeFunction(
     const first = quantities.find((quantity) => quantity !== undefined);
     if (
       first === undefined ||
-      quantities.some((quantity) => quantity === undefined || !sameQuantity(first, quantity))
+      quantities.some(
+        (quantity) => quantity === undefined || !sameQuantity(first, quantity),
+      )
     ) {
       return invalid(`${request.name} requires identical quantities.`);
     }
-    return handled(capability.annotate(decimalOf(request.arguments[0] ?? decimalType(38, 10)), first));
+    return handled(
+      capability.annotate(decimalOf(request.arguments[0] ?? decimalType(38, 10)), first),
+    );
   }
 
   if (request.name === "if") {
@@ -230,11 +225,14 @@ function invalid(
 }
 
 function normalize(quantity: QuantitySpec): QuantitySpec {
-  const powers = new Map<string, {
-    readonly dimension: string;
-    readonly unit: string;
-    exponent: number;
-  }>();
+  const powers = new Map<
+    string,
+    {
+      readonly dimension: string;
+      readonly unit: string;
+      exponent: number;
+    }
+  >();
   addFactors(powers, quantity.numerator, 1);
   addFactors(powers, quantity.denominator, -1);
   const factors = [...powers.values()]
@@ -251,7 +249,10 @@ function normalize(quantity: QuantitySpec): QuantitySpec {
 }
 
 function addFactors(
-  powers: Map<string, { readonly dimension: string; readonly unit: string; exponent: number }>,
+  powers: Map<
+    string,
+    { readonly dimension: string; readonly unit: string; exponent: number }
+  >,
   factors: readonly QuantityFactor[],
   direction: 1 | -1,
 ): void {
@@ -322,11 +323,12 @@ function arithmeticType(
 ): DecimalType {
   const leftDecimal = decimalOf(left);
   const rightDecimal = decimalOf(right);
-  const scale = operator === "*"
-    ? Math.min(38, leftDecimal.scale + rightDecimal.scale)
-    : operator === "/"
-      ? Math.max(10, leftDecimal.scale)
-      : Math.max(leftDecimal.scale, rightDecimal.scale);
+  const scale =
+    operator === "*"
+      ? Math.min(38, leftDecimal.scale + rightDecimal.scale)
+      : operator === "/"
+        ? Math.max(10, leftDecimal.scale)
+        : Math.max(leftDecimal.scale, rightDecimal.scale);
   return decimalType(38, Math.min(38, scale));
 }
 
@@ -344,4 +346,3 @@ function toFactor(
     exponent,
   };
 }
-

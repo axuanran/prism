@@ -1,9 +1,9 @@
-import { defineStore } from 'pinia';
-import { computed, ref } from 'vue';
-import { inspectEngine } from '../api/client';
-import type { EngineInspection } from '../types/engine';
+import { defineStore } from "pinia";
+import { computed, ref } from "vue";
+import { inspectEngine } from "../api/client";
+import type { EngineInspection } from "../types/engine";
 
-export const useEngineStore = defineStore('engine', () => {
+export const useEngineStore = defineStore("engine", () => {
   const inspection = ref<EngineInspection | null>(null);
   const loading = ref(false);
   const error = ref<string | null>(null);
@@ -21,7 +21,7 @@ export const useEngineStore = defineStore('engine', () => {
     try {
       inspection.value = await inspectEngine();
     } catch (cause: unknown) {
-      error.value = cause instanceof Error ? cause.message : '无法读取引擎状态。';
+      error.value = cause instanceof Error ? cause.message : "无法读取引擎状态。";
     } finally {
       loading.value = false;
     }

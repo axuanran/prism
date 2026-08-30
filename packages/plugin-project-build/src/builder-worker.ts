@@ -1,14 +1,7 @@
 import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
-import {
-  mkdir,
-  mkdtemp,
-  readFile,
-  readdir,
-  rm,
-  writeFile,
-} from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { build as esbuild } from "esbuild";
@@ -20,28 +13,48 @@ import type {
   BuildWorkerResponse,
   BuiltMaterialPayload,
 } from "./protocol.js";
+import {
+  BUILD_OUTPUT_MAX_FILES,
+  BUILD_OUTPUT_MAX_MATERIALS,
+  appendBuildLog,
+  assertBuildActionIds,
+  assertBuildOutputCount,
+  boundBuildWorkerResponse,
+  consumeBuildOutputFile,
+  createBuildOutputBudget,
+  type BuildOutputBudget,
+} from "./build-limits.js";
+
+const COMMAND_TIMEOUT_MS = 5 * 60_000;
+const MAX_COMMAND_OUTPUT_BYTES = 5 * 1_024 * 1_024;
 
 const require = createRequire(import.meta.url);
 
 process.on("message", (message: BuildWorkerRequest) => {
   if (message.type !== "build") return;
   void execute(message).then(
-    (response) => process.send?.(response),
-    (error: unknown) => process.send?.({
-      type: "failure",
-      message: error instanceof Error ? error.message : String(error),
-      logs: [],
-    } satisfies BuildWorkerResponse),
+    (response) => process.send?.(boundBuildWorkerResponse(response)),
+    (error: unknown) =>
+      process.send?.(
+        boundBuildWorkerResponse({
+          type: "failure",
+          message: error instanceof Error ? error.message : String(error),
+          logs: [],
+        }),
+      ),
   );
 });
 
 async function execute(request: BuildWorkerRequest): Promise<BuildWorkerResponse> {
   const logs: string[] = [];
+  const outputBudget = createBuildOutputBudget();
   const root = await mkdtemp(join(tmpdir(), "prism-build-"));
   try {
     await materialize(root, request.files);
     if (sha(new TextEncoder().encode(request.sdkTypes)) !== request.sdkTypesFingerprint) {
-      throw new Error("PROJECT_SDK_TYPES_MISMATCH: Build SDK Types do not match Runtime Profile identity.");
+      throw new Error(
+        "PROJECT_SDK_TYPES_MISMATCH: Build SDK Types do not match Runtime Profile identity.",
+      );
     }
     const sdkTypesPath = join(root, ".prism", "profile-sdk.d.ts");
     await mkdir(dirname(sdkTypesPath), { recursive: true });
@@ -51,23 +64,35 @@ async function execute(request: BuildWorkerRequest): Promise<BuildWorkerResponse
     const packageJsonHash = sha(packageJson);
     const dependencyLockHash = sha(lockfile);
     const pnpmVersion = (await run(pnpmCommand(), ["--version"], root, logs)).trim();
-    await run(pnpmCommand(), ["install", "--frozen-lockfile"], root, logs);
+    await run(
+      pnpmCommand(),
+      ["install", "--frozen-lockfile", "--ignore-scripts"],
+      root,
+      logs,
+    );
 
     const tsconfig = join(root, ".prism-tsconfig.json");
-    await writeFile(tsconfig, JSON.stringify({
-      compilerOptions: {
-        allowJs: true,
-        jsx: "react-jsx",
-        lib: ["ES2022", "DOM"],
-        module: "NodeNext",
-        moduleResolution: "NodeNext",
-        noEmit: true,
-        skipLibCheck: true,
-        strict: true,
-        target: "ES2022",
-      },
-      include: ["src/**/*", "tests/**/*", ".prism/profile-sdk.d.ts"],
-    }, null, 2));
+    await writeFile(
+      tsconfig,
+      JSON.stringify(
+        {
+          compilerOptions: {
+            allowJs: true,
+            jsx: "react-jsx",
+            lib: ["ES2022", "DOM"],
+            module: "NodeNext",
+            moduleResolution: "NodeNext",
+            noEmit: true,
+            skipLibCheck: true,
+            strict: true,
+            target: "ES2022",
+          },
+          include: ["src/**/*", "tests/**/*", ".prism/profile-sdk.d.ts"],
+        },
+        null,
+        2,
+      ),
+    );
     const tscPackage = require.resolve("@typescript/native/package.json");
     await run(
       process.execPath,
@@ -78,25 +103,33 @@ async function execute(request: BuildWorkerRequest): Promise<BuildWorkerResponse
 
     const generatedTest = join(root, ".prism", "project.generated.test.ts");
     await mkdir(dirname(generatedTest), { recursive: true });
-    await writeFile(generatedTest, [
-      "import projectTest from '../tests/project.test';",
-      "test('project test contract', async () => {",
-      "  const result = await projectTest();",
-      "  expect(result).toMatchObject({ passed: true });",
-      "});",
-      "",
-    ].join("\n"));
-    const reportPath = join(root, ".prism", "test-report.json");
-    await run(process.execPath, [
-      require.resolve("vitest/vitest.mjs"),
-      "run",
+    await writeFile(
       generatedTest,
-      "--globals",
-      "--reporter=json",
-      `--outputFile=${reportPath}`,
-    ], root, logs);
-    const reportBytes = await readFile(reportPath);
-    const report = JSON.parse(reportBytes.toString("utf8")) as {
+      [
+        "import projectTest from '../tests/project.test';",
+        "test('project test contract', async () => {",
+        "  const result = await projectTest();",
+        "  expect(result).toMatchObject({ passed: true });",
+        "});",
+        "",
+      ].join("\n"),
+    );
+    const reportPath = join(root, ".prism", "test-report.json");
+    await run(
+      process.execPath,
+      [
+        require.resolve("vitest/vitest.mjs"),
+        "run",
+        generatedTest,
+        "--globals",
+        "--reporter=json",
+        `--outputFile=${reportPath}`,
+      ],
+      root,
+      logs,
+    );
+    const reportBytes = await readOutputFile(reportPath, outputBudget);
+    const report = JSON.parse(new TextDecoder().decode(reportBytes)) as {
       readonly numTotalTests?: number;
       readonly numFailedTests?: number;
       readonly success?: boolean;
@@ -126,7 +159,7 @@ async function execute(request: BuildWorkerRequest): Promise<BuildWorkerResponse
       },
     });
     await verifyExport(join(clientOutput, "client.js"), "mount", root, logs);
-    logs.push("Vite client build PASS; mount export verified");
+    appendBuildLog(logs, "Vite client build PASS; mount export verified");
 
     const serverOutput = join(output, "server");
     await mkdir(serverOutput, { recursive: true });
@@ -140,11 +173,19 @@ async function execute(request: BuildWorkerRequest): Promise<BuildWorkerResponse
       target: "node24",
     });
     const actionIds = await inspectActions(join(serverOutput, "server.js"), root, logs);
-    logs.push(`esbuild server build PASS; actions export verified (${actionIds.join(", ")})`);
+    assertBuildActionIds(actionIds);
+    appendBuildLog(
+      logs,
+      `esbuild server build PASS; actions export verified (${actionIds.join(", ")})`,
+    );
 
     const materials: BuiltMaterialPayload[] = [];
+    assertBuildOutputCount(request.materials.length, BUILD_OUTPUT_MAX_MATERIALS);
     for (const manifest of request.materials) {
-      const safeName = `${manifest.id}@${manifest.version}`.replace(/[^a-zA-Z0-9._@-]/g, "_");
+      const safeName = `${manifest.id}@${manifest.version}`.replace(
+        /[^a-zA-Z0-9._@-]/g,
+        "_",
+      );
       const materialFile = join(output, "materials", `${safeName}.js`);
       await mkdir(dirname(materialFile), { recursive: true });
       await esbuild({
@@ -160,15 +201,28 @@ async function execute(request: BuildWorkerRequest): Promise<BuildWorkerResponse
         manifest,
         artifact: {
           contentType: "text/javascript",
-          files: [{ path: `${safeName}.js`, content: await readFile(materialFile) }],
+          files: [
+            {
+              path: `${safeName}.js`,
+              content: await readOutputFile(materialFile, outputBudget),
+            },
+          ],
         },
       });
     }
 
     return {
       type: "success",
-      clientArtifact: await directoryPayload(clientOutput, "application/vnd.prism.client"),
-      serverArtifact: await directoryPayload(serverOutput, "application/vnd.prism.server"),
+      clientArtifact: await directoryPayload(
+        clientOutput,
+        "application/vnd.prism.client",
+        outputBudget,
+      ),
+      serverArtifact: await directoryPayload(
+        serverOutput,
+        "application/vnd.prism.server",
+        outputBudget,
+      ),
       testReportArtifact: {
         contentType: "application/json",
         files: [{ path: "test-report.json", content: reportBytes }],
@@ -192,7 +246,10 @@ async function execute(request: BuildWorkerRequest): Promise<BuildWorkerResponse
   }
 }
 
-async function materialize(root: string, files: readonly ProjectSourceFile[]): Promise<void> {
+async function materialize(
+  root: string,
+  files: readonly ProjectSourceFile[],
+): Promise<void> {
   for (const file of files) {
     const target = join(root, ...file.path.split("/"));
     await mkdir(dirname(target), { recursive: true });
@@ -213,21 +270,34 @@ async function run(
     shell: command.toLowerCase().endsWith(".cmd"),
     windowsHide: true,
   });
+  const timer = setTimeout(() => {
+    child.kill();
+    reject(new Error(`${command} exceeded ${COMMAND_TIMEOUT_MS}ms.`));
+  }, COMMAND_TIMEOUT_MS);
   let output = "";
-  child.stdout.on("data", (chunk: Buffer) => {
+  const capture = (chunk: Buffer): void => {
     const text = chunk.toString("utf8");
     output += text;
-    logs.push(...text.split(/\r?\n/).filter(Boolean));
+    if (Buffer.byteLength(output, "utf8") > MAX_COMMAND_OUTPUT_BYTES) {
+      child.kill();
+      reject(new Error(`${command} exceeded the command output limit.`));
+      return;
+    }
+    for (const line of text.split(/\r?\n/u).filter(Boolean)) {
+      appendBuildLog(logs, line);
+    }
+  };
+  child.stdout.on("data", capture);
+  child.stderr.on("data", capture);
+  child.on("error", (error) => {
+    clearTimeout(timer);
+    reject(error);
   });
-  child.stderr.on("data", (chunk: Buffer) => {
-    const text = chunk.toString("utf8");
-    output += text;
-    logs.push(...text.split(/\r?\n/).filter(Boolean));
-  });
-  child.on("error", reject);
   child.on("exit", (code) => {
+    clearTimeout(timer);
     if (code === 0) resolve(output);
-    else reject(new Error(`${command} ${args.join(" ")} exited ${code ?? "without code"}.`));
+    else
+      reject(new Error(`${command} ${args.join(" ")} exited ${code ?? "without code"}.`));
   });
   return promise;
 }
@@ -268,25 +338,48 @@ async function verifyExport(
 async function directoryPayload(
   directory: string,
   contentType: string,
+  budget: BuildOutputBudget,
 ): Promise<BuildArtifactPayload> {
-  const paths = await walk(directory);
-  return {
-    contentType,
-    files: await Promise.all(paths.map(async (path) => ({
+  const paths = await walk(directory, "", [], BUILD_OUTPUT_MAX_FILES - budget.files);
+  const files = [];
+  for (const path of paths) {
+    files.push({
       path,
-      content: await readFile(join(directory, ...path.split("/"))),
-    }))),
-  };
+      content: await readOutputFile(join(directory, ...path.split("/")), budget),
+    });
+  }
+  return { contentType, files };
 }
 
-async function walk(root: string, relative = ""): Promise<readonly string[]> {
-  const values: string[] = [];
+async function walk(
+  root: string,
+  relative: string,
+  values: string[],
+  maximum: number,
+): Promise<readonly string[]> {
   for (const entry of await readdir(join(root, relative), { withFileTypes: true })) {
     const path = relative ? `${relative}/${entry.name}` : entry.name;
-    if (entry.isDirectory()) values.push(...await walk(root, path));
-    else values.push(path);
+    if (entry.isDirectory()) {
+      await walk(root, path, values, maximum);
+    } else {
+      values.push(path);
+      if (values.length > maximum) {
+        throw new Error(
+          "PROJECT_BUILD_OUTPUT_TOO_LARGE: Build Worker output exceeds protocol limits.",
+        );
+      }
+    }
   }
-  return values.sort();
+  return relative === "" ? values.sort() : values;
+}
+
+async function readOutputFile(
+  path: string,
+  budget: BuildOutputBudget,
+): Promise<Uint8Array> {
+  const metadata = await stat(path);
+  consumeBuildOutputFile(budget, metadata.size);
+  return readFile(path);
 }
 
 function sha(value: Uint8Array): string {

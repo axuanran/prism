@@ -32,12 +32,12 @@ No strictness option was reduced. The migration added no `@ts-ignore`, `@ts-noch
 
 Measured on this repository, from clean TS build state:
 
-| Gate | TypeScript 5.9.3 | TypeScript 7.0.2 | Result |
-|---|---:|---:|---:|
-| `tsc --build` | 3.795 s | 1.039 s | 3.65× faster |
-| test-file `tsc` | 2.191 s | 0.790 s | 2.77× faster |
-| Vitest with real PostgreSQL | 5.985 s | 6.257 s | runtime-test noise; not a compiler benchmark |
-| Studio build | 4.475 s | 4.062 s | 1.10× faster |
+| Gate                        | TypeScript 5.9.3 | TypeScript 7.0.2 |                                       Result |
+| --------------------------- | ---------------: | ---------------: | -------------------------------------------: |
+| `tsc --build`               |          3.795 s |          1.039 s |                                 3.65× faster |
+| test-file `tsc`             |          2.191 s |          0.790 s |                                 2.77× faster |
+| Vitest with real PostgreSQL |          5.985 s |          6.257 s | runtime-test noise; not a compiler benchmark |
+| Studio build                |          4.475 s |          4.062 s |                                 1.10× faster |
 
 The semantic gate stayed constant: 17 test files and 197 tests, including real PostgreSQL 17 persistence, cross-engine recovery, Decimal JSONB properties, revision triggers, migration journal, RunPin replay checks, and Studio build.
 

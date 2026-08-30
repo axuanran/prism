@@ -1,5 +1,4 @@
 import { createHash } from "node:crypto";
-import { fork, type ChildProcess } from "node:child_process";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -41,6 +40,11 @@ import {
   type AtomicWriteOperation,
   type StorageCapability,
 } from "@prismengine/contracts-storage";
+import {
+  WorkerLauncherCapabilityToken,
+  type WorkerLauncherCapability,
+  type WorkerProcessHandle,
+} from "@prismengine/contracts-worker";
 import { ENGINE_VERSION, definePlugin, type Resource } from "@prismengine/kernel";
 import {
   CodeProjectCapabilityToken,
@@ -48,26 +52,29 @@ import {
 } from "@prismengine/plugin-code-project";
 import { HttpRouteExtensionPoint, type HttpRoute } from "@prismengine/plugin-http-fastify";
 import { isRuntimeRecord } from "./guards.js";
+import {
+  sanitizeRuntimeCode,
+  sanitizeRuntimeError,
+  sanitizeRuntimeLogs,
+  type RuntimeProtocolLog,
+  validateRuntimeOutput,
+} from "./runtime-limits.js";
 
 const ACTIVE_COLLECTION = "project.active-releases";
 const ACTIVATION_COLLECTION = "project.release-activations";
 const INSTANCE_COLLECTION = "project.runtime-instances";
 const RUN_COLLECTION = "project.action-runs";
+const RUNTIME_WORKER_MAX_OLD_SPACE_MB = 512;
 const LOG_COLLECTION = "project.runtime-logs";
 const RUNTIME_VERSION = "0.1.20";
 const DEFAULT_ACTION_TIMEOUT_MS = 30_000;
-
-interface WorkerLog {
-  readonly level: "info" | "warn" | "error";
-  readonly message: string;
-}
 
 interface WorkerResult {
   readonly ok: boolean;
   readonly code?: string;
   readonly result?: unknown;
   readonly error?: string;
-  readonly logs: readonly WorkerLog[];
+  readonly logs: readonly RuntimeProtocolLog[];
 }
 
 interface RuntimeMaterialModule {
@@ -92,12 +99,14 @@ export function projectRuntimePlugin(options: ProjectRuntimePluginOptions = {}) 
   return definePlugin({
     id: "project.runtime",
     version: RUNTIME_VERSION,
+    engineRange: "^0.1.20",
     requires: {
       storage: StorageCapabilityToken,
       atomicWrite: AtomicWriteCapabilityToken,
       artifacts: ArtifactStoreCapabilityToken,
       builds: ProjectBuildCapabilityToken,
       codeProjects: CodeProjectCapabilityToken,
+      workerLauncher: WorkerLauncherCapabilityToken,
     },
     provides: [ProjectRuntimeCapabilityToken],
     register(context) {
@@ -107,6 +116,7 @@ export function projectRuntimePlugin(options: ProjectRuntimePluginOptions = {}) 
         context.dependencies.artifacts,
         context.dependencies.builds,
         context.dependencies.codeProjects,
+        context.dependencies.workerLauncher,
         options.actionTimeoutMs ?? DEFAULT_ACTION_TIMEOUT_MS,
         options.profileModule,
         options.profileIdentity,
@@ -133,6 +143,7 @@ class DefaultProjectRuntime implements ProjectRuntimeCapability {
   private readonly runs;
   private readonly runtimeLogs;
   private readonly workers = new Map<string, ReleaseWorker>();
+  private readonly workerStarts = new Map<string, Promise<ReleaseWorker>>();
   private readonly restartCounts = new Map<string, number>();
   private stopping = false;
 
@@ -142,6 +153,7 @@ class DefaultProjectRuntime implements ProjectRuntimeCapability {
     private readonly artifacts: ArtifactStoreCapability,
     private readonly builds: ProjectBuildCapability,
     private readonly codeProjects: CodeProjectCapability,
+    private readonly workerLauncher: WorkerLauncherCapability,
     private readonly actionTimeoutMs: number,
     private readonly profileModule?: string,
     private readonly profileIdentity?: ProjectRuntimeProfileIdentity,
@@ -157,8 +169,13 @@ class DefaultProjectRuntime implements ProjectRuntimeCapability {
     const context = systemCallContext({ correlationId: "project-runtime-recovery" });
     for (const active of await this.activeReleases.find(context)) {
       try {
-        const release = await this.requiredRelease(context, active.projectId, active.release.revision);
-        if (releaseRef(release).fingerprint !== active.release.fingerprint) throw abiMismatch(active.projectId);
+        const release = await this.requiredRelease(
+          context,
+          active.projectId,
+          active.release.revision,
+        );
+        if (releaseRef(release).fingerprint !== active.release.fingerprint)
+          throw abiMismatch(active.projectId);
         const worker = await this.startWorker(context, release, 0);
         this.workers.set(active.projectId, worker);
       } catch (error) {
@@ -173,7 +190,10 @@ class DefaultProjectRuntime implements ProjectRuntimeCapability {
     }
   }
 
-  async active(context: CallContext, projectId: string): Promise<ActiveProjectRelease | null> {
+  async active(
+    context: CallContext,
+    projectId: string,
+  ): Promise<ActiveProjectRelease | null> {
     return this.activeReleases.get(context, projectId);
   }
 
@@ -220,31 +240,41 @@ class DefaultProjectRuntime implements ProjectRuntimeCapability {
     ];
     const prior = this.workers.get(projectId);
     if (prior !== undefined) {
-      operations.push(put(INSTANCE_COLLECTION, {
-        ...prior.instance,
-        status: "DRAINING",
-        lastHeartbeatAt: activatedAt,
-      }, "replace"));
+      operations.push(
+        put(
+          INSTANCE_COLLECTION,
+          {
+            ...prior.instance,
+            status: "DRAINING",
+            lastHeartbeatAt: activatedAt,
+          },
+          "replace",
+        ),
+      );
     }
     try {
       await this.atomicWrite.execute(context, {
         requestId: `activate-project-release:${activation.id}`,
-        preconditions: current === null
-          ? [{ kind: "document-absent", collection: ACTIVE_COLLECTION, id: projectId }]
-          : [{
-              kind: "document-present",
-              collection: ACTIVE_COLLECTION,
-              id: projectId,
-              fields: { releaseIdentity: releaseIdentity(current.release) },
-            }],
+        preconditions:
+          current === null
+            ? [{ kind: "document-absent", collection: ACTIVE_COLLECTION, id: projectId }]
+            : [
+                {
+                  kind: "document-present",
+                  collection: ACTIVE_COLLECTION,
+                  id: projectId,
+                  fields: { releaseIdentity: releaseIdentity(current.release) },
+                },
+              ],
         operations,
       });
     } catch (error) {
       await candidate.dispose();
       throw error;
     }
+    const displaced = this.workers.get(projectId);
     this.workers.set(projectId, candidate);
-    prior?.disposeWhenIdle();
+    if (displaced !== candidate) displaced?.disposeWhenIdle();
     return active;
   }
 
@@ -255,10 +285,15 @@ class DefaultProjectRuntime implements ProjectRuntimeCapability {
     actionId: string,
     input: JsonValue,
   ): Promise<ProjectActionRun> {
+    context.signal?.throwIfAborted();
     assertJsonValue(input, "/input");
     const active = await this.active(context, projectId);
     if (active === null) {
-      throw PrismError.of("PROJECT_ACTIVE_RELEASE_NOT_FOUND", "Project has no Active Release.", { projectId });
+      throw PrismError.of(
+        "PROJECT_ACTIVE_RELEASE_NOT_FOUND",
+        "Project has no Active Release.",
+        { projectId },
+      );
     }
     if (!sameRelease(active.release, requestedRelease)) {
       throw PrismError.of(
@@ -283,9 +318,10 @@ class DefaultProjectRuntime implements ProjectRuntimeCapability {
       assertJsonValue(candidate, "/result");
       result = candidate;
     }
-    const runtimeReproducibility = release.spec.runtimeReproducibility === "UNKNOWN"
-      ? "BEST_EFFORT"
-      : release.spec.runtimeReproducibility;
+    const runtimeReproducibility =
+      release.spec.runtimeReproducibility === "UNKNOWN"
+        ? "BEST_EFFORT"
+        : release.spec.runtimeReproducibility;
     const run: ProjectActionRun = {
       id: crypto.randomUUID(),
       projectId,
@@ -295,7 +331,9 @@ class DefaultProjectRuntime implements ProjectRuntimeCapability {
       status: response.ok ? "SUCCESS" : "FAILED",
       inputFingerprint,
       ...(result === undefined ? {} : { result }),
-      ...(response.error === undefined ? {} : { error: `${response.code ?? "PROJECT_ACTION_FAILED"}: ${response.error}` }),
+      ...(response.error === undefined
+        ? {}
+        : { error: `${response.code ?? "PROJECT_ACTION_FAILED"}: ${response.error}` }),
       pin: {
         definition: { kind: release.kind, id: release.id, revision: release.revision },
         definitionFingerprint: active.release.fingerprint,
@@ -359,6 +397,7 @@ class DefaultProjectRuntime implements ProjectRuntimeCapability {
     input: JsonValue,
     configuration: JsonValue = null,
   ): Promise<JsonValue> {
+    context.signal?.throwIfAborted();
     assertJsonValue(input, "/input");
     assertJsonValue(configuration, "/configuration");
     const active = await this.active(context, projectId);
@@ -394,39 +433,51 @@ class DefaultProjectRuntime implements ProjectRuntimeCapability {
     return this.runs.get(context, runId);
   }
 
-  async listRuns(context: CallContext, projectId: string): Promise<readonly ProjectActionRun[]> {
-    return this.runs.find(context, { where: { projectId }, orderBy: [{ field: "createdAt", direction: "desc" }] });
-  }
-
-  async releaseMaterials(
+  async listRuns(
     context: CallContext,
     projectId: string,
-    revision: number,
-  ) {
-    const release = await this.requiredRelease(context, projectId, revision);
-    return release.spec.materialManifests.flatMap((manifest, index) => {
-      const artifact = release.spec.materialArtifacts[index];
-      return artifact === undefined ? [] : [{ manifest, artifact, status: "BUILT" as const }];
+  ): Promise<readonly ProjectActionRun[]> {
+    return this.runs.find(context, {
+      where: { projectId },
+      orderBy: [{ field: "createdAt", direction: "desc" }],
     });
   }
 
-  async logs(context: CallContext, projectId: string): Promise<readonly ProjectRuntimeLog[]> {
-    return this.runtimeLogs.find(context, { where: { projectId }, orderBy: [{ field: "timestamp", direction: "asc" }] });
+  async releaseMaterials(context: CallContext, projectId: string, revision: number) {
+    const release = await this.requiredRelease(context, projectId, revision);
+    return release.spec.materialManifests.flatMap((manifest, index) => {
+      const artifact = release.spec.materialArtifacts[index];
+      return artifact === undefined
+        ? []
+        : [{ manifest, artifact, status: "BUILT" as const }];
+    });
+  }
+
+  async logs(
+    context: CallContext,
+    projectId: string,
+  ): Promise<readonly ProjectRuntimeLog[]> {
+    return this.runtimeLogs.find(context, {
+      where: { projectId },
+      orderBy: [{ field: "timestamp", direction: "asc" }],
+    });
   }
 
   async dispose(): Promise<void> {
     this.stopping = true;
     const context = systemCallContext({ correlationId: "project-runtime-stop" });
-    await Promise.all([...this.workers.values()].map(async (worker) => {
-      const now = new Date().toISOString();
-      await this.instances.put(context, {
-        ...worker.instance,
-        status: "STOPPED",
-        stoppedAt: now,
-        lastHeartbeatAt: now,
-      });
-      await worker.dispose();
-    }));
+    await Promise.all(
+      [...this.workers.values()].map(async (worker) => {
+        const now = new Date().toISOString();
+        await this.instances.put(context, {
+          ...worker.instance,
+          status: "STOPPED",
+          stoppedAt: now,
+          lastHeartbeatAt: now,
+        });
+        await worker.dispose();
+      }),
+    );
     this.workers.clear();
   }
 
@@ -445,8 +496,10 @@ class DefaultProjectRuntime implements ProjectRuntimeCapability {
     expectedHash: string,
   ): Promise<string> {
     const release = await this.requiredRelease(context, projectId, revision);
-    if (release.spec.clientArtifact.hash !== expectedHash) throw artifactMismatch(projectId);
-    if (!(await this.artifacts.verify(context, release.spec.clientArtifact))) throw artifactMismatch(projectId);
+    if (release.spec.clientArtifact.hash !== expectedHash)
+      throw artifactMismatch(projectId);
+    if (!(await this.artifacts.verify(context, release.spec.clientArtifact)))
+      throw artifactMismatch(projectId);
     return new TextDecoder().decode(
       await this.artifacts.read(context, release.spec.clientArtifact, "client.js"),
     );
@@ -457,11 +510,62 @@ class DefaultProjectRuntime implements ProjectRuntimeCapability {
     projectId: string,
     release: Resource<ProjectReleaseDefinition>,
   ): Promise<ReleaseWorker> {
+    const expected = releaseRef(release);
     const existing = this.workers.get(projectId);
-    if (existing?.isAvailable && existing.release.revision === release.revision) return existing;
-    const candidate = await this.startWorker(context, release, this.restartCounts.get(projectId) ?? 0);
+    if (existing?.isAvailable && sameRelease(existing.release, expected)) {
+      return existing;
+    }
+    const key = `${projectId}\u0000${releaseIdentity(expected)}`;
+    const current = this.workerStarts.get(key);
+    if (current !== undefined) return current;
+
+    const pending = this.startAndInstallWorker(context, projectId, release, expected);
+    this.workerStarts.set(key, pending);
+    try {
+      return await pending;
+    } finally {
+      if (this.workerStarts.get(key) === pending) this.workerStarts.delete(key);
+    }
+  }
+
+  private async startAndInstallWorker(
+    context: CallContext,
+    projectId: string,
+    release: Resource<ProjectReleaseDefinition>,
+    expected: ProjectReleaseRef,
+  ): Promise<ReleaseWorker> {
+    const existing = this.workers.get(projectId);
+    if (existing?.isAvailable && sameRelease(existing.release, expected)) {
+      return existing;
+    }
+    const candidate = await this.startWorker(
+      context,
+      release,
+      this.restartCounts.get(projectId) ?? 0,
+    );
+    let active: ActiveProjectRelease | null;
+    try {
+      active = await this.active(context, projectId);
+    } catch (error) {
+      await candidate.dispose();
+      throw error;
+    }
+    if (active === null || !sameRelease(active.release, expected)) {
+      await candidate.dispose();
+      throw PrismError.of(
+        "PROJECT_RELEASE_CHANGED",
+        "Active Project Release changed while its Runtime Worker was starting.",
+        { projectId, requestedRelease: expected, activeRelease: active?.release ?? null },
+      );
+    }
+
+    const displaced = this.workers.get(projectId);
+    if (displaced?.isAvailable && sameRelease(displaced.release, expected)) {
+      await candidate.dispose();
+      return displaced;
+    }
     this.workers.set(projectId, candidate);
-    existing?.disposeWhenIdle();
+    displaced?.disposeWhenIdle();
     return candidate;
   }
 
@@ -486,7 +590,11 @@ class DefaultProjectRuntime implements ProjectRuntimeCapability {
       restartCount,
     });
     try {
-      const serverBytes = await this.artifacts.read(context, release.spec.serverArtifact, "server.js");
+      const serverBytes = await this.artifacts.read(
+        context,
+        release.spec.serverArtifact,
+        "server.js",
+      );
       const materialModules: RuntimeMaterialModule[] = await Promise.all(
         release.spec.materialManifests.map(async (manifest, index) => {
           const artifact = release.spec.materialArtifacts[index];
@@ -506,6 +614,8 @@ class DefaultProjectRuntime implements ProjectRuntimeCapability {
         }),
       );
       const worker = await ReleaseWorker.start(
+        context,
+        this.workerLauncher,
         instanceId,
         release.spec.projectId,
         ref,
@@ -523,6 +633,7 @@ class DefaultProjectRuntime implements ProjectRuntimeCapability {
       await this.instances.put(context, worker.instance);
       return worker;
     } catch (error) {
+      const failure = runtimeStartFailure(error, context);
       const now = new Date().toISOString();
       await this.instances.put(context, {
         id: instanceId,
@@ -535,9 +646,9 @@ class DefaultProjectRuntime implements ProjectRuntimeCapability {
         lastHeartbeatAt: now,
         stoppedAt: now,
         restartCount,
-        lastError: error instanceof Error ? error.message : String(error),
+        lastError: failure.message,
       });
-      throw error;
+      throw failure;
     }
   }
 
@@ -598,11 +709,15 @@ class DefaultProjectRuntime implements ProjectRuntimeCapability {
       ...release.spec.materialArtifacts,
     ];
     for (const ref of refs) {
-      if (!(await this.artifacts.verify(context, ref))) throw artifactMismatch(release.spec.projectId);
+      if (!(await this.artifacts.verify(context, ref)))
+        throw artifactMismatch(release.spec.projectId);
     }
   }
 
-  private async workerExited(instance: ProjectRuntimeInstance, unexpected: boolean): Promise<void> {
+  private async workerExited(
+    instance: ProjectRuntimeInstance,
+    unexpected: boolean,
+  ): Promise<void> {
     if (this.stopping) return;
     const context = systemCallContext({ correlationId: `runtime-exit:${instance.id}` });
     await this.instances.put(context, {
@@ -612,17 +727,20 @@ class DefaultProjectRuntime implements ProjectRuntimeCapability {
       lastHeartbeatAt: new Date().toISOString(),
     });
     if (!unexpected) return;
-    this.workers.delete(instance.projectId);
+    const mapped = this.workers.get(instance.projectId);
+    if (mapped?.instance.id === instance.id) this.workers.delete(instance.projectId);
     const count = (this.restartCounts.get(instance.projectId) ?? 0) + 1;
     this.restartCounts.set(instance.projectId, count);
     if (count > 3) return;
     const active = await this.active(context, instance.projectId);
     if (active === null || !sameRelease(active.release, instance.release)) return;
     try {
-      const release = await this.requiredRelease(context, instance.projectId, instance.release.revision);
-      const worker = await this.startWorker(context, release, count);
-      this.workers.set(instance.projectId, worker);
-      await this.instances.put(context, worker.instance);
+      const release = await this.requiredRelease(
+        context,
+        instance.projectId,
+        instance.release.revision,
+      );
+      await this.worker(context, instance.projectId, release);
     } catch (error) {
       await this.recordFailedInstance(
         context,
@@ -664,7 +782,11 @@ class DefaultProjectRuntime implements ProjectRuntimeCapability {
   ): Promise<Resource<ProjectReleaseDefinition>> {
     const release = await this.builds.release(context, projectId, revision);
     if (release === null || release.status !== "published") {
-      throw PrismError.of("PROJECT_RELEASE_NOT_FOUND", "Published Project Release does not exist.", { projectId, revision });
+      throw PrismError.of(
+        "PROJECT_RELEASE_NOT_FOUND",
+        "Published Project Release does not exist.",
+        { projectId, revision },
+      );
     }
     return release;
   }
@@ -672,6 +794,7 @@ class DefaultProjectRuntime implements ProjectRuntimeCapability {
 
 class ReleaseWorker {
   private readonly pending = new Map<string, PendingInvocation>();
+  private removeStderr: () => void = () => {};
   private inFlight = 0;
   private draining = false;
   private intentionalStop = false;
@@ -680,13 +803,20 @@ class ReleaseWorker {
   private constructor(
     readonly release: ProjectReleaseRef,
     readonly instance: ProjectRuntimeInstance,
-    private readonly child: ChildProcess,
+    private readonly child: WorkerProcessHandle,
     private readonly directory: string,
-    private readonly onExit: (instance: ProjectRuntimeInstance, unexpected: boolean) => void,
+    private readonly onExit: (
+      instance: ProjectRuntimeInstance,
+      unexpected: boolean,
+    ) => void,
     private readonly actionTimeoutMs: number,
   ) {
-    child.on("message", (message: unknown) => this.onMessage(message));
-    child.on("exit", () => {
+    this.removeStderr = child.onStderr(() => {
+      // Runtime logger is the only persisted output surface; raw stderr is drained.
+    });
+    child.onMessage((message) => this.onMessage(message));
+    child.onExit(() => {
+      this.detachStderr();
       this.isAvailable = false;
       for (const pending of this.pending.values()) {
         pending.resolve({
@@ -703,6 +833,8 @@ class ReleaseWorker {
   }
 
   static async start(
+    context: CallContext,
+    launcher: WorkerLauncherCapability,
     instanceId: string,
     projectId: string,
     release: ProjectReleaseRef,
@@ -719,19 +851,33 @@ class ReleaseWorker {
   ): Promise<ReleaseWorker> {
     const directory = await mkdtemp(join(tmpdir(), "prism-runtime-"));
     const artifactPath = join(directory, "server.js");
-    await mkdir(directory, { recursive: true });
-    await writeFile(artifactPath, serverBytes);
-    const materials = await Promise.all(materialModules.map(async (item, index) => {
-      const path = join(directory, "materials", `${index}.js`);
+    let materials: {
+      readonly manifest: DeclaredCodeMaterialManifest;
+      readonly artifactPath: string;
+    }[];
+    let child: WorkerProcessHandle;
+    try {
+      await mkdir(directory, { recursive: true });
+      await writeFile(artifactPath, serverBytes);
+      materials = [];
       await mkdir(join(directory, "materials"), { recursive: true });
-      await writeFile(path, item.content);
-      return { manifest: item.manifest, artifactPath: path };
-    }));
-    const child = fork(fileURLToPath(new URL("./runtime-worker.js", import.meta.url)), [], {
-      stdio: ["ignore", "pipe", "pipe", "ipc"],
-      execArgv: [],
-      serialization: "advanced",
-    });
+      for (const [index, item] of materialModules.entries()) {
+        const path = join(directory, "materials", `${index}.js`);
+        await writeFile(path, item.content);
+        materials.push({ manifest: item.manifest, artifactPath: path });
+      }
+      child = await launcher.launch(context, {
+        kind: "project-runtime",
+        entryPath: fileURLToPath(new URL("./runtime-worker.js", import.meta.url)),
+        serialization: "advanced",
+        execArgv: [`--max-old-space-size=${RUNTIME_WORKER_MAX_OLD_SPACE_MB}`],
+        environment: runtimeWorkerEnvironment(),
+        mounts: [{ source: directory, target: directory, readOnly: true }],
+      });
+    } catch (error) {
+      await rm(directory, { recursive: true, force: true }).catch(() => undefined);
+      throw error;
+    }
     const now = new Date().toISOString();
     const instance: ProjectRuntimeInstance = {
       id: instanceId,
@@ -753,27 +899,66 @@ class ReleaseWorker {
       actionTimeoutMs,
     );
     const ready = Promise.withResolvers<Record<string, unknown>>();
-    const listener = (message: unknown) => {
-      if (!isRuntimeRecord(message) || (message.type !== "ready" && message.type !== "ready-failed")) return;
-      child.off("message", listener);
+    let settled = false;
+    const settle = (message: Record<string, unknown>): void => {
+      if (settled) return;
+      settled = true;
       ready.resolve(message);
     };
-    child.on("message", listener);
-    child.send({
-      type: "init",
-      artifactPath,
-      projectId: instance.projectId,
-      release,
-      runtimeAbiVersion,
-      serverArtifactHash,
-      runtimeProfile,
-      actionIds,
-      materials,
-      ...(profileModule === undefined ? {} : { profileModule }),
+    const startupFailure = (error: string): Record<string, unknown> => ({
+      type: "startup-failed",
+      error,
     });
-    const timeout = Promise.withResolvers<never>();
-    setTimeout(() => timeout.reject(new Error("Runtime Worker health check timed out.")), 10_000);
-    const handshake = await Promise.race([ready.promise, timeout.promise]);
+    const removeReadyListener = child.onMessage((message) => {
+      if (
+        !isRuntimeRecord(message) ||
+        (message.type !== "ready" && message.type !== "ready-failed")
+      ) {
+        return;
+      }
+      settle(message);
+    });
+    const removeReadyError = child.onError(() => {
+      settle(startupFailure("Runtime Worker process failed before READY."));
+    });
+    const removeReadyExit = child.onExit((code) => {
+      settle(
+        startupFailure(
+          code === 0
+            ? "Runtime Worker exited before READY."
+            : `Runtime Worker exited ${code ?? "without code"} before READY.`,
+        ),
+      );
+    });
+    const healthTimer = setTimeout(
+      () => settle(startupFailure("Runtime Worker READY handshake timed out.")),
+      10_000,
+    );
+    let handshake: Record<string, unknown>;
+    try {
+      try {
+        child.send({
+          type: "init",
+          artifactPath,
+          projectId: instance.projectId,
+          release,
+          runtimeAbiVersion,
+          serverArtifactHash,
+          runtimeProfile,
+          actionIds,
+          materials,
+          ...(profileModule === undefined ? {} : { profileModule }),
+        });
+      } catch {
+        settle(startupFailure("Runtime Worker could not accept initialization."));
+      }
+      handshake = await ready.promise;
+    } finally {
+      clearTimeout(healthTimer);
+      removeReadyListener();
+      removeReadyError();
+      removeReadyExit();
+    }
     const expected = {
       projectId: instance.projectId,
       releaseRevision: release.revision,
@@ -788,25 +973,30 @@ class ReleaseWorker {
         .sort(),
     };
     if (
-      handshake.type !== "ready" || handshake.projectId !== expected.projectId ||
+      !worker.isAvailable ||
+      handshake.type !== "ready" ||
+      handshake.projectId !== expected.projectId ||
       handshake.releaseRevision !== expected.releaseRevision ||
       handshake.releaseFingerprint !== expected.releaseFingerprint ||
       handshake.runtimeAbiVersion !== expected.runtimeAbiVersion ||
-      JSON.stringify(handshake.runtimeProfile) !== JSON.stringify(expected.runtimeProfile) ||
+      JSON.stringify(handshake.runtimeProfile) !==
+        JSON.stringify(expected.runtimeProfile) ||
       handshake.runtimeProfileFingerprint !== expected.runtimeProfileFingerprint ||
       handshake.serverArtifactHash !== expected.serverArtifactHash ||
       JSON.stringify(handshake.actions) !== JSON.stringify(expected.actions) ||
-      JSON.stringify(handshake.materialIdentities) !== JSON.stringify(expected.materialIdentities)
+      JSON.stringify(handshake.materialIdentities) !==
+        JSON.stringify(expected.materialIdentities)
     ) {
       await worker.dispose();
-      const handshakeError = typeof handshake.error === "string"
-        ? handshake.error
-        : "Candidate Worker handshake does not match Project Release.";
+      const handshakeError =
+        typeof handshake.error === "string"
+          ? handshake.error
+          : "Candidate Worker handshake does not match Project Release.";
       const code = handshakeError.includes("PROJECT_RUNTIME_PROFILE_MISMATCH")
         ? "PROJECT_RUNTIME_PROFILE_MISMATCH"
         : handshake.type === "ready-failed" && profileModule !== undefined
-        ? "PROJECT_RUNTIME_PROFILE_UNAVAILABLE"
-        : "PROJECT_RUNTIME_MANIFEST_MISMATCH";
+          ? "PROJECT_RUNTIME_PROFILE_UNAVAILABLE"
+          : "PROJECT_RUNTIME_MANIFEST_MISMATCH";
       throw PrismError.of(code, handshakeError);
     }
     return worker;
@@ -818,49 +1008,22 @@ class ReleaseWorker {
     principal: ProjectPrincipal,
     signal?: AbortSignal,
   ): Promise<WorkerResult> {
-    if (!this.isAvailable) {
-      return { ok: false, code: "PROJECT_RUNTIME_DISCONNECTED", error: "Runtime Worker is unavailable.", logs: [] };
-    }
-    const requestId = crypto.randomUUID();
-    const deferred = Promise.withResolvers<WorkerResult>();
-    this.pending.set(requestId, deferred);
-    this.inFlight += 1;
-    this.child.send({ type: "invoke", requestId, actionId, input, principal });
-    const abort = () => {
-      const pending = this.pending.get(requestId);
-      if (pending === undefined) return;
-      this.pending.delete(requestId);
-      if (this.child.connected) this.child.send({ type: "cancel", requestId });
-      pending.resolve({
+    return this.request(
+      (requestId) => ({ type: "invoke", requestId, actionId, input, principal }),
+      {
         ok: false,
         code: "PROJECT_ACTION_CANCELLED",
         error: `Action ${actionId} was cancelled.`,
         logs: [],
-      });
-    };
-    signal?.addEventListener("abort", abort, { once: true });
-    if (signal?.aborted) abort();
-    const timeout = setTimeout(() => {
-      const pending = this.pending.get(requestId);
-      if (pending === undefined) return;
-      this.pending.delete(requestId);
-      pending.resolve({
+      },
+      {
         ok: false,
         code: "PROJECT_ACTION_TIMEOUT",
         error: `Action ${actionId} exceeded ${this.actionTimeoutMs}ms.`,
         logs: [],
-      });
-      this.isAvailable = false;
-      void this.dispose();
-    }, this.actionTimeoutMs);
-    try {
-      return await deferred.promise;
-    } finally {
-      clearTimeout(timeout);
-      signal?.removeEventListener("abort", abort);
-      this.inFlight -= 1;
-      if (this.draining && this.inFlight === 0) await this.dispose();
-    }
+      },
+      signal,
+    );
   }
 
   async executeMaterial(
@@ -870,43 +1033,107 @@ class ReleaseWorker {
     configuration: JsonValue,
     signal?: AbortSignal,
   ): Promise<WorkerResult> {
+    return this.request(
+      (requestId) => ({
+        type: "execute-material",
+        requestId,
+        materialId,
+        materialVersion,
+        input,
+        configuration,
+      }),
+      {
+        ok: false,
+        code: "PROJECT_ACTION_CANCELLED",
+        error: "Material execution cancelled.",
+        logs: [],
+      },
+      {
+        ok: false,
+        code: "PROJECT_ACTION_TIMEOUT",
+        error: `Material execution exceeded ${this.actionTimeoutMs}ms.`,
+        logs: [],
+      },
+      signal,
+    );
+  }
+
+  private async request(
+    message: (requestId: string) => unknown,
+    cancelled: WorkerResult,
+    timedOut: WorkerResult,
+    signal?: AbortSignal,
+  ): Promise<WorkerResult> {
+    if (signal?.aborted) return cancelled;
     if (!this.isAvailable) {
-      return { ok: false, code: "PROJECT_RUNTIME_DISCONNECTED", error: "Runtime Worker is unavailable.", logs: [] };
+      return {
+        ok: false,
+        code: "PROJECT_RUNTIME_DISCONNECTED",
+        error: "Runtime Worker is unavailable.",
+        logs: [],
+      };
     }
+
     const requestId = crypto.randomUUID();
     const deferred = Promise.withResolvers<WorkerResult>();
     this.pending.set(requestId, deferred);
     this.inFlight += 1;
-    this.child.send({
-      type: "execute-material",
-      requestId,
-      materialId,
-      materialVersion,
-      input,
-      configuration,
-    });
     const abort = () => {
       const pending = this.pending.get(requestId);
       if (pending === undefined) return;
       this.pending.delete(requestId);
-      if (this.child.connected) this.child.send({ type: "cancel", requestId });
-      pending.resolve({ ok: false, code: "PROJECT_ACTION_CANCELLED", error: "Material execution cancelled.", logs: [] });
+      let transportFailed = false;
+      if (this.child.connected) {
+        try {
+          this.child.send({ type: "cancel", requestId });
+        } catch {
+          transportFailed = true;
+        }
+      }
+      pending.resolve(cancelled);
+      if (transportFailed) this.invalidateTransport();
     };
     signal?.addEventListener("abort", abort, { once: true });
     const timeout = setTimeout(() => {
       const pending = this.pending.get(requestId);
       if (pending === undefined) return;
       this.pending.delete(requestId);
-      pending.resolve({ ok: false, code: "PROJECT_ACTION_TIMEOUT", error: "Material execution timed out.", logs: [] });
+      pending.resolve(timedOut);
+      this.isAvailable = false;
+      void this.dispose();
     }, this.actionTimeoutMs);
+
     try {
+      if (signal?.aborted) {
+        abort();
+      } else {
+        try {
+          this.child.send(message(requestId));
+        } catch {
+          const pending = this.pending.get(requestId);
+          this.pending.delete(requestId);
+          pending?.resolve({
+            ok: false,
+            code: "PROJECT_RUNTIME_DISCONNECTED",
+            error: "Runtime Worker transport is unavailable.",
+            logs: [],
+          });
+          this.invalidateTransport();
+        }
+      }
       return await deferred.promise;
     } finally {
       clearTimeout(timeout);
       signal?.removeEventListener("abort", abort);
+      this.pending.delete(requestId);
       this.inFlight -= 1;
       if (this.draining && this.inFlight === 0) await this.dispose();
     }
+  }
+
+  private invalidateTransport(): void {
+    this.isAvailable = false;
+    void this.dispose();
   }
 
   disposeWhenIdle(): void {
@@ -917,8 +1144,32 @@ class ReleaseWorker {
   async dispose(): Promise<void> {
     this.intentionalStop = true;
     this.isAvailable = false;
-    if (this.child.connected) this.child.send({ type: "dispose" });
-    if (!this.child.killed) this.child.kill();
+    try {
+      if (this.child.connected) this.child.send({ type: "dispose" });
+    } catch {
+      // Startup/send failures must not block process termination.
+    }
+    try {
+      this.child.disconnect();
+    } catch {
+      // IPC teardown is best effort; kill remains the hard boundary.
+    }
+    try {
+      if (!this.child.killed) this.child.kill();
+    } catch {
+      // Disposal is idempotent and must not leak provider error details.
+    }
+    this.detachStderr();
+  }
+
+  private detachStderr(): void {
+    const remove = this.removeStderr;
+    this.removeStderr = () => {};
+    try {
+      remove();
+    } catch {
+      // Provider listener cleanup cannot interrupt Worker terminalization.
+    }
   }
 
   private onMessage(message: unknown): void {
@@ -926,28 +1177,71 @@ class ReleaseWorker {
       !isRuntimeRecord(message) ||
       (message.type !== "action-success" && message.type !== "action-failure") ||
       typeof message.requestId !== "string"
-    ) return;
+    )
+      return;
     const deferred = this.pending.get(message.requestId);
     if (deferred === undefined) return;
     this.pending.delete(message.requestId);
+    const logs = sanitizeRuntimeLogs(message.logs);
+    if (message.type === "action-success") {
+      const output = validateRuntimeOutput(message.output);
+      deferred.resolve(
+        output.valid
+          ? { ok: true, result: output.output, logs }
+          : {
+              ok: false,
+              code: output.code,
+              error: output.error,
+              logs,
+            },
+      );
+      return;
+    }
+    const code = sanitizeRuntimeCode(message.code);
     deferred.resolve({
-      ok: message.type === "action-success",
-      ...(typeof message.code === "string" ? { code: message.code } : {}),
-      ...(message.output === undefined ? {} : { result: message.output }),
-      ...(typeof message.error === "string" ? { error: message.error } : {}),
-      logs: Array.isArray(message.logs) ? message.logs as WorkerLog[] : [],
+      ok: false,
+      ...(code === undefined ? {} : { code }),
+      error: sanitizeRuntimeError(message.error),
+      logs,
     });
   }
 }
 
-function runtimeRoutes(runtime: DefaultProjectRuntime, projects: CodeProjectCapability): readonly HttpRoute[] {
+function runtimeWorkerEnvironment(): NodeJS.ProcessEnv {
+  const allowed = new Set([
+    "PATH",
+    "SYSTEMROOT",
+    "WINDIR",
+    "TEMP",
+    "TMP",
+    "HOME",
+    "USERPROFILE",
+    "APPDATA",
+    "LOCALAPPDATA",
+    "PROGRAMDATA",
+    "COMSPEC",
+    "PATHEXT",
+    "NODE_EXTRA_CA_CERTS",
+  ]);
+  const environment: NodeJS.ProcessEnv = { NODE_ENV: "production" };
+  for (const [key, value] of Object.entries(process.env)) {
+    if (value !== undefined && allowed.has(key.toUpperCase())) environment[key] = value;
+  }
+  return environment;
+}
+
+function runtimeRoutes(
+  runtime: DefaultProjectRuntime,
+  projects: CodeProjectCapability,
+): readonly HttpRoute[] {
   return [
     {
       method: "POST",
       path: "/api/code-projects/:id/active-release",
+      access: { kind: "permission", permission: "runtime.activate" },
+      changeReason: "required",
       summary: "Health-check and CAS activate or rollback Project Release",
       handler: async (request) => {
-        requireBuilder(request.call);
         const params = record(request.params);
         const body = record(request.body);
         return {
@@ -967,6 +1261,7 @@ function runtimeRoutes(runtime: DefaultProjectRuntime, projects: CodeProjectCapa
     {
       method: "GET",
       path: "/api/code-projects/:projectId/releases/:revision/materials",
+      access: { kind: "permission", permission: "project.read" },
       summary: "List exact built Release Material catalog",
       handler: async (request) => {
         const params = record(request.params);
@@ -983,6 +1278,7 @@ function runtimeRoutes(runtime: DefaultProjectRuntime, projects: CodeProjectCapa
     {
       method: "GET",
       path: "/api/code-projects/:id/active-release",
+      access: { kind: "permission", permission: "project.read" },
       summary: "Read Active Project Release pointer",
       handler: async (request) => ({
         status: 200,
@@ -992,6 +1288,7 @@ function runtimeRoutes(runtime: DefaultProjectRuntime, projects: CodeProjectCapa
     {
       method: "POST",
       path: "/api/runtime/:projectId/materials/:materialId/:version/execute",
+      access: { kind: "permission", permission: "runtime.execute" },
       summary: "Execute exact built Release Code Material",
       handler: async (request) => {
         const body = record(request.body);
@@ -1012,6 +1309,7 @@ function runtimeRoutes(runtime: DefaultProjectRuntime, projects: CodeProjectCapa
     {
       method: "POST",
       path: "/api/runtime/:projectId/actions/:actionId",
+      access: { kind: "permission", permission: "runtime.execute" },
       summary: "Invoke Active Release server Action",
       handler: async (request) => {
         const body = record(request.body);
@@ -1040,18 +1338,30 @@ function runtimeRoutes(runtime: DefaultProjectRuntime, projects: CodeProjectCapa
     {
       method: "GET",
       path: "/api/runtime/:projectId/runs",
+      access: { kind: "permission", permission: "runtime.read" },
       summary: "List immutable Project Action Runs",
-      handler: async (request) => ({ status: 200, body: await runtime.listRuns(request.call, string(record(request.params).projectId)) }),
+      handler: async (request) => ({
+        status: 200,
+        body: await runtime.listRuns(
+          request.call,
+          string(record(request.params).projectId),
+        ),
+      }),
     },
     {
       method: "GET",
       path: "/api/runtime/:projectId/logs",
+      access: { kind: "permission", permission: "runtime.read" },
       summary: "List Project Runtime logs",
-      handler: async (request) => ({ status: 200, body: await runtime.logs(request.call, string(record(request.params).projectId)) }),
+      handler: async (request) => ({
+        status: 200,
+        body: await runtime.logs(request.call, string(record(request.params).projectId)),
+      }),
     },
     {
       method: "GET",
       path: "/runtime/artifacts/:hash/client.js",
+      access: { kind: "permission", permission: "runtime.artifact.read" },
       summary: "Serve verified immutable Client Artifact",
       handler: async (request) => {
         const params = record(request.params);
@@ -1074,19 +1384,28 @@ function runtimeRoutes(runtime: DefaultProjectRuntime, projects: CodeProjectCapa
     {
       method: "GET",
       path: "/apps/:slug",
+      access: { kind: "permission", permission: "runtime.app.read" },
       summary: "Thin generic App Runtime Shell",
       handler: async (request) => {
         const slug = string(record(request.params).slug);
         const project = await projects.getBySlug(request.call, slug);
-        if (project === null) return html(404, `<h1>Project ${escapeHtml(slug)} not found</h1>`);
+        if (project === null)
+          return html(404, `<h1>Project ${escapeHtml(slug)} not found</h1>`);
         const active = await runtime.active(request.call, project.id);
-        if (active === null) return html(404, `<h1>${escapeHtml(project.spec.name)} has no Active Release</h1>`);
+        if (active === null)
+          return html(
+            404,
+            `<h1>${escapeHtml(project.spec.name)} has no Active Release</h1>`,
+          );
         const release = await runtime.releaseForShell(
           request.call,
           project.id,
           active.release.revision,
         );
-        return html(200, appShell(project.id, project.spec.name, active, release.spec.clientArtifact));
+        return html(
+          200,
+          appShell(project.id, project.spec.name, active, release.spec.clientArtifact),
+        );
       },
     },
   ];
@@ -1105,14 +1424,21 @@ function appShell(
 }
 
 function releaseRef(release: Resource<ProjectReleaseDefinition>): ProjectReleaseRef {
-  return { resourceId: release.id, revision: release.revision, fingerprint: hash(release.spec) };
+  return {
+    resourceId: release.id,
+    revision: release.revision,
+    fingerprint: hash(release.spec),
+  };
 }
 
 function releaseIdentity(release: ProjectReleaseRef): string {
   return `${release.resourceId}@${release.revision}:${release.fingerprint}`;
 }
 
-function sameRelease(left: ProjectReleaseRef | null, right: ProjectReleaseRef | null): boolean {
+function sameRelease(
+  left: ProjectReleaseRef | null,
+  right: ProjectReleaseRef | null,
+): boolean {
   return left === null || right === null
     ? left === right
     : releaseIdentity(left) === releaseIdentity(right);
@@ -1127,52 +1453,82 @@ function projectReleaseRef(value: unknown): ProjectReleaseRef {
   };
 }
 
-function put<T extends { readonly id: string }>(collection: string, document: T, mode: "create" | "replace"): AtomicWriteOperation {
-  return { kind: "put-document", collection, document: document as unknown as AtomicDocument, mode };
+function put<T extends { readonly id: string }>(
+  collection: string,
+  document: T,
+  mode: "create" | "replace",
+): AtomicWriteOperation {
+  return {
+    kind: "put-document",
+    collection,
+    document: document as unknown as AtomicDocument,
+    mode,
+  };
 }
 
 function hash(value: unknown): string {
-  return createHash("sha256").update(JSON.stringify(canonical(value))).digest("hex");
+  return createHash("sha256")
+    .update(JSON.stringify(canonical(value)))
+    .digest("hex");
 }
 
 function canonical(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(canonical);
   if (value !== null && typeof value === "object") {
-    return Object.fromEntries(Object.entries(value as Record<string, unknown>)
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([key, item]) => [key, canonical(item)]));
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, item]) => [key, canonical(item)]),
+    );
   }
   return value;
 }
 
-function sourceLocation(error: string): Pick<ProjectRuntimeLog, "sourceFile" | "line" | "column"> | null {
+function sourceLocation(
+  error: string,
+): Pick<ProjectRuntimeLog, "sourceFile" | "line" | "column"> | null {
   const match = /(?:file:\/\/\/)?([^\s()]+):(\d+):(\d+)/.exec(error);
   return match?.[1] && match[2] && match[3]
     ? { sourceFile: match[1], line: Number(match[2]), column: Number(match[3]) }
     : null;
 }
 
+function runtimeStartFailure(error: unknown, context: CallContext): PrismError {
+  if (error instanceof PrismError) return error;
+  if (context.signal?.aborted === true) {
+    return PrismError.of("WORKER_LAUNCH_CANCELLED", "Worker launch was cancelled.");
+  }
+  return PrismError.of(
+    "PROJECT_RUNTIME_START_FAILED",
+    "Project Runtime Worker could not be started.",
+  );
+}
+
 function artifactMismatch(projectId: string): PrismError {
-  return PrismError.of("PROJECT_ARTIFACT_HASH_MISMATCH", "Project Release Artifact is missing or corrupt.", { projectId });
+  return PrismError.of(
+    "PROJECT_ARTIFACT_HASH_MISMATCH",
+    "Project Release Artifact is missing or corrupt.",
+    { projectId },
+  );
 }
 
 function abiMismatch(projectId: string): PrismError {
-  return PrismError.of("PROJECT_RUNTIME_ABI_MISMATCH", "Project Release Runtime ABI is incompatible.", { projectId });
-}
-
-function requireBuilder(context: CallContext): void {
-  if (!context.principal.roles.includes("BUILDER") && !context.principal.roles.includes("system")) {
-    throw PrismError.of("PROJECT_BUILDER_REQUIRED", "Release activation requires BUILDER role.");
-  }
+  return PrismError.of(
+    "PROJECT_RUNTIME_ABI_MISMATCH",
+    "Project Release Runtime ABI is incompatible.",
+    { projectId },
+  );
 }
 
 function record(value: unknown): Record<string, unknown> {
-  if (!isRuntimeRecord(value)) throw PrismError.of("PROJECT_RUNTIME_REQUEST_INVALID", "Expected object.");
+  if (!isRuntimeRecord(value))
+    throw PrismError.of("PROJECT_RUNTIME_REQUEST_INVALID", "Expected object.");
   return value;
 }
 
 function string(value: unknown): string {
-  if (typeof value !== "string" || value === "") throw PrismError.of("PROJECT_RUNTIME_REQUEST_INVALID", "Expected string.");
+  if (typeof value !== "string" || value === "")
+    throw PrismError.of("PROJECT_RUNTIME_REQUEST_INVALID", "Expected string.");
   return value;
 }
 
@@ -1189,7 +1545,15 @@ function html(status: number, body: string) {
 }
 
 function escapeHtml(value: string): string {
-  return value.replace(/[&<>"']/g, (character) => ({
-    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
-  })[character]!);
+  return value.replace(
+    /[&<>"']/g,
+    (character) =>
+      ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;",
+      })[character]!,
+  );
 }

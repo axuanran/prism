@@ -1,52 +1,83 @@
 <script setup lang="ts">
-import { computed, watch } from 'vue';
-import type { Diagnostic, JsonSchema, PresentationGroup, PresentationSpec } from '../../api/types';
-import { getEditor } from '../../editors/registry';
-import ConfigField from './ConfigField.vue';
-import { fieldPresentation, objectFields, resolveSchema, schemaSemantic, schemaType, validateValue } from './schema';
-import type { ReferenceLoader } from './types';
+import { computed, watch } from "vue";
+import type {
+  Diagnostic,
+  JsonSchema,
+  PresentationGroup,
+  PresentationSpec,
+} from "../../api/types";
+import { getEditor } from "../../editors/registry";
+import ConfigField from "./ConfigField.vue";
+import {
+  fieldPresentation,
+  objectFields,
+  resolveSchema,
+  schemaSemantic,
+  schemaType,
+  validateValue,
+} from "./schema";
+import type { ReferenceLoader } from "./types";
 
-const props = withDefaults(defineProps<{
-  modelValue: unknown;
-  schema: JsonSchema;
-  presentation?: PresentationSpec;
-  diagnostics?: readonly Diagnostic[];
-  disabled?: boolean;
-  referenceLoader?: ReferenceLoader;
-}>(), {
-  diagnostics: () => [],
-  disabled: false,
-});
+const props = withDefaults(
+  defineProps<{
+    modelValue: unknown;
+    schema: JsonSchema;
+    presentation?: PresentationSpec;
+    diagnostics?: readonly Diagnostic[];
+    disabled?: boolean;
+    referenceLoader?: ReferenceLoader;
+  }>(),
+  {
+    diagnostics: () => [],
+    disabled: false,
+  },
+);
 
 const emit = defineEmits<{
-  'update:modelValue': [value: unknown];
+  "update:modelValue": [value: unknown];
   validity: [valid: boolean, diagnostics: readonly Diagnostic[]];
 }>();
 
 const resolvedSchema = computed(() => resolveSchema(props.schema, props.schema));
 const objectValue = computed<Record<string, unknown>>(() =>
-  typeof props.modelValue === 'object' && props.modelValue !== null && !Array.isArray(props.modelValue)
-    ? props.modelValue as Record<string, unknown>
-    : {});
-const fields = computed(() => objectFields(resolvedSchema.value, props.schema, props.presentation, ''));
-const localDiagnostics = computed(() => validateValue(resolvedSchema.value, props.modelValue, props.schema));
+  typeof props.modelValue === "object" &&
+  props.modelValue !== null &&
+  !Array.isArray(props.modelValue)
+    ? (props.modelValue as Record<string, unknown>)
+    : {},
+);
+const fields = computed(() =>
+  objectFields(resolvedSchema.value, props.schema, props.presentation, ""),
+);
+const localDiagnostics = computed(() =>
+  validateValue(resolvedSchema.value, props.modelValue, props.schema),
+);
 const allDiagnostics = computed(() => [...props.diagnostics, ...localDiagnostics.value]);
-const rootSemantic = computed(() => props.presentation?.editor
-  ?? schemaSemantic(resolvedSchema.value, props.schema));
+const rootSemantic = computed(
+  () => props.presentation?.editor ?? schemaSemantic(resolvedSchema.value, props.schema),
+);
 const rootEditor = computed(() => getEditor(rootSemantic.value));
-const groups = computed(() => [...(props.presentation?.groups ?? [])]
-  .sort((left, right) => (left.order ?? Number.MAX_SAFE_INTEGER) - (right.order ?? Number.MAX_SAFE_INTEGER)));
-const ungroupedFields = computed(() => fields.value.filter((field) => {
-  const group = fieldPresentation(props.presentation, field.key).group;
-  return !group || !groups.value.some((item) => item.id === group);
-}));
+const groups = computed(() =>
+  [...(props.presentation?.groups ?? [])].sort(
+    (left, right) =>
+      (left.order ?? Number.MAX_SAFE_INTEGER) - (right.order ?? Number.MAX_SAFE_INTEGER),
+  ),
+);
+const ungroupedFields = computed(() =>
+  fields.value.filter((field) => {
+    const group = fieldPresentation(props.presentation, field.key).group;
+    return !group || !groups.value.some((item) => item.id === group);
+  }),
+);
 
 function groupFields(group: PresentationGroup) {
-  return fields.value.filter((field) => fieldPresentation(props.presentation, field.key).group === group.id);
+  return fields.value.filter(
+    (field) => fieldPresentation(props.presentation, field.key).group === group.id,
+  );
 }
 
 function updateField(key: string, value: unknown): void {
-  emit('update:modelValue', { ...objectValue.value, [key]: value });
+  emit("update:modelValue", { ...objectValue.value, [key]: value });
 }
 
 function validate(): readonly Diagnostic[] {
@@ -55,9 +86,13 @@ function validate(): readonly Diagnostic[] {
 
 defineExpose({ validate });
 
-watch(allDiagnostics, (diagnostics) => {
-  emit('validity', !diagnostics.some((item) => item.severity === 'error'), diagnostics);
-}, { immediate: true });
+watch(
+  allDiagnostics,
+  (diagnostics) => {
+    emit("validity", !diagnostics.some((item) => item.severity === "error"), diagnostics);
+  },
+  { immediate: true },
+);
 </script>
 
 <template>

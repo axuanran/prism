@@ -20,10 +20,8 @@ import {
   storagePostgresPlugin,
   type PostgresMigrationJournal,
 } from "@prismengine/plugin-storage-postgres";
-import {
-  createScratchDatabase,
-  probePostgres,
-} from "@prismengine/testing";
+import { workerLocalPlugin } from "@prismengine/plugin-worker-local";
+import { createScratchDatabase, probePostgres } from "@prismengine/testing";
 
 const probe = await probePostgres();
 const describePostgres = probe.url === undefined ? describe.skip : describe;
@@ -42,6 +40,7 @@ describePostgres("Project Runtime PostgreSQL recovery", () => {
           storagePostgresPlugin({ connectionString: scratch.url }),
           localArtifactStorePlugin({ root: artifacts }),
           codeProjectPlugin,
+          workerLocalPlugin,
           projectBuildPlugin(),
           projectRuntimePlugin(),
         ],
@@ -60,16 +59,32 @@ describePostgres("Project Runtime PostgreSQL recovery", () => {
         slug: "runtime-pg",
         name: "Runtime PG",
       });
-      const files = created.draft.files.map((file) => file.path === "src/server/index.ts"
-        ? {
-            ...file,
-            content: "export const actions = { ping: async () => ({ pong: true }) };\n",
-          }
-        : file);
+      const files = created.draft.files.map((file) =>
+        file.path === "src/server/index.ts"
+          ? {
+              ...file,
+              content: "export const actions = { ping: async () => ({ pong: true }) };\n",
+            }
+          : file,
+      );
       const draft = await projects.saveDraft(context, created.project.id, 1, files);
-      const source = await projects.publishDraft(context, created.project.id, draft.draftVersion);
+      const source = await projects.publishDraft(
+        context,
+        created.project.id,
+        draft.draftVersion,
+      );
       const builds = host.engine.capability(ProjectBuildCapabilityToken);
-      expect((await builds.build(context, created.project.id, source.revision)).status).toBe("SUCCESS");
+      const build = await builds.build(context, created.project.id, source.revision);
+      expect(build.status).toBe("SUCCESS");
+      const artifactSet = await builds.artifactSet(context, build.id);
+      if (artifactSet === null) throw new Error("Build Artifact Set was not created");
+      await builds.composeRelease(
+        context,
+        created.project.id,
+        build.id,
+        [],
+        artifactSet.runtimeProfile,
+      );
       const runtime = host.engine.capability(ProjectRuntimeCapabilityToken);
       const active = await runtime.activate(context, created.project.id, 1, null);
       const first = await runtime.invoke(
@@ -95,7 +110,11 @@ describePostgres("Project Runtime PostgreSQL recovery", () => {
         "ping",
         null,
       );
-      expect(second).toMatchObject({ status: "SUCCESS", release: active.release, result: { pong: true } });
+      expect(second).toMatchObject({
+        status: "SUCCESS",
+        release: active.release,
+        result: { pong: true },
+      });
     } finally {
       for (const host of running) {
         await host.engine.stop();

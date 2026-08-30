@@ -41,6 +41,14 @@ const CONTEXT: CallContext = systemCallContext({
   correlationId: "organization-test",
 });
 
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>((complete) => {
+    resolve = complete;
+  });
+  return { promise, resolve };
+}
+
 async function createHarness(): Promise<Harness> {
   let organization: OrganizationCapability | undefined;
   let administration: OrganizationAdministration | undefined;
@@ -48,6 +56,7 @@ async function createHarness(): Promise<Harness> {
   const capturePlugin = definePlugin({
     id: "test.organization.capture",
     version: "0.1.0",
+    engineRange: "^0.1.20",
     requires: {
       organization: OrganizationCapabilityToken,
       administration: OrganizationAdministrationToken,
@@ -63,11 +72,7 @@ async function createHarness(): Promise<Harness> {
     plugins: [storageMemoryPlugin, organizationPlugin, capturePlugin],
   });
   await engine.start();
-  if (
-    organization === undefined
-    || administration === undefined
-    || storage === undefined
-  ) {
+  if (organization === undefined || administration === undefined || storage === undefined) {
     throw new Error("Organization test capabilities were not captured after engine start.");
   }
   return { engine, organization, administration, storage };
@@ -83,14 +88,18 @@ describe("organization plugin", () => {
     });
 
     await expect(organization.getPerson(CONTEXT, person.id)).resolves.toEqual(person);
-    await expect(organization.findPeople(CONTEXT, {
-      employeeNumbers: ["E-001"],
-    })).resolves.toEqual([person]);
+    await expect(
+      organization.findPeople(CONTEXT, {
+        employeeNumbers: ["E-001"],
+      }),
+    ).resolves.toEqual([person]);
 
-    await expect(administration.createPerson(CONTEXT, {
-      employeeNumber: "E-001",
-      displayName: "重复人员",
-    })).rejects.toMatchObject({
+    await expect(
+      administration.createPerson(CONTEXT, {
+        employeeNumber: "E-001",
+        displayName: "重复人员",
+      }),
+    ).rejects.toMatchObject({
       diagnostics: [{ code: OrganizationPluginDiagnosticCode.DUPLICATE_EMPLOYEE_NUMBER }],
     });
   });
@@ -137,20 +146,19 @@ describe("organization plugin", () => {
 
     const allUnits = await organization.findUnits(CONTEXT);
     expect(allUnits).toEqual([root, department, ward]);
-    await expect(organization.findUnits(CONTEXT, {
-      parentId: department.id,
-    })).resolves.toEqual([ward]);
-    await expect(organization.findUnits(CONTEXT, {
-      rootsOnly: true,
-    })).resolves.toEqual([root]);
-    await expect(organization.findPositions(CONTEXT)).resolves.toEqual([
-      activePosition,
-    ]);
+    await expect(
+      organization.findUnits(CONTEXT, {
+        parentId: department.id,
+      }),
+    ).resolves.toEqual([ward]);
+    await expect(
+      organization.findUnits(CONTEXT, {
+        rootsOnly: true,
+      }),
+    ).resolves.toEqual([root]);
+    await expect(organization.findPositions(CONTEXT)).resolves.toEqual([activePosition]);
 
-    const datasetUnits = await collectRows(
-      organization.datasets.units(CONTEXT),
-      CONTEXT,
-    );
+    const datasetUnits = await collectRows(organization.datasets.units(CONTEXT), CONTEXT);
     expect(new Set(datasetUnits.map((row) => row.unitId))).toEqual(
       new Set(allUnits.map((unit) => unit.id)),
     );
@@ -186,15 +194,15 @@ describe("organization plugin", () => {
     };
     await units.putMany(CONTEXT, [first, second]);
 
-    await expect(organization.descendantUnits(CONTEXT, firstId)).resolves.toEqual([
-      second,
-    ]);
-    await expect(organization.ancestorUnits(CONTEXT, firstId)).resolves.toEqual([
-      second,
-    ]);
-    expect(engine.inspect().diagnostics.some((item) =>
-      item.code === OrganizationPluginDiagnosticCode.HIERARCHY_CYCLE
-    )).toBe(true);
+    await expect(organization.descendantUnits(CONTEXT, firstId)).resolves.toEqual([second]);
+    await expect(organization.ancestorUnits(CONTEXT, firstId)).resolves.toEqual([second]);
+    expect(
+      engine
+        .inspect()
+        .diagnostics.some(
+          (item) => item.code === OrganizationPluginDiagnosticCode.HIERARCHY_CYCLE,
+        ),
+    ).toBe(true);
   });
 
   it("excludes an assignment ended before validAt", async () => {
@@ -216,13 +224,17 @@ describe("organization plugin", () => {
     });
     await administration.endAssignment(CONTEXT, assignment.id, "2024-12-31");
 
-    await expect(organization.findAssignments(CONTEXT, {
-      personIds: [person.id],
-    })).resolves.toEqual([]);
-    await expect(countRows(
-      organization.datasets.assignments(CONTEXT, { personIds: [person.id] }),
-      CONTEXT,
-    )).resolves.toBe(0);
+    await expect(
+      organization.findAssignments(CONTEXT, {
+        personIds: [person.id],
+      }),
+    ).resolves.toEqual([]);
+    await expect(
+      countRows(
+        organization.datasets.assignments(CONTEXT, { personIds: [person.id] }),
+        CONTEXT,
+      ),
+    ).resolves.toBe(0);
   });
 
   async function seedReferenceOrganization(
@@ -244,7 +256,7 @@ describe("organization plugin", () => {
         }),
       ),
     );
-    const assignments = await Promise.all(
+    const assignments = (await Promise.all(
       people.map((person) =>
         administration.assignPerson(CONTEXT, {
           personId: person.id,
@@ -253,7 +265,7 @@ describe("organization plugin", () => {
           from: "2020-01-01",
         }),
       ),
-    ) as [Assignment, Assignment, Assignment];
+    )) as [Assignment, Assignment, Assignment];
     return { unit, assignments };
   }
 
@@ -292,9 +304,7 @@ describe("organization plugin", () => {
 
     const pointPeople = await organization.findPeople(CONTEXT, {});
     const pointAssignments = await organization.findAssignments(CONTEXT, {});
-    const pointUnits = await Promise.all([
-      organization.getUnit(CONTEXT, seed.unit.id),
-    ]);
+    const pointUnits = await Promise.all([organization.getUnit(CONTEXT, seed.unit.id)]);
     expect(await countRows(peopleDataset, CONTEXT)).toBe(pointPeople.length);
     expect(await countRows(assignmentDataset, CONTEXT)).toBe(pointAssignments.length);
     expect(await countRows(unitDataset, CONTEXT)).toBe(
@@ -305,27 +315,98 @@ describe("organization plugin", () => {
     );
   });
 
+  it("materializes a deferred Dataset once and keeps its snapshot immutable", async () => {
+    const { organization, administration } = await createHarness();
+    await administration.createPerson(CONTEXT, {
+      employeeNumber: "SNAP-001",
+      displayName: "快照人员一",
+    });
+
+    const originalFindPeople = organization.findPeople.bind(organization);
+    const loadGate = deferred<void>();
+    let loadCount = 0;
+    organization.findPeople = async (context, query) => {
+      loadCount += 1;
+      await loadGate.promise;
+      return originalFindPeople(context, query);
+    };
+
+    const snapshot = organization.datasets.people(CONTEXT);
+    const firstStream = collectRows(snapshot, CONTEXT);
+    const concurrentStream = collectRows(snapshot, CONTEXT);
+    await Promise.resolve();
+    await Promise.resolve();
+    const concurrentLoadCount = loadCount;
+    loadGate.resolve();
+    const [firstRows, concurrentRows] = await Promise.all([firstStream, concurrentStream]);
+
+    expect(concurrentLoadCount).toBe(1);
+    expect(concurrentRows).toEqual(firstRows);
+
+    await administration.createPerson(CONTEXT, {
+      employeeNumber: "SNAP-002",
+      displayName: "快照人员二",
+    });
+
+    expect(await collectRows(snapshot, CONTEXT)).toEqual(firstRows);
+    const freshRows = await collectRows(organization.datasets.people(CONTEXT), CONTEXT);
+    expect(new Set(freshRows.map((row) => row.employeeNumber))).toEqual(
+      new Set(["SNAP-001", "SNAP-002"]),
+    );
+  });
+
+  it("shares and caches deferred Dataset materialization failures", async () => {
+    const { organization } = await createHarness();
+    const originalFindPeople = organization.findPeople.bind(organization);
+    const failure = new Error("organization snapshot failed");
+    let loadCount = 0;
+    organization.findPeople = async () => {
+      loadCount += 1;
+      throw failure;
+    };
+
+    const snapshot = organization.datasets.people(CONTEXT);
+    const attempts = await Promise.allSettled([
+      collectRows(snapshot, CONTEXT),
+      collectRows(snapshot, CONTEXT),
+    ]);
+
+    expect(loadCount).toBe(1);
+    expect(attempts).toEqual([
+      { status: "rejected", reason: failure },
+      { status: "rejected", reason: failure },
+    ]);
+
+    organization.findPeople = originalFindPeople;
+    await expect(collectRows(snapshot, CONTEXT)).rejects.toBe(failure);
+    expect(loadCount).toBe(1);
+  });
+
   it("rejects invalid references and assignment end dates", async () => {
     const { administration } = await createHarness();
     const unknownUnit = "missing-unit" as OrganizationUnitId;
-    await expect(administration.defineUnit(CONTEXT, {
-      code: "ORPHAN",
-      name: "孤立机构",
-      parentId: unknownUnit,
-      from: "2020-01-01",
-    })).rejects.toBeInstanceOf(PrismError);
+    await expect(
+      administration.defineUnit(CONTEXT, {
+        code: "ORPHAN",
+        name: "孤立机构",
+        parentId: unknownUnit,
+        from: "2020-01-01",
+      }),
+    ).rejects.toBeInstanceOf(PrismError);
 
     const unit = await administration.defineUnit(CONTEXT, {
       code: "VALID",
       name: "有效机构",
       from: "2020-01-01",
     });
-    await expect(administration.assignPerson(CONTEXT, {
-      personId: "missing-person" as PersonId,
-      organizationUnitId: unit.id,
-      kind: "primary",
-      from: "2020-01-01",
-    })).rejects.toMatchObject({
+    await expect(
+      administration.assignPerson(CONTEXT, {
+        personId: "missing-person" as PersonId,
+        organizationUnitId: unit.id,
+        kind: "primary",
+        from: "2020-01-01",
+      }),
+    ).rejects.toMatchObject({
       diagnostics: [{ code: OrganizationPluginDiagnosticCode.PERSON_NOT_FOUND }],
     });
 
@@ -339,11 +420,9 @@ describe("organization plugin", () => {
       kind: "primary",
       from: "2024-01-01",
     });
-    await expect(administration.endAssignment(
-      CONTEXT,
-      assignment.id,
-      "2023-12-31",
-    )).rejects.toMatchObject({
+    await expect(
+      administration.endAssignment(CONTEXT, assignment.id, "2023-12-31"),
+    ).rejects.toMatchObject({
       diagnostics: [{ code: OrganizationPluginDiagnosticCode.INVALID_EFFECTIVE_PERIOD }],
     });
   });
@@ -354,7 +433,7 @@ describe("organization plugin", () => {
     const unsubscribes = Object.values(OrganizationEventType).map((type) =>
       engine.eventBus.subscribe(type, (event) => {
         eventTypes.push(event.type);
-      })
+      }),
     );
 
     const unit = await administration.defineUnit(CONTEXT, {
@@ -395,9 +474,9 @@ describe("organization plugin", () => {
 
   it("registers generic-studio organization resource types", async () => {
     const { engine } = await createHarness();
-    const resources = engine.inspect().resourceTypes.filter((resource) =>
-      resource.kind.startsWith("organization.")
-    );
+    const resources = engine
+      .inspect()
+      .resourceTypes.filter((resource) => resource.kind.startsWith("organization."));
 
     expect(resources.map((resource) => resource.kind)).toEqual([
       "organization.person",

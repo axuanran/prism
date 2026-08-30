@@ -29,10 +29,16 @@ export function defineSemanticAnnotationContract<TSpec extends JsonValue>(defini
   readonly version: string;
 }): SemanticAnnotationContract<TSpec> {
   if (definition.id.trim() === "") {
-    throw PrismError.of(DataDiagnosticCode.SEMANTIC_ANNOTATION_INVALID, "Semantic annotation contract id is required.");
+    throw PrismError.of(
+      DataDiagnosticCode.SEMANTIC_ANNOTATION_INVALID,
+      "Semantic annotation contract id is required.",
+    );
   }
   if (definition.version.trim() === "") {
-    throw PrismError.of(DataDiagnosticCode.SEMANTIC_ANNOTATION_INVALID, "Semantic annotation contract version is required.");
+    throw PrismError.of(
+      DataDiagnosticCode.SEMANTIC_ANNOTATION_INVALID,
+      "Semantic annotation contract version is required.",
+    );
   }
   return definition;
 }
@@ -83,7 +89,11 @@ export function findSemanticAnnotation<TSpec extends JsonValue>(
     throw PrismError.of(
       DataDiagnosticCode.SEMANTIC_ANNOTATION_VERSION_MISMATCH,
       `Semantic annotation "${contract.id}" version mismatch: stored ${found.contractVersion}, requested ${contract.version}.`,
-      { contract: contract.id, storedVersion: found.contractVersion, requestedVersion: contract.version },
+      {
+        contract: contract.id,
+        storedVersion: found.contractVersion,
+        requestedVersion: contract.version,
+      },
     );
   }
   return found as SemanticAnnotation<TSpec>;
@@ -111,11 +121,7 @@ export function parseSemanticAnnotations(
     );
   }
   const annotations = value.map((item, index): SemanticAnnotation => {
-    if (
-      item === null ||
-      typeof item !== "object" ||
-      Array.isArray(item)
-    ) {
+    if (item === null || typeof item !== "object" || Array.isArray(item)) {
       throw PrismError.of(
         DataDiagnosticCode.SEMANTIC_ANNOTATION_INVALID,
         "Semantic annotation must be an object.",

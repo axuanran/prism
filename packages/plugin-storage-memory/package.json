@@ -19,13 +19,13 @@
     "build": "tsc --build"
   },
   "dependencies": {
-    "@prismengine/contracts-data": "workspace:*",
-    "@prismengine/contracts-storage": "workspace:*",
-    "@prismengine/kernel": "workspace:*",
+    "@prismengine/contracts-data": "workspace:0.1.20",
+    "@prismengine/contracts-storage": "workspace:0.1.20",
+    "@prismengine/kernel": "workspace:0.1.20",
     "@sinclair/typebox": "^0.34.41"
   },
   "devDependencies": {
-    "@prismengine/testing": "workspace:*"
+    "@prismengine/testing": "workspace:0.1.20"
   },
   "license": "Apache-2.0",
   "repository": {

@@ -1,30 +1,36 @@
 <script setup lang="ts">
-import { computed } from 'vue';
-import EngineDataBoundary from '../components/EngineDataBoundary.vue';
-import { useEngineStore } from '../stores/engine';
+import { computed } from "vue";
+import EngineDataBoundary from "../components/EngineDataBoundary.vue";
+import { useEngineStore } from "../stores/engine";
 
 const engineStore = useEngineStore();
 
 const phaseLabel = computed(() => {
   switch (engineStore.inspection?.phase) {
-    case 'running':
-    case 'started':
-      return '运行中';
-    case 'starting':
-      return '启动中';
-    case 'stopping':
-      return '停止中';
-    case 'stopped':
-      return '已停止';
+    case "running":
+    case "started":
+      return "运行中";
+    case "starting":
+      return "启动中";
+    case "stopping":
+      return "停止中";
+    case "stopped":
+      return "已停止";
     default:
-      return '状态未知';
+      return "状态未知";
   }
 });
 
 const diagnosticSummary = computed(() => ({
-  info: engineStore.inspection?.diagnostics.filter((item) => item.severity === 'info').length ?? 0,
-  warning: engineStore.inspection?.diagnostics.filter((item) => item.severity === 'warning').length ?? 0,
-  error: engineStore.inspection?.diagnostics.filter((item) => item.severity === 'error').length ?? 0,
+  info:
+    engineStore.inspection?.diagnostics.filter((item) => item.severity === "info").length ??
+    0,
+  warning:
+    engineStore.inspection?.diagnostics.filter((item) => item.severity === "warning")
+      .length ?? 0,
+  error:
+    engineStore.inspection?.diagnostics.filter((item) => item.severity === "error")
+      .length ?? 0,
 }));
 
 function retry(): void {
@@ -43,7 +49,11 @@ function retry(): void {
       <div class="snapshot-label">当前快照</div>
     </div>
 
-    <EngineDataBoundary :loading="engineStore.loading" :error="engineStore.error" @retry="retry">
+    <EngineDataBoundary
+      :loading="engineStore.loading"
+      :error="engineStore.error"
+      @retry="retry"
+    >
       <template v-if="engineStore.inspection">
         <section class="overview-grid" aria-label="引擎状态摘要">
           <article class="engine-status">
@@ -51,7 +61,9 @@ function retry(): void {
               <p>引擎阶段</p>
               <span class="status-chip"><i aria-hidden="true"></i>{{ phaseLabel }}</span>
             </div>
-            <strong class="engine-status__version">v{{ engineStore.inspection.engineVersion }}</strong>
+            <strong class="engine-status__version"
+              >v{{ engineStore.inspection.engineVersion }}</strong
+            >
             <p class="engine-status__caption">当前版本运行稳定，工作台已完成状态同步。</p>
             <div class="engine-status__line" aria-hidden="true"><span></span></div>
           </article>
@@ -76,7 +88,9 @@ function retry(): void {
               <h3 id="diagnostics-title">诊断摘要</h3>
               <p>按严重程度汇总当前引擎反馈</p>
             </div>
-            <span class="diagnostics__total">共 {{ engineStore.inspection.diagnostics.length }} 项</span>
+            <span class="diagnostics__total"
+              >共 {{ engineStore.inspection.diagnostics.length }} 项</span
+            >
           </div>
           <div class="diagnostics__rows">
             <div class="diagnostic-row diagnostic-row--error">

@@ -15,6 +15,7 @@ export * from "@prismengine/plugin-http-fastify";
 export * from "@prismengine/plugin-organization-basic";
 export * from "@prismengine/plugin-material-registry";
 export * from "@prismengine/plugin-code-project";
+export * from "@prismengine/plugin-secret-local";
 
 export const PRISM_PLATFORM_VERSION = "0.1.20";
 
@@ -39,9 +40,7 @@ export function prismPlatform(
   options: PrismPlatformOptions = {},
 ): readonly AnyPluginDefinition[] {
   return [
-    ...(options.storage === false
-      ? []
-      : [options.storage ?? storageMemoryPlugin]),
+    ...(options.storage === false ? [] : [options.storage ?? storageMemoryPlugin]),
     ...(options.calculation === false ? [] : [calculationPlugin]),
     ...(options.quantity === false ? [] : [quantityPlugin]),
     ...(options.grain === false ? [] : [grainPlugin]),

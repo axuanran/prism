@@ -8,6 +8,11 @@ import type {
   ServiceAccessor,
 } from "./context.js";
 import type { EventBus, EventHandler, PrismEvent, Unsubscribe } from "./events.js";
+import {
+  assertEventCorrelationId,
+  assertEventSubscription,
+  assertEventType,
+} from "./events.js";
 import type { Contribution, ExtensionPoint, ExtensionRegistry } from "./extension.js";
 import type { ResourceTypeDefinition } from "./resource.js";
 
@@ -132,8 +137,7 @@ export class ResourceTypeStore {
 
   scopedTo(pluginId: string): ResourceTypeRegistry {
     return {
-      define: (definition) =>
-        this.define(pluginId, definition as ResourceTypeDefinition),
+      define: (definition) => this.define(pluginId, definition as ResourceTypeDefinition),
       get: (kind) => this.get(kind),
       list: () => this.list(),
       ownerOf: (kind) => this.ownerOf(kind),
@@ -217,6 +221,7 @@ export class EventBusStore {
   ) {}
 
   subscribe<TPayload>(type: string, handler: EventHandler<TPayload>): Unsubscribe {
+    assertEventSubscription(type);
     // See the handlers field above.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const set = this.handlers.get(type) ?? new Set<EventHandler<any>>();
@@ -228,6 +233,10 @@ export class EventBusStore {
   }
 
   async publish(source: string, event: Omit<PrismEvent, "source">): Promise<void> {
+    assertEventType(event.type);
+    if (event.correlationId !== undefined) {
+      assertEventCorrelationId(event.correlationId);
+    }
     const full: PrismEvent = { ...event, source };
     for (const pattern of matchingPatterns(full.type)) {
       for (const handler of this.handlers.get(pattern) ?? []) {
@@ -248,7 +257,9 @@ export class EventBusStore {
           type,
           payload,
           occurredAt: new Date().toISOString(),
-          ...(options?.correlationId ? { correlationId: options.correlationId } : {}),
+          ...(options?.correlationId === undefined
+            ? {}
+            : { correlationId: options.correlationId }),
         }),
       subscribe: (type, handler) => this.subscribe(type, handler),
     };

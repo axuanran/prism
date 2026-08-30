@@ -1,3 +1,4 @@
+import { Type } from "@sinclair/typebox";
 import { PrismError, systemCallContext } from "@prismengine/contracts-data";
 import {
   ResourceEventType,
@@ -5,7 +6,7 @@ import {
   StorageDiagnosticCode,
 } from "@prismengine/contracts-storage";
 import type { StorageCapability } from "@prismengine/contracts-storage";
-import { createEngine, definePlugin } from "@prismengine/kernel";
+import { createEngine, definePlugin, ResourceValidationCode } from "@prismengine/kernel";
 import { describeStorageContract } from "@prismengine/testing";
 import { describe, expect, it } from "vitest";
 import {
@@ -17,7 +18,10 @@ const context = systemCallContext({ correlationId: "storage-memory-test" });
 
 describeStorageContract("memory", async () => {
   let failure:
-    | { readonly point: "after-operation" | "before-commit" | "after-commit"; readonly operationIndex?: number }
+    | {
+        readonly point: "after-operation" | "before-commit" | "after-commit";
+        readonly operationIndex?: number;
+      }
     | undefined;
   const storage = createMemoryStorage(undefined, {
     hit(point) {
@@ -45,7 +49,9 @@ describeStorageContract("memory", async () => {
   };
 });
 
-async function diagnosticCodes(operation: () => Promise<unknown>): Promise<readonly string[]> {
+async function diagnosticCodes(
+  operation: () => Promise<unknown>,
+): Promise<readonly string[]> {
   try {
     await operation();
   } catch (error) {
@@ -80,7 +86,9 @@ describe("memory resource store", () => {
     expect(published.status).toBe("published");
     expect(edited).toMatchObject({ revision: 2, status: "draft" });
     expect(edited.createdAt > published.updatedAt).toBe(true);
-    await expect(resources.getPublished(context, draft.kind, draft.id)).resolves.toMatchObject({
+    await expect(
+      resources.getPublished(context, draft.kind, draft.id),
+    ).resolves.toMatchObject({
       revision: 1,
       status: "published",
       spec: { pointValue: "10" },
@@ -109,7 +117,9 @@ describe("memory resource store", () => {
     expect(updated.revision).toBe(1);
     expect(updated.createdAt).toBe(first.createdAt);
     expect(updated.updatedAt > first.updatedAt).toBe(true);
-    await expect(resources.listRevisions(context, first.kind, first.id)).resolves.toHaveLength(1);
+    await expect(
+      resources.listRevisions(context, first.kind, first.id),
+    ).resolves.toHaveLength(1);
   });
 
   it("rejects every direct published-revision mutation with the exact code", async () => {
@@ -183,7 +193,11 @@ describe("memory resource store", () => {
       1,
     );
 
-    expect(cloned).toMatchObject({ revision: 2, status: "draft", spec: { pointValue: "10" } });
+    expect(cloned).toMatchObject({
+      revision: 2,
+      status: "draft",
+      spec: { pointValue: "10" },
+    });
     await resources.archive(context, draft.kind, draft.id);
     const revisions = await resources.listRevisions(context, draft.kind, draft.id);
     expect(revisions.map((revision) => revision.status)).toEqual(["archived", "archived"]);
@@ -195,6 +209,7 @@ describe("memory resource store", () => {
     const consumer = definePlugin({
       id: "storage-memory-test-consumer",
       version: "0.1.0",
+      engineRange: "^0.1.20",
       requires: { storage: StorageCapabilityToken },
       start(pluginContext) {
         storage = pluginContext.dependencies.storage;
@@ -228,6 +243,140 @@ describe("memory resource store", () => {
         correlationId: context.correlationId,
       },
     ]);
+  });
+
+  it("validates every registered Resource write outside HTTP and revalidates publish", async () => {
+    let storage: StorageCapability | undefined;
+    const resourceTypes = definePlugin({
+      id: "storage-memory-test-resource-types",
+      version: "0.1.0",
+      engineRange: "^0.1.20",
+      register(pluginContext) {
+        pluginContext.resources.define<{ readonly label: string }>({
+          kind: "validation.reference",
+          title: "Validation reference",
+          config: {
+            schema: Type.Object(
+              { label: Type.String({ minLength: 1 }) },
+              { additionalProperties: false },
+            ),
+          },
+          exposure: { configuration: true },
+        });
+        pluginContext.resources.define<{ readonly referenceId: string }>({
+          kind: "validation.dependent",
+          title: "Validation dependent",
+          config: {
+            schema: Type.Object(
+              { referenceId: Type.String({ minLength: 1 }) },
+              { additionalProperties: false },
+            ),
+            validate: async (spec, validation) => {
+              const reference = await validation.resolveResource(
+                "validation.reference",
+                spec.referenceId,
+              );
+              return reference === null
+                ? {
+                    valid: false,
+                    diagnostics: [
+                      {
+                        code: "VALIDATION_REFERENCE_MISSING",
+                        severity: "error",
+                        message: "The published validation reference does not exist.",
+                        path: "/referenceId",
+                      },
+                    ],
+                  }
+                : { valid: true, diagnostics: [] };
+            },
+          },
+          exposure: { configuration: true },
+        });
+      },
+    });
+    const consumer = definePlugin({
+      id: "storage-memory-validation-consumer",
+      version: "0.1.0",
+      engineRange: "^0.1.20",
+      requires: { storage: StorageCapabilityToken },
+      start(pluginContext) {
+        storage = pluginContext.dependencies.storage;
+      },
+    });
+    const engine = createEngine({
+      plugins: [storageMemoryPlugin, resourceTypes, consumer],
+    });
+    await engine.start();
+    if (storage === undefined) throw new Error("Storage consumer did not start");
+    const validatedStorage = storage;
+
+    expect(
+      await diagnosticCodes(() =>
+        validatedStorage.resources.saveDraft(context, {
+          kind: "validation.dependent",
+          id: "invalid-shape",
+          name: "Invalid shape",
+          spec: {},
+        }),
+      ),
+    ).toContain(ResourceValidationCode.SCHEMA_VIOLATION);
+    await expect(
+      storage.resources.get(context, "validation.dependent", "invalid-shape"),
+    ).resolves.toBeNull();
+
+    expect(
+      await diagnosticCodes(() =>
+        validatedStorage.resources.saveDraft(context, {
+          kind: "validation.dependent",
+          id: "missing-reference",
+          name: "Missing reference",
+          spec: { referenceId: "reference-1" },
+        }),
+      ),
+    ).toEqual(["VALIDATION_REFERENCE_MISSING"]);
+    await expect(
+      storage.resources.get(context, "validation.dependent", "missing-reference"),
+    ).resolves.toBeNull();
+
+    const referenceDraft = await storage.resources.saveDraft(context, {
+      kind: "validation.reference",
+      id: "reference-1",
+      name: "Reference",
+      spec: { label: "Published reference" },
+    });
+    await storage.resources.publish(
+      context,
+      referenceDraft.kind,
+      referenceDraft.id,
+      referenceDraft.revision,
+    );
+    const dependentDraft = await storage.resources.saveDraft(context, {
+      kind: "validation.dependent",
+      id: "dependent-1",
+      name: "Dependent",
+      spec: { referenceId: referenceDraft.id },
+    });
+
+    await storage.resources.archive(context, referenceDraft.kind, referenceDraft.id);
+    await expect(
+      storage.resources.publish(
+        context,
+        dependentDraft.kind,
+        dependentDraft.id,
+        dependentDraft.revision,
+      ),
+    ).rejects.toMatchObject({
+      diagnostics: [{ code: "VALIDATION_REFERENCE_MISSING" }],
+    });
+    await expect(
+      storage.resources.get(
+        context,
+        dependentDraft.kind,
+        dependentDraft.id,
+        dependentDraft.revision,
+      ),
+    ).resolves.toMatchObject({ status: "draft" });
   });
 });
 

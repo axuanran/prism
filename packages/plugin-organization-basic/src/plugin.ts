@@ -5,12 +5,7 @@ import {
   PrismError,
   tableType,
 } from "@prismengine/contracts-data";
-import type {
-  CallContext,
-  Dataset,
-  Row,
-  TableType,
-} from "@prismengine/contracts-data";
+import type { CallContext, Dataset, Row, TableType } from "@prismengine/contracts-data";
 import {
   isEffectiveOn,
   OrganizationAdministrationToken,
@@ -33,16 +28,9 @@ import type {
   Position,
   PositionId,
 } from "@prismengine/contracts-organization";
-import {
-  StorageCapabilityToken,
-} from "@prismengine/contracts-storage";
-import type {
-  DocumentCollection,
-  StorageCapability,
-} from "@prismengine/contracts-storage";
-import {
-  definePlugin,
-} from "@prismengine/kernel";
+import { StorageCapabilityToken } from "@prismengine/contracts-storage";
+import type { DocumentCollection, StorageCapability } from "@prismengine/contracts-storage";
+import { definePlugin } from "@prismengine/kernel";
 import type {
   DiagnosticsSink,
   EventBus,
@@ -182,12 +170,21 @@ function deferredDataset(
   schema: TableType,
   loadRows: () => Promise<readonly Row[]>,
 ): Dataset {
+  let snapshot: Promise<Dataset> | undefined;
+  const materialize = (): Promise<Dataset> => {
+    snapshot ??= Promise.resolve()
+      .then(loadRows)
+      .then((rows) => datasetFromRows(name, schema, rows));
+    return snapshot;
+  };
+
   return {
     name,
     schema,
     async *stream(context: CallContext) {
-      const rows = await loadRows();
-      const materialized = datasetFromRows(name, schema, rows);
+      context.signal?.throwIfAborted();
+      const materialized = await materialize();
+      context.signal?.throwIfAborted();
       for await (const batch of materialized.stream(context)) yield batch;
     },
   };
@@ -242,14 +239,15 @@ function createOrganizationCapability(
 
     async findPeople(context, query) {
       context.signal?.throwIfAborted();
-      const employeeNumbers = query.employeeNumbers === undefined
-        ? undefined
-        : new Set(query.employeeNumbers);
+      const employeeNumbers =
+        query.employeeNumbers === undefined ? undefined : new Set(query.employeeNumbers);
       const people = await collections.people.find(context);
-      const filtered = people.filter((person) =>
-        (query.status === undefined || person.status === query.status)
-        && (query.nameContains === undefined || person.displayName.includes(query.nameContains))
-        && (employeeNumbers === undefined || employeeNumbers.has(person.employeeNumber))
+      const filtered = people.filter(
+        (person) =>
+          (query.status === undefined || person.status === query.status) &&
+          (query.nameContains === undefined ||
+            person.displayName.includes(query.nameContains)) &&
+          (employeeNumbers === undefined || employeeNumbers.has(person.employeeNumber)),
       );
       return query.limit === undefined ? filtered : filtered.slice(0, query.limit);
     },
@@ -265,8 +263,8 @@ function createOrganizationCapability(
     async getPosition(context, id) {
       context.signal?.throwIfAborted();
       const position = await collections.positions.get(context, id);
-      return position !== null
-        && isEffectiveOn(position.effectivePeriod, context.asOf.validAt)
+      return position !== null &&
+        isEffectiveOn(position.effectivePeriod, context.asOf.validAt)
         ? position
         : null;
     },
@@ -285,25 +283,28 @@ function createOrganizationCapability(
         await collections.units.find(context),
         context.asOf.validAt,
       );
-      return units.filter((unit) =>
-        (query.parentId === undefined || unit.parentId === query.parentId)
-        && (query.rootsOnly !== true || unit.parentId === undefined)
-        && (query.nameContains === undefined || unit.name.includes(query.nameContains))
-        && (codes === undefined || codes.has(unit.code))
+      return units.filter(
+        (unit) =>
+          (query.parentId === undefined || unit.parentId === query.parentId) &&
+          (query.rootsOnly !== true || unit.parentId === undefined) &&
+          (query.nameContains === undefined || unit.name.includes(query.nameContains)) &&
+          (codes === undefined || codes.has(unit.code)),
       );
     },
 
     async findPositions(context, query = {}) {
       context.signal?.throwIfAborted();
-      const unitIds = query.organizationUnitIds === undefined
-        ? undefined
-        : new Set(query.organizationUnitIds);
+      const unitIds =
+        query.organizationUnitIds === undefined
+          ? undefined
+          : new Set(query.organizationUnitIds);
       const codes = query.codes === undefined ? undefined : new Set(query.codes);
       const positions = await collections.positions.find(context);
-      return positions.filter((position) =>
-        isEffectiveOn(position.effectivePeriod, context.asOf.validAt)
-        && (unitIds === undefined || unitIds.has(position.organizationUnitId))
-        && (codes === undefined || codes.has(position.code))
+      return positions.filter(
+        (position) =>
+          isEffectiveOn(position.effectivePeriod, context.asOf.validAt) &&
+          (unitIds === undefined || unitIds.has(position.organizationUnitId)) &&
+          (codes === undefined || codes.has(position.code)),
       );
     },
 
@@ -340,12 +341,12 @@ function createOrganizationCapability(
 
     async findAssignments(context, query) {
       context.signal?.throwIfAborted();
-      const personIds = query.personIds === undefined
-        ? undefined
-        : new Set(query.personIds);
-      const unitIds = query.organizationUnitIds === undefined
-        ? undefined
-        : new Set(query.organizationUnitIds);
+      const personIds =
+        query.personIds === undefined ? undefined : new Set(query.personIds);
+      const unitIds =
+        query.organizationUnitIds === undefined
+          ? undefined
+          : new Set(query.organizationUnitIds);
 
       if (unitIds !== undefined && query.includeDescendants === true) {
         const units = await capability.findUnits(context);
@@ -355,34 +356,29 @@ function createOrganizationCapability(
       }
 
       const assignments = await collections.assignments.find(context);
-      return assignments.filter((assignment) =>
-        isEffectiveOn(assignment.effectivePeriod, context.asOf.validAt)
-        && (personIds === undefined || personIds.has(assignment.personId))
-        && (unitIds === undefined || unitIds.has(assignment.organizationUnitId))
-        && (query.kind === undefined || query.kind === assignment.kind)
+      return assignments.filter(
+        (assignment) =>
+          isEffectiveOn(assignment.effectivePeriod, context.asOf.validAt) &&
+          (personIds === undefined || personIds.has(assignment.personId)) &&
+          (unitIds === undefined || unitIds.has(assignment.organizationUnitId)) &&
+          (query.kind === undefined || query.kind === assignment.kind),
       );
     },
 
     datasets: {
       people(context, query: PersonQuery = {}) {
-        return deferredDataset(
-          "organization.people",
-          PEOPLE_SCHEMA,
-          async () => personRows(await capability.findPeople(context, query)),
+        return deferredDataset("organization.people", PEOPLE_SCHEMA, async () =>
+          personRows(await capability.findPeople(context, query)),
         );
       },
       units(context) {
-        return deferredDataset(
-          "organization.units",
-          UNITS_SCHEMA,
-          async () => unitRows(await capability.findUnits(context)),
+        return deferredDataset("organization.units", UNITS_SCHEMA, async () =>
+          unitRows(await capability.findUnits(context)),
         );
       },
       assignments(context, query: AssignmentQuery = {}) {
-        return deferredDataset(
-          "organization.assignments",
-          ASSIGNMENTS_SCHEMA,
-          async () => assignmentRows(await capability.findAssignments(context, query)),
+        return deferredDataset("organization.assignments", ASSIGNMENTS_SCHEMA, async () =>
+          assignmentRows(await capability.findAssignments(context, query)),
         );
       },
     },
@@ -439,8 +435,10 @@ function createOrganizationAdministration(
           { personId: id },
         );
       }
-      if (changes.employeeNumber !== undefined
-        && changes.employeeNumber !== current.employeeNumber) {
+      if (
+        changes.employeeNumber !== undefined &&
+        changes.employeeNumber !== current.employeeNumber
+      ) {
         const duplicate = await collections.people.find(context, {
           where: { employeeNumber: changes.employeeNumber },
           limit: 1,
@@ -465,8 +463,10 @@ function createOrganizationAdministration(
     async defineUnit(context, command: DefineUnitCommand) {
       context.signal?.throwIfAborted();
       assertPeriod(command.from, command.through);
-      if (command.parentId !== undefined
-        && await collections.units.get(context, command.parentId) === null) {
+      if (
+        command.parentId !== undefined &&
+        (await collections.units.get(context, command.parentId)) === null
+      ) {
         throw pluginError(
           OrganizationPluginDiagnosticCode.UNIT_NOT_FOUND,
           "Parent organization unit does not exist.",
@@ -491,7 +491,7 @@ function createOrganizationAdministration(
     async definePosition(context, command: DefinePositionCommand) {
       context.signal?.throwIfAborted();
       assertPeriod(command.from, command.through);
-      if (await collections.units.get(context, command.organizationUnitId) === null) {
+      if ((await collections.units.get(context, command.organizationUnitId)) === null) {
         throw pluginError(
           OrganizationPluginDiagnosticCode.UNIT_NOT_FOUND,
           "Position organization unit does not exist.",
@@ -516,22 +516,24 @@ function createOrganizationAdministration(
     async assignPerson(context, command) {
       context.signal?.throwIfAborted();
       assertPeriod(command.from, command.through);
-      if (await collections.people.get(context, command.personId) === null) {
+      if ((await collections.people.get(context, command.personId)) === null) {
         throw pluginError(
           OrganizationPluginDiagnosticCode.PERSON_NOT_FOUND,
           "Assigned person does not exist.",
           { personId: command.personId },
         );
       }
-      if (await collections.units.get(context, command.organizationUnitId) === null) {
+      if ((await collections.units.get(context, command.organizationUnitId)) === null) {
         throw pluginError(
           OrganizationPluginDiagnosticCode.UNIT_NOT_FOUND,
           "Assigned organization unit does not exist.",
           { organizationUnitId: command.organizationUnitId },
         );
       }
-      if (command.positionId !== undefined
-        && await collections.positions.get(context, command.positionId) === null) {
+      if (
+        command.positionId !== undefined &&
+        (await collections.positions.get(context, command.positionId)) === null
+      ) {
         throw pluginError(
           OrganizationPluginDiagnosticCode.POSITION_NOT_FOUND,
           "Assigned position does not exist.",
@@ -586,12 +588,15 @@ const ORGANIZATION_RESOURCE_TYPES: readonly ResourceTypeDefinition[] = [
     kind: "organization.person",
     title: "人员",
     config: {
-      schema: Type.Object({
-        employeeNumber: Type.String(NON_EMPTY_STRING),
-        displayName: Type.String(NON_EMPTY_STRING),
-        title: Type.Optional(Type.String()),
-        status: Type.Union([Type.Literal("active"), Type.Literal("inactive")]),
-      }, { additionalProperties: false }),
+      schema: Type.Object(
+        {
+          employeeNumber: Type.String(NON_EMPTY_STRING),
+          displayName: Type.String(NON_EMPTY_STRING),
+          title: Type.Optional(Type.String()),
+          status: Type.Union([Type.Literal("active"), Type.Literal("inactive")]),
+        },
+        { additionalProperties: false },
+      ),
       defaults: { status: "active" },
     },
     presentation: {
@@ -608,13 +613,16 @@ const ORGANIZATION_RESOURCE_TYPES: readonly ResourceTypeDefinition[] = [
     kind: "organization.unit",
     title: "组织机构",
     config: {
-      schema: Type.Object({
-        code: Type.String(NON_EMPTY_STRING),
-        name: Type.String(NON_EMPTY_STRING),
-        parentId: Type.Optional(Type.String()),
-        from: Type.String(DATE_STRING),
-        through: Type.Optional(Type.String(DATE_STRING)),
-      }, { additionalProperties: false }),
+      schema: Type.Object(
+        {
+          code: Type.String(NON_EMPTY_STRING),
+          name: Type.String(NON_EMPTY_STRING),
+          parentId: Type.Optional(Type.String()),
+          from: Type.String(DATE_STRING),
+          through: Type.Optional(Type.String(DATE_STRING)),
+        },
+        { additionalProperties: false },
+      ),
     },
     presentation: {
       fields: {
@@ -631,13 +639,16 @@ const ORGANIZATION_RESOURCE_TYPES: readonly ResourceTypeDefinition[] = [
     kind: "organization.position",
     title: "岗位",
     config: {
-      schema: Type.Object({
-        code: Type.String(NON_EMPTY_STRING),
-        name: Type.String(NON_EMPTY_STRING),
-        organizationUnitId: Type.String(NON_EMPTY_STRING),
-        from: Type.String(DATE_STRING),
-        through: Type.Optional(Type.String(DATE_STRING)),
-      }, { additionalProperties: false }),
+      schema: Type.Object(
+        {
+          code: Type.String(NON_EMPTY_STRING),
+          name: Type.String(NON_EMPTY_STRING),
+          organizationUnitId: Type.String(NON_EMPTY_STRING),
+          from: Type.String(DATE_STRING),
+          through: Type.Optional(Type.String(DATE_STRING)),
+        },
+        { additionalProperties: false },
+      ),
     },
     presentation: {
       fields: {
@@ -654,14 +665,17 @@ const ORGANIZATION_RESOURCE_TYPES: readonly ResourceTypeDefinition[] = [
     kind: "organization.assignment",
     title: "人员归属",
     config: {
-      schema: Type.Object({
-        personId: Type.String(NON_EMPTY_STRING),
-        organizationUnitId: Type.String(NON_EMPTY_STRING),
-        positionId: Type.Optional(Type.String()),
-        kind: Type.Union([Type.Literal("primary"), Type.Literal("secondary")]),
-        from: Type.String(DATE_STRING),
-        through: Type.Optional(Type.String(DATE_STRING)),
-      }, { additionalProperties: false }),
+      schema: Type.Object(
+        {
+          personId: Type.String(NON_EMPTY_STRING),
+          organizationUnitId: Type.String(NON_EMPTY_STRING),
+          positionId: Type.Optional(Type.String()),
+          kind: Type.Union([Type.Literal("primary"), Type.Literal("secondary")]),
+          from: Type.String(DATE_STRING),
+          through: Type.Optional(Type.String(DATE_STRING)),
+        },
+        { additionalProperties: false },
+      ),
     },
     presentation: {
       fields: {
@@ -680,6 +694,7 @@ const ORGANIZATION_RESOURCE_TYPES: readonly ResourceTypeDefinition[] = [
 export const organizationPlugin = definePlugin({
   id: "organization.basic",
   version: "0.1.0",
+  engineRange: "^0.1.20",
   description: "Effective-dated organization directory and administration.",
   requires: { storage: StorageCapabilityToken },
   provides: [OrganizationCapabilityToken, OrganizationAdministrationToken],

@@ -4,14 +4,26 @@
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "exports": { ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" } },
-  "files": ["dist", "LICENSE", "NOTICE"],
-  "scripts": { "build": "tsc --build" },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "scripts": {
+    "build": "tsc --build"
+  },
   "dependencies": {
     "@prismengine/contracts-artifact": "workspace:0.1.20",
     "@prismengine/contracts-data": "workspace:0.1.20",
     "@prismengine/contracts-project": "workspace:0.1.20",
     "@prismengine/contracts-storage": "workspace:0.1.20",
+    "@prismengine/contracts-worker": "workspace:0.1.20",
     "@prismengine/kernel": "workspace:0.1.20",
     "@prismengine/plugin-code-project": "workspace:0.1.20",
     "@prismengine/platform": "workspace:0.1.20",
@@ -22,6 +34,7 @@
     "@prismengine/plugin-project-build": "workspace:0.1.20",
     "@prismengine/plugin-storage-memory": "workspace:0.1.20",
     "@prismengine/plugin-storage-postgres": "workspace:0.1.20",
+    "@prismengine/plugin-worker-local": "workspace:0.1.20",
     "@prismengine/testing": "workspace:0.1.20"
   },
   "license": "Apache-2.0",
@@ -31,5 +44,7 @@
     "directory": "packages/plugin-project-runtime"
   },
   "homepage": "https://github.com/axuanran/prism#readme",
-  "bugs": { "url": "https://github.com/axuanran/prism/issues" }
+  "bugs": {
+    "url": "https://github.com/axuanran/prism/issues"
+  }
 }

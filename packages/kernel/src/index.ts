@@ -1,5 +1,6 @@
 export * from "./capability.js";
 export * from "./extension.js";
+export * from "./identity.js";
 export * from "./plugin.js";
 export * from "./context.js";
 export * from "./resolver.js";
@@ -11,3 +12,4 @@ export * from "./resource.js";
 export * from "./presentation.js";
 export * from "./events.js";
 export * from "./validation.js";
+export * from "./version.js";

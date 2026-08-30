@@ -40,14 +40,18 @@ describe("Visual Operator Contract V1", () => {
   });
 
   it("rejects operators whose cardinality is outside the V1 analyzer model", () => {
-    const result = validateMaterialManifest(manifest({
-      ...visualOperator,
-      cardinality: "ONE_TO_MANY",
-    }));
+    const result = validateMaterialManifest(
+      manifest({
+        ...visualOperator,
+        cardinality: "ONE_TO_MANY",
+      }),
+    );
     expect(result.valid).toBe(false);
-    expect(result.diagnostics).toEqual(expect.arrayContaining([
-      expect.objectContaining({ code: "MATERIAL_VISUAL_OPERATOR_UNSUPPORTED" }),
-    ]));
+    expect(result.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "MATERIAL_VISUAL_OPERATOR_UNSUPPORTED" }),
+      ]),
+    );
   });
 
   it("rejects cyclic node bindings", () => {
@@ -86,36 +90,43 @@ describe("Visual Operator Contract V1", () => {
     };
     const result = validateVisualPipelineSpec(pipeline);
     expect(result.valid).toBe(false);
-    expect(result.diagnostics).toEqual(expect.arrayContaining([
-      expect.objectContaining({ code: "VISUAL_PIPELINE_CYCLE" }),
-    ]));
+    expect(result.diagnostics).toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: "VISUAL_PIPELINE_CYCLE" })]),
+    );
   });
 
   it("derives decimal property fields without JavaScript numbers", () => {
-    expect(visualPropertyFields({
-      type: "object",
-      properties: {
-        coefficients: {
+    expect(
+      visualPropertyFields(
+        {
           type: "object",
           properties: {
-            DOCTOR: { type: "string", format: "decimal-string" },
+            coefficients: {
+              type: "object",
+              properties: {
+                DOCTOR: { type: "string", format: "decimal-string" },
+              },
+              required: ["DOCTOR"],
+            },
           },
-          required: ["DOCTOR"],
         },
-      },
-    }, {
-      properties: {
-        coefficients: {
+        {
           properties: {
-            DOCTOR: { label: "Doctor coefficient" },
+            coefficients: {
+              properties: {
+                DOCTOR: { label: "Doctor coefficient" },
+              },
+            },
           },
         },
+      ),
+    ).toEqual([
+      {
+        path: "/coefficients/DOCTOR",
+        label: "Doctor coefficient",
+        control: "decimal-string",
+        required: true,
       },
-    })).toEqual([{
-      path: "/coefficients/DOCTOR",
-      label: "Doctor coefficient",
-      control: "decimal-string",
-      required: true,
-    }]);
+    ]);
   });
 });

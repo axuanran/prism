@@ -49,11 +49,12 @@ describe("Arrow schema mapping", () => {
       kind: "table",
       nullable: false,
       annotations: { grain: "batch" },
-      semanticAnnotations: [
-        semanticAnnotation(TEST_ANNOTATION, { label: "table" }),
-      ],
+      semanticAnnotations: [semanticAnnotation(TEST_ANNOTATION, { label: "table" })],
       columns: [
-        { name: "nothing", type: { kind: "null", nullable: true, annotations: ALL_ANNOTATIONS } },
+        {
+          name: "nothing",
+          type: { kind: "null", nullable: true, annotations: ALL_ANNOTATIONS },
+        },
         {
           name: "enabled",
           type: { kind: "boolean", nullable: false, annotations: ALL_ANNOTATIONS },
@@ -66,9 +67,7 @@ describe("Arrow schema mapping", () => {
             precision: 28,
             scale: 2,
             annotations: ALL_ANNOTATIONS,
-            semanticAnnotations: [
-              semanticAnnotation(TEST_ANNOTATION, { label: "amount" }),
-            ],
+            semanticAnnotations: [semanticAnnotation(TEST_ANNOTATION, { label: "amount" })],
           },
         },
         { name: "label", type: { kind: "string", annotations: ALL_ANNOTATIONS } },
@@ -80,7 +79,11 @@ describe("Arrow schema mapping", () => {
     const physical = toArrowSchema(schema);
     expect(fromArrowSchema(physical)).toEqual(schema);
     expect(physical.fields[2]?.type).toBeInstanceOf(arrow.Int64);
-    expect(physical.fields[3]?.type).toMatchObject({ precision: 28, scale: 2, bitWidth: 128 });
+    expect(physical.fields[3]?.type).toMatchObject({
+      precision: 28,
+      scale: 2,
+      bitWidth: 128,
+    });
     expect(physical.fields[5]?.type).toBeInstanceOf(arrow.DateDay);
     expect(physical.fields[6]?.type).toMatchObject({
       unit: arrow.TimeUnit.MILLISECOND,
@@ -98,9 +101,9 @@ describe("Arrow schema mapping", () => {
       columns: [{ name: "nested", type: { kind: "string" as const } }],
     },
   ])("rejects a $kind column with a diagnostic", (unsupportedType) => {
-    const error = capturedPrismError(() => toArrowSchema(tableType([
-      { name: "unsupported", type: unsupportedType },
-    ])));
+    const error = capturedPrismError(() =>
+      toArrowSchema(tableType([{ name: "unsupported", type: unsupportedType }])),
+    );
 
     expect(error.diagnostics).toEqual([
       expect.objectContaining({
@@ -137,24 +140,20 @@ describe("Arrow decimal batches", () => {
     expect(vector?.type).toMatchObject({ precision: 28, scale: 2, bitWidth: 128 });
     const physical = vector?.get(0);
     expect(physical).toBeInstanceOf(Uint32Array);
-    expect(
-      arrow.util.bigNumToString(arrow.util.BN.decimal(physical as Uint32Array)),
-    ).toBe("1234567890123456789012345678");
+    expect(arrow.util.bigNumToString(arrow.util.BN.decimal(physical as Uint32Array))).toBe(
+      "1234567890123456789012345678",
+    );
 
     const output = await collectRows(dataset, context);
-    expect(output.map((row) => row.amount instanceof D ? row.amount.toFixed(2) : null)).toEqual([
-      "12345678901234567890123456.78",
-      "0.01",
-      "-999999999999999999999999.99",
-    ]);
+    expect(
+      output.map((row) => (row.amount instanceof D ? row.amount.toFixed(2) : null)),
+    ).toEqual(["12345678901234567890123456.78", "0.01", "-999999999999999999999999.99"]);
   });
 
   it("reports rescaling that would lose digits instead of truncating", () => {
-    const error = capturedPrismError(() => datasetFromRows(
-      "lossy",
-      decimalSchema,
-      [{ amount: new D("1.001") }],
-    ));
+    const error = capturedPrismError(() =>
+      datasetFromRows("lossy", decimalSchema, [{ amount: new D("1.001") }]),
+    );
 
     expect(error.diagnostics).toEqual([
       expect.objectContaining({

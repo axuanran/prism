@@ -1,0 +1,197 @@
+{{- $evidenceFiles := list -}}
+{{- $evidenceHashes := list -}}
+{{- range .Values.evidence.files -}}
+{{- $evidenceFiles = append $evidenceFiles (printf "/var/run/prism/evidence/%s" .name) -}}
+{{- $evidenceHashes = append $evidenceHashes .sha256 -}}
+{{- end -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "prism.fullname" . }}
+  labels:
+    {{- include "prism.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "prism.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        {{- include "prism.labels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "prism.serviceAccountName" . }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: {{ include "prism.name" . }}
+                    app.kubernetes.io/instance: {{ .Release.Name }}
+      containers:
+        - name: host
+          image: "{{ required "hostImage.repository is required" .Values.hostImage.repository }}@{{ required "hostImage.digest is required" .Values.hostImage.digest }}"
+          imagePullPolicy: {{ .Values.hostImage.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - name: http
+              containerPort: {{ .Values.http.port }}
+              protocol: TCP
+          env:
+            - name: PRISM_DEPLOYMENT_ID
+              value: {{ .Values.deployment.id | quote }}
+            - name: PRISM_DEPLOYMENT_ENVIRONMENT
+              value: {{ .Values.deployment.environment | quote }}
+            - name: PRISM_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.postgres.secretName }}
+                  key: {{ .Values.postgres.urlKey }}
+            - name: PRISM_DATABASE_SCHEMA
+              value: {{ .Values.postgres.schema | quote }}
+            - name: PRISM_HTTP_HOST
+              value: "0.0.0.0"
+            - name: PRISM_HTTP_PORT
+              value: {{ .Values.http.port | quote }}
+            - name: PRISM_OIDC_ISSUER
+              value: {{ .Values.oidc.issuer | quote }}
+            - name: PRISM_OIDC_AUDIENCE
+              value: {{ .Values.oidc.audience | quote }}
+            - name: PRISM_OIDC_JWKS_URI
+              value: {{ .Values.oidc.jwksUri | quote }}
+            - name: PRISM_OIDC_ROLES_CLAIM
+              value: {{ .Values.oidc.rolesClaim | quote }}
+            - name: PRISM_OIDC_PERMISSIONS_CLAIM
+              value: {{ .Values.oidc.permissionsClaim | quote }}
+            - name: PRISM_S3_REGION
+              value: {{ .Values.s3.region | quote }}
+            - name: PRISM_S3_ENDPOINT
+              value: {{ .Values.s3.endpoint | quote }}
+            - name: PRISM_S3_FORCE_PATH_STYLE
+              value: {{ .Values.s3.forcePathStyle | quote }}
+            - name: PRISM_ARTIFACT_BUCKET
+              value: {{ .Values.s3.artifactBucket | quote }}
+            - name: PRISM_ARTIFACT_PREFIX
+              value: {{ .Values.s3.artifactPrefix | quote }}
+            - name: PRISM_ARTIFACT_RETENTION_DAYS
+              value: {{ .Values.s3.artifactRetentionDays | quote }}
+            - name: PRISM_AUDIT_BUCKET
+              value: {{ .Values.s3.auditBucket | quote }}
+            - name: PRISM_AUDIT_PREFIX
+              value: {{ .Values.s3.auditPrefix | quote }}
+            - name: PRISM_AUDIT_RETENTION_DAYS
+              value: {{ .Values.s3.auditRetentionDays | quote }}
+            - name: PRISM_AUDIT_EXPORT_INTERVAL_MS
+              value: {{ .Values.s3.auditExportIntervalMs | quote }}
+            - name: PRISM_VAULT_ADDRESS
+              value: {{ .Values.vault.address | quote }}
+            - name: PRISM_VAULT_AUTH
+              value: kubernetes
+            - name: PRISM_VAULT_NAMESPACE
+              value: {{ .Values.vault.namespace | quote }}
+            - name: PRISM_VAULT_KV_MOUNT
+              value: {{ .Values.vault.kvMount | quote }}
+            - name: PRISM_VAULT_KUBERNETES_ROLE
+              value: {{ .Values.vault.kubernetesRole | quote }}
+            - name: PRISM_VAULT_KUBERNETES_MOUNT
+              value: {{ .Values.vault.kubernetesMount | quote }}
+            - name: PRISM_WORKER_IMAGE
+              value: "{{ required "workerImage.repository is required" .Values.workerImage.repository }}@{{ required "workerImage.digest is required" .Values.workerImage.digest }}"
+            - name: PRISM_WORKER_USER
+              value: {{ .Values.worker.user | quote }}
+            - name: PRISM_WORKER_MEMORY_BYTES
+              value: {{ .Values.worker.memoryBytes | quote }}
+            - name: PRISM_WORKER_NANO_CPUS
+              value: {{ .Values.worker.nanoCpus | quote }}
+            - name: PRISM_WORKER_PIDS_LIMIT
+              value: {{ .Values.worker.pidsLimit | quote }}
+            - name: PRISM_WORKER_TMPFS_BYTES
+              value: {{ .Values.worker.tmpfsBytes | quote }}
+            - name: PRISM_WORKER_STATIC_MOUNTS_JSON
+              value: {{ toJson .Values.worker.staticMounts | quote }}
+            - name: PRISM_DOCKER_REMOTE_URL
+              value: {{ .Values.worker.dockerRemoteUrl | quote }}
+            - name: PRISM_DOCKER_CA_FILE
+              value: "/var/run/prism/docker/{{ .Values.worker.dockerCaKey }}"
+            - name: PRISM_DOCKER_CERT_FILE
+              value: "/var/run/prism/docker/{{ .Values.worker.dockerCertificateKey }}"
+            - name: PRISM_DOCKER_KEY_FILE
+              value: "/var/run/prism/docker/{{ .Values.worker.dockerPrivateKeyKey }}"
+            - name: PRISM_OTEL_SERVICE_NAME
+              value: {{ .Values.otel.serviceName | quote }}
+            - name: PRISM_OTEL_TRACE_ENDPOINT
+              value: {{ .Values.otel.traceEndpoint | quote }}
+            - name: PRISM_OTEL_METRIC_ENDPOINT
+              value: {{ .Values.otel.metricEndpoint | quote }}
+            - name: PRISM_OTEL_HEALTH_URL
+              value: {{ .Values.otel.healthUrl | quote }}
+            - name: PRISM_OTEL_METRIC_INTERVAL_MS
+              value: {{ .Values.otel.metricIntervalMs | quote }}
+            - name: PRISM_OTEL_HEADERS_JSON
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.otel.headersSecretName }}
+                  key: {{ .Values.otel.headersSecretKey }}
+            - name: PRISM_EXTERNAL_EVIDENCE_FILES
+              value: {{ join "," $evidenceFiles | quote }}
+            - name: PRISM_EXTERNAL_EVIDENCE_SHA256
+              value: {{ join "," $evidenceHashes | quote }}
+            - name: PRISM_EVIDENCE_MAX_AGE_DAYS
+              value: {{ .Values.evidence.maxAgeDays | quote }}
+            - name: PRISM_APPROVED_EXTERNAL_MIGRATIONS
+              value: {{ join "," .Values.migrations.approvedExternal | quote }}
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: docker-tls
+              mountPath: /var/run/prism/docker
+              readOnly: true
+            - name: evidence
+              mountPath: /var/run/prism/evidence
+              readOnly: true
+      volumes:
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 64Mi
+        - name: docker-tls
+          secret:
+            secretName: {{ .Values.worker.dockerTlsSecretName }}
+            defaultMode: 0440
+        - name: evidence
+          secret:
+            secretName: {{ .Values.evidence.secretName }}
+            defaultMode: 0440

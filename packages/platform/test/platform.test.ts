@@ -12,6 +12,7 @@ import {
 const consumer = definePlugin({
   id: "platform-analysis-consumer",
   version: "0.1.0",
+  engineRange: "^0.1.20",
   requires: {
     quantity: QuantityCapabilityToken,
     grain: GrainCapabilityToken,

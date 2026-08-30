@@ -42,11 +42,31 @@ export type NodeTracePhase = "ok" | "skipped" | "error";
 
 /** Operation-specific trace detail. Discriminated so the UI can render it. */
 export type NodeTraceDetail =
-  | { readonly kind: "join"; readonly expected: string; readonly actual: string; readonly unmatchedLeft: number; readonly unmatchedRight: number }
-  | { readonly kind: "lookup"; readonly matched: number; readonly missing: number; readonly ambiguous: number }
-  | { readonly kind: "decision"; readonly matchedRules: Readonly<Record<string, number>>; readonly unmatched: number }
+  | {
+      readonly kind: "join";
+      readonly expected: string;
+      readonly actual: string;
+      readonly unmatchedLeft: number;
+      readonly unmatchedRight: number;
+    }
+  | {
+      readonly kind: "lookup";
+      readonly matched: number;
+      readonly missing: number;
+      readonly ambiguous: number;
+    }
+  | {
+      readonly kind: "decision";
+      readonly matchedRules: Readonly<Record<string, number>>;
+      readonly unmatched: number;
+    }
   | { readonly kind: "aggregate"; readonly groups: number }
-  | { readonly kind: "allocate"; readonly inputTotal: string; readonly outputTotal: string; readonly remainder: string }
+  | {
+      readonly kind: "allocate";
+      readonly inputTotal: string;
+      readonly outputTotal: string;
+      readonly remainder: string;
+    }
   | { readonly kind: "validate"; readonly failures: number }
   | { readonly kind: "generic" };
 

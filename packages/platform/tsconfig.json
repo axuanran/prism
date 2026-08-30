@@ -5,9 +5,7 @@
     "outDir": "./dist",
     "tsBuildInfoFile": "./dist/.tsbuildinfo"
   },
-  "include": [
-    "src/**/*.ts"
-  ],
+  "include": ["src/**/*.ts"],
   "references": [
     {
       "path": "../plugin-sdk"
@@ -38,6 +36,9 @@
     },
     {
       "path": "../plugin-code-project"
+    },
+    {
+      "path": "../plugin-secret-local"
     }
   ]
 }

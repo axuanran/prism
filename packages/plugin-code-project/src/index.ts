@@ -4,6 +4,7 @@ import {
   PrismError,
   diagnostic,
   hasErrors,
+  isPortableRelativePath,
   type CallContext,
   type Diagnostic,
 } from "@prismengine/contracts-data";
@@ -34,49 +35,75 @@ import {
   type Resource,
   type ResourceTypeDefinition,
 } from "@prismengine/kernel";
-import {
-  HttpRouteExtensionPoint,
-  type HttpRoute,
-} from "@prismengine/plugin-http-fastify";
+import { HttpRouteExtensionPoint, type HttpRoute } from "@prismengine/plugin-http-fastify";
 
 export const CODE_PROJECT_KIND = "project.code-project";
 export const PROJECT_SOURCE_KIND = "project.source";
 export const VISUAL_PIPELINE_KIND = "project.visual-pipeline";
 const SOURCE_DRAFT_COLLECTION = "project.source-drafts";
+export const PROJECT_SOURCE_MAX_FILES = 256;
+export const PROJECT_SOURCE_MAX_PATH_LENGTH = 512;
+export const PROJECT_SOURCE_MAX_MEDIA_TYPE_LENGTH = 128;
+export const PROJECT_SOURCE_MAX_FILE_BYTES = 4 * 1_024 * 1_024;
+export const PROJECT_SOURCE_MAX_TOTAL_BYTES = 16 * 1_024 * 1_024;
 const ALLOWED_EXTENSIONS = new Set([
-  ".ts", ".tsx", ".js", ".jsx", ".json", ".css", ".md", ".sql", ".yaml", ".yml",
+  ".ts",
+  ".tsx",
+  ".js",
+  ".jsx",
+  ".json",
+  ".css",
+  ".md",
+  ".sql",
+  ".yaml",
+  ".yml",
 ]);
 
-const CodeProjectSchema = Type.Object({
-  slug: Type.String({ pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$" }),
-  name: Type.String({ minLength: 1 }),
-  sourceId: Type.String({ minLength: 1 }),
-  description: Type.Optional(Type.String()),
-}, { additionalProperties: false });
+const CodeProjectSchema = Type.Object(
+  {
+    slug: Type.String({ pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$" }),
+    name: Type.String({ minLength: 1 }),
+    sourceId: Type.String({ minLength: 1 }),
+    description: Type.Optional(Type.String()),
+  },
+  { additionalProperties: false },
+);
 
-const ProjectSourceSchema = Type.Object({
-  projectId: Type.String({ minLength: 1 }),
-  fingerprint: Type.String({ pattern: "^[0-9a-f]{64}$" }),
-  files: Type.Array(Type.Object({
-    path: Type.String({ minLength: 1 }),
-    mediaType: Type.String({ minLength: 1 }),
-    content: Type.String(),
-  }, { additionalProperties: false }), { minItems: 1 }),
-}, { additionalProperties: false });
+const ProjectSourceSchema = Type.Object(
+  {
+    projectId: Type.String({ minLength: 1 }),
+    fingerprint: Type.String({ pattern: "^[0-9a-f]{64}$" }),
+    files: Type.Array(
+      Type.Object(
+        {
+          path: Type.String({ minLength: 1 }),
+          mediaType: Type.String({ minLength: 1 }),
+          content: Type.String(),
+        },
+        { additionalProperties: false },
+      ),
+      { minItems: 1 },
+    ),
+  },
+  { additionalProperties: false },
+);
 export interface PublishedVisualPipeline extends VisualPipelineSpec {
   readonly configurationFingerprint: string;
   readonly fingerprint: string;
 }
-const VisualPipelineSchema = Type.Object({
-  schemaVersion: Type.Literal("1.0.0"),
-  code: Type.String({ minLength: 1 }),
-  configurationFingerprint: Type.String({ pattern: "^[0-9a-f]{64}$" }),
-  fingerprint: Type.String({ pattern: "^[0-9a-f]{64}$" }),
-  name: Type.String({ minLength: 1 }),
-  inputs: Type.Array(Type.Any()),
-  nodes: Type.Array(Type.Any()),
-  outputs: Type.Array(Type.Any()),
-}, { additionalProperties: false });
+const VisualPipelineSchema = Type.Object(
+  {
+    schemaVersion: Type.Literal("1.0.0"),
+    code: Type.String({ minLength: 1 }),
+    configurationFingerprint: Type.String({ pattern: "^[0-9a-f]{64}$" }),
+    fingerprint: Type.String({ pattern: "^[0-9a-f]{64}$" }),
+    name: Type.String({ minLength: 1 }),
+    inputs: Type.Array(Type.Any()),
+    nodes: Type.Array(Type.Any()),
+    outputs: Type.Array(Type.Any()),
+  },
+  { additionalProperties: false },
+);
 
 export interface PublishedProjectSource extends ProjectSourceDefinition {
   readonly fingerprint: string;
@@ -99,14 +126,20 @@ export const ProjectSourceResource: ResourceTypeDefinition<PublishedProjectSourc
     validate(spec) {
       const result = validateFiles(spec.files);
       return {
-        valid: result.valid && fingerprintFiles(spec.projectId, result.files) === spec.fingerprint,
-        diagnostics: result.valid && fingerprintFiles(spec.projectId, result.files) !== spec.fingerprint
-          ? [diagnostic(
-              "PROJECT_SOURCE_FINGERPRINT_MISMATCH",
-              "Published source fingerprint does not match its canonical tree.",
-              { path: "/fingerprint" },
-            )]
-          : result.diagnostics,
+        valid:
+          result.valid &&
+          fingerprintFiles(spec.projectId, result.files) === spec.fingerprint,
+        diagnostics:
+          result.valid &&
+          fingerprintFiles(spec.projectId, result.files) !== spec.fingerprint
+            ? [
+                diagnostic(
+                  "PROJECT_SOURCE_FINGERPRINT_MISMATCH",
+                  "Published source fingerprint does not match its canonical tree.",
+                  { path: "/fingerprint" },
+                ),
+              ]
+            : result.diagnostics,
       };
     },
   },
@@ -122,35 +155,42 @@ export const VisualPipelineResource: ResourceTypeDefinition<PublishedVisualPipel
       const semantic = validateVisualPipelineSpec(spec);
       const diagnostics = [...semantic.diagnostics];
       if (spec.configurationFingerprint !== fingerprintVisualConfiguration(spec)) {
-        diagnostics.push(diagnostic(
-          "VISUAL_PIPELINE_CONFIGURATION_FINGERPRINT_MISMATCH",
-          "Visual Pipeline configuration fingerprint does not match node configuration.",
-          { path: "/configurationFingerprint" },
-        ));
+        diagnostics.push(
+          diagnostic(
+            "VISUAL_PIPELINE_CONFIGURATION_FINGERPRINT_MISMATCH",
+            "Visual Pipeline configuration fingerprint does not match node configuration.",
+            { path: "/configurationFingerprint" },
+          ),
+        );
       }
       if (spec.fingerprint !== fingerprintVisualPipeline(spec)) {
-        diagnostics.push(diagnostic(
-          "VISUAL_PIPELINE_FINGERPRINT_MISMATCH",
-          "Visual Pipeline fingerprint does not match canonical content.",
-          { path: "/fingerprint" },
-        ));
+        diagnostics.push(
+          diagnostic(
+            "VISUAL_PIPELINE_FINGERPRINT_MISMATCH",
+            "Visual Pipeline fingerprint does not match canonical content.",
+            { path: "/fingerprint" },
+          ),
+        );
       }
       return { valid: diagnostics.length === 0, diagnostics };
     },
   },
-  exposure: { configuration: true, frontend: true },
+  exposure: { configuration: false, frontend: true },
 };
 
 export function fingerprintVisualConfiguration(pipeline: VisualPipelineSpec): string {
-  return fingerprintJson(pipeline.nodes
-    .map((node) => ({ nodeId: node.nodeId, configuration: node.configuration }))
-    .sort((left, right) => left.nodeId.localeCompare(right.nodeId)));
+  return fingerprintJson(
+    pipeline.nodes
+      .map((node) => ({ nodeId: node.nodeId, configuration: node.configuration }))
+      .sort((left, right) => left.nodeId.localeCompare(right.nodeId)),
+  );
 }
 
 export function fingerprintVisualPipeline(pipeline: VisualPipelineSpec): string {
   return fingerprintJson({
     schemaVersion: pipeline.schemaVersion,
     code: pipeline.code,
+    name: pipeline.name,
     inputs: pipeline.inputs,
     nodes: pipeline.nodes,
     outputs: pipeline.outputs,
@@ -160,16 +200,18 @@ function fingerprintJson(value: unknown): string {
   const canonical = (item: unknown): unknown => {
     if (Array.isArray(item)) return item.map(canonical);
     if (item !== null && typeof item === "object") {
-      return Object.fromEntries(Object.entries(item as Record<string, unknown>)
-        .sort(([left], [right]) => left.localeCompare(right))
-        .map(([key, child]) => [key, canonical(child)]));
+      return Object.fromEntries(
+        Object.entries(item as Record<string, unknown>)
+          .sort(([left], [right]) => left.localeCompare(right))
+          .map(([key, child]) => [key, canonical(child)]),
+      );
     }
     return item;
   };
-  return createHash("sha256").update(JSON.stringify(canonical(value))).digest("hex");
+  return createHash("sha256")
+    .update(JSON.stringify(canonical(value)))
+    .digest("hex");
 }
-
-
 
 export interface CreateCodeProjectCommand {
   readonly id?: string;
@@ -196,7 +238,10 @@ export interface ProjectSourceDiff {
 export interface CodeProjectCapability {
   list(context: CallContext): Promise<readonly Resource<CodeProjectDefinition>[]>;
   get(context: CallContext, id: string): Promise<Resource<CodeProjectDefinition> | null>;
-  getBySlug(context: CallContext, slug: string): Promise<Resource<CodeProjectDefinition> | null>;
+  getBySlug(
+    context: CallContext,
+    slug: string,
+  ): Promise<Resource<CodeProjectDefinition> | null>;
   create(
     context: CallContext,
     command: CreateCodeProjectCommand,
@@ -245,6 +290,7 @@ export const CodeProjectCapabilityToken = defineCapability<CodeProjectCapability
 export const codeProjectPlugin = definePlugin({
   id: "project.code",
   version: "0.1.20",
+  engineRange: "^0.1.20",
   requires: {
     storage: StorageCapabilityToken,
     atomicWrite: AtomicWriteCapabilityToken,
@@ -262,9 +308,6 @@ export const codeProjectPlugin = definePlugin({
     for (const route of codeProjectRoutes(capability)) {
       context.extensions.contribute(HttpRouteExtensionPoint, route);
     }
-    for (const route of visualPipelineRoutes(context.dependencies.storage)) {
-      context.extensions.contribute(HttpRouteExtensionPoint, route);
-    }
   },
 });
 
@@ -279,10 +322,10 @@ class DefaultCodeProjectCapability implements CodeProjectCapability {
   }
 
   async list(context: CallContext): Promise<readonly Resource<CodeProjectDefinition>[]> {
-    return await this.storage.resources.list(context, {
+    return (await this.storage.resources.list(context, {
       kind: CODE_PROJECT_KIND,
       status: "published",
-    }) as readonly Resource<CodeProjectDefinition>[];
+    })) as readonly Resource<CodeProjectDefinition>[];
   }
 
   async get(
@@ -315,24 +358,29 @@ class DefaultCodeProjectCapability implements CodeProjectCapability {
     }
     const projectId = command.id ?? crypto.randomUUID();
     const sourceId = `${projectId}:source`;
-    const projectDraft = await this.storage.resources.saveDraft<CodeProjectDefinition>(context, {
-      kind: CODE_PROJECT_KIND,
-      id: projectId,
-      name: command.name,
-      spec: {
-        slug: command.slug,
+    const normalized = requireValidFiles(command.files ?? defaultFiles(command));
+    const projectDraft = await this.storage.resources.saveDraft<CodeProjectDefinition>(
+      context,
+      {
+        kind: CODE_PROJECT_KIND,
+        id: projectId,
         name: command.name,
-        sourceId,
-        ...(command.description === undefined ? {} : { description: command.description }),
+        spec: {
+          slug: command.slug,
+          name: command.name,
+          sourceId,
+          ...(command.description === undefined
+            ? {}
+            : { description: command.description }),
+        },
       },
-    });
+    );
     const project = await this.storage.resources.publish<CodeProjectDefinition>(
       context,
       CODE_PROJECT_KIND,
       projectId,
       projectDraft.revision,
     );
-    const normalized = requireValidFiles(command.files ?? defaultFiles(command));
     const now = new Date().toISOString();
     const draft: ProjectSourceDraft = {
       id: projectId,
@@ -346,11 +394,13 @@ class DefaultCodeProjectCapability implements CodeProjectCapability {
     };
     await this.atomicWrite.execute(context, {
       requestId: `create-project-draft:${projectId}`,
-      preconditions: [{
-        kind: "document-absent",
-        collection: SOURCE_DRAFT_COLLECTION,
-        id: projectId,
-      }],
+      preconditions: [
+        {
+          kind: "document-absent",
+          collection: SOURCE_DRAFT_COLLECTION,
+          id: projectId,
+        },
+      ],
       operations: [putDraft(draft, "create")],
     });
     return { project, draft };
@@ -386,19 +436,22 @@ class DefaultCodeProjectCapability implements CodeProjectCapability {
     try {
       await this.atomicWrite.execute(context, {
         requestId: `save-project-draft:${projectId}:${next.draftVersion}`,
-        preconditions: [{
-          kind: "document-present",
-          collection: SOURCE_DRAFT_COLLECTION,
-          id: projectId,
-          fields: { draftVersion: expectedDraftVersion },
-        }],
+        preconditions: [
+          {
+            kind: "document-present",
+            collection: SOURCE_DRAFT_COLLECTION,
+            id: projectId,
+            fields: { draftVersion: expectedDraftVersion },
+          },
+        ],
         operations: [putDraft(next, "replace")],
       });
     } catch (error) {
       if (
         error instanceof PrismError &&
-        error.diagnostics.some((item) =>
-          item.code === StorageDiagnosticCode.ATOMIC_WRITE_PRECONDITION_FAILED)
+        error.diagnostics.some(
+          (item) => item.code === StorageDiagnosticCode.ATOMIC_WRITE_PRECONDITION_FAILED,
+        )
       ) {
         throw PrismError.of(
           "PROJECT_SOURCE_DRAFT_CONFLICT",
@@ -437,16 +490,19 @@ class DefaultCodeProjectCapability implements CodeProjectCapability {
     const files = requireValidFiles(draft.files);
     parseProjectManifest(files);
     parseDeclaredMaterials(files);
-    const sourceDraft = await this.storage.resources.saveDraft<PublishedProjectSource>(context, {
-      kind: PROJECT_SOURCE_KIND,
-      id: project.spec.sourceId,
-      name: `${project.spec.name} Source`,
-      spec: {
-        projectId,
-        files,
-        fingerprint: fingerprintFiles(projectId, files),
+    const sourceDraft = await this.storage.resources.saveDraft<PublishedProjectSource>(
+      context,
+      {
+        kind: PROJECT_SOURCE_KIND,
+        id: project.spec.sourceId,
+        name: `${project.spec.name} Source`,
+        spec: {
+          projectId,
+          files,
+          fingerprint: fingerprintFiles(projectId, files),
+        },
       },
-    });
+    );
     const published = await this.storage.resources.publish<PublishedProjectSource>(
       context,
       PROJECT_SOURCE_KIND,
@@ -463,12 +519,14 @@ class DefaultCodeProjectCapability implements CodeProjectCapability {
     };
     await this.atomicWrite.execute(context, {
       requestId: `publish-project-source:${projectId}:${published.revision}`,
-      preconditions: [{
-        kind: "document-present",
-        collection: SOURCE_DRAFT_COLLECTION,
-        id: projectId,
-        fields: { draftVersion: expectedDraftVersion },
-      }],
+      preconditions: [
+        {
+          kind: "document-present",
+          collection: SOURCE_DRAFT_COLLECTION,
+          id: projectId,
+          fields: { draftVersion: expectedDraftVersion },
+        },
+      ],
       operations: [putDraft(next, "replace")],
     });
     return published;
@@ -493,11 +551,11 @@ class DefaultCodeProjectCapability implements CodeProjectCapability {
     projectId: string,
   ): Promise<readonly Resource<PublishedProjectSource>[]> {
     const project = await this.requiredProject(context, projectId);
-    return await this.storage.resources.listRevisions(
+    return (await this.storage.resources.listRevisions(
       context,
       PROJECT_SOURCE_KIND,
       project.spec.sourceId,
-    ) as readonly Resource<PublishedProjectSource>[];
+    )) as readonly Resource<PublishedProjectSource>[];
   }
 
   async diff(
@@ -514,16 +572,21 @@ class DefaultCodeProjectCapability implements CodeProjectCapability {
     const b = new Map(right.map((file) => [file.path, file.content]));
     const added = [...b.keys()].filter((path) => !a.has(path));
     const removed = [...a.keys()].filter((path) => !b.has(path));
-    const changed = [...b.keys()].filter((path) =>
-      a.has(path) && a.get(path) !== b.get(path));
-    const leftMaterials = new Map(parseDeclaredMaterials(left).map((item) => [
-      `${item.id}@${item.version}`,
-      JSON.stringify(item),
-    ]));
-    const rightMaterials = new Map(parseDeclaredMaterials(right).map((item) => [
-      `${item.id}@${item.version}`,
-      JSON.stringify(item),
-    ]));
+    const changed = [...b.keys()].filter(
+      (path) => a.has(path) && a.get(path) !== b.get(path),
+    );
+    const leftMaterials = new Map(
+      parseDeclaredMaterials(left).map((item) => [
+        `${item.id}@${item.version}`,
+        JSON.stringify(item),
+      ]),
+    );
+    const rightMaterials = new Map(
+      parseDeclaredMaterials(right).map((item) => [
+        `${item.id}@${item.version}`,
+        JSON.stringify(item),
+      ]),
+    );
     return {
       projectId,
       from,
@@ -534,8 +597,12 @@ class DefaultCodeProjectCapability implements CodeProjectCapability {
       materialChanges: {
         added: [...rightMaterials.keys()].filter((id) => !leftMaterials.has(id)).sort(),
         removed: [...leftMaterials.keys()].filter((id) => !rightMaterials.has(id)).sort(),
-        changed: [...rightMaterials.keys()].filter((id) =>
-          leftMaterials.has(id) && leftMaterials.get(id) !== rightMaterials.get(id)).sort(),
+        changed: [...rightMaterials.keys()]
+          .filter(
+            (id) =>
+              leftMaterials.has(id) && leftMaterials.get(id) !== rightMaterials.get(id),
+          )
+          .sort(),
       },
     };
   }
@@ -578,7 +645,100 @@ function validateFiles(files: readonly ProjectSourceFile[]): {
   readonly files: readonly ProjectSourceFile[];
   readonly diagnostics: readonly Diagnostic[];
 } {
+  if (files.length > PROJECT_SOURCE_MAX_FILES) {
+    return {
+      valid: false,
+      files: [],
+      diagnostics: [
+        diagnostic(
+          "PROJECT_SOURCE_FILE_COUNT_LIMIT",
+          `Project Source cannot exceed ${PROJECT_SOURCE_MAX_FILES} files.`,
+          {
+            path: `/files/${PROJECT_SOURCE_MAX_FILES}`,
+            details: {
+              maximum: PROJECT_SOURCE_MAX_FILES,
+              actual: files.length,
+            },
+          },
+        ),
+      ],
+    };
+  }
+
   const diagnostics: Diagnostic[] = [];
+  let totalBytes = 0;
+  let totalLimitReported = false;
+  for (const [index, file] of files.entries()) {
+    if (file.path.length > PROJECT_SOURCE_MAX_PATH_LENGTH) {
+      diagnostics.push(
+        diagnostic(
+          "PROJECT_SOURCE_PATH_LENGTH_LIMIT",
+          `Project file path cannot exceed ${PROJECT_SOURCE_MAX_PATH_LENGTH} characters.`,
+          {
+            path: `/files/${index}/path`,
+            details: {
+              maximum: PROJECT_SOURCE_MAX_PATH_LENGTH,
+              actual: file.path.length,
+            },
+          },
+        ),
+      );
+    }
+    if (file.mediaType.length > PROJECT_SOURCE_MAX_MEDIA_TYPE_LENGTH) {
+      diagnostics.push(
+        diagnostic(
+          "PROJECT_SOURCE_MEDIA_TYPE_LIMIT",
+          `Project file media type cannot exceed ${PROJECT_SOURCE_MAX_MEDIA_TYPE_LENGTH} characters.`,
+          {
+            path: `/files/${index}/mediaType`,
+            details: {
+              maximum: PROJECT_SOURCE_MAX_MEDIA_TYPE_LENGTH,
+              actual: file.mediaType.length,
+            },
+          },
+        ),
+      );
+    }
+    const bytes = Buffer.byteLength(file.content, "utf8");
+    if (bytes > PROJECT_SOURCE_MAX_FILE_BYTES) {
+      diagnostics.push(
+        diagnostic(
+          "PROJECT_SOURCE_FILE_SIZE_LIMIT",
+          `Project file cannot exceed ${PROJECT_SOURCE_MAX_FILE_BYTES} UTF-8 bytes.`,
+          {
+            path: `/files/${index}/content`,
+            details: {
+              filePath: file.path.slice(0, PROJECT_SOURCE_MAX_PATH_LENGTH),
+              maximum: PROJECT_SOURCE_MAX_FILE_BYTES,
+              actual: bytes,
+            },
+          },
+        ),
+      );
+    }
+    totalBytes += bytes;
+    if (!totalLimitReported && totalBytes > PROJECT_SOURCE_MAX_TOTAL_BYTES) {
+      totalLimitReported = true;
+      diagnostics.push(
+        diagnostic(
+          "PROJECT_SOURCE_TOTAL_SIZE_LIMIT",
+          `Project Source cannot exceed ${PROJECT_SOURCE_MAX_TOTAL_BYTES} UTF-8 bytes.`,
+          {
+            path: `/files/${index}/content`,
+            details: {
+              filePath: file.path.slice(0, PROJECT_SOURCE_MAX_PATH_LENGTH),
+              maximum: PROJECT_SOURCE_MAX_TOTAL_BYTES,
+              actual: totalBytes,
+            },
+          },
+        ),
+      );
+    }
+  }
+  if (diagnostics.length > 0) {
+    return { valid: false, files: [], diagnostics };
+  }
+
   const canonical: ProjectSourceFile[] = [];
   const exact = new Set<string>();
   const folded = new Set<string>();
@@ -587,23 +747,27 @@ function validateFiles(files: readonly ProjectSourceFile[]): {
     const extensionIndex = path.lastIndexOf(".");
     const extension = extensionIndex < 0 ? "" : path.slice(extensionIndex).toLowerCase();
     if (
-      path === "" || path.startsWith("/") || path.includes("\\") ||
-      path.includes("\u0000") || path.split("/").includes("..") ||
-      path !== file.path || !ALLOWED_EXTENSIONS.has(extension)
+      !isPortableRelativePath(path) ||
+      path !== file.path ||
+      !ALLOWED_EXTENSIONS.has(extension)
     ) {
-      diagnostics.push(diagnostic(
-        "PROJECT_SOURCE_PATH_INVALID",
-        `Project file path ${file.path} is invalid or unsupported.`,
-        { path: `/files/${index}/path` },
-      ));
+      diagnostics.push(
+        diagnostic(
+          "PROJECT_SOURCE_PATH_INVALID",
+          `Project file path ${file.path} is invalid or unsupported.`,
+          { path: `/files/${index}/path` },
+        ),
+      );
     }
-    const lower = path.toLocaleLowerCase("en-US");
+    const lower = path.toLowerCase();
     if (exact.has(path) || folded.has(lower)) {
-      diagnostics.push(diagnostic(
-        "PROJECT_SOURCE_PATH_CONFLICT",
-        `Project file path ${file.path} conflicts with another path.`,
-        { path: `/files/${index}/path` },
-      ));
+      diagnostics.push(
+        diagnostic(
+          "PROJECT_SOURCE_PATH_CONFLICT",
+          `Project file path ${file.path} conflicts with another path.`,
+          { path: `/files/${index}/path` },
+        ),
+      );
     }
     exact.add(path);
     folded.add(lower);
@@ -630,22 +794,24 @@ export function fingerprintFiles(
   files: readonly ProjectSourceFile[],
 ): string {
   const canonical = requireValidFiles(files);
-  return createHash("sha256").update(JSON.stringify({ projectId, files: canonical })).digest("hex");
+  return createHash("sha256")
+    .update(JSON.stringify({ projectId, files: canonical }))
+    .digest("hex");
 }
 
 function parseProjectManifest(files: readonly ProjectSourceFile[]): void {
   const file = files.find((item) => item.path === "prism.project.json");
   if (file === undefined) {
-    throw PrismError.of(
-      "PROJECT_MANIFEST_MISSING",
-      "prism.project.json is required.",
-      { path: "/files" },
-    );
+    throw PrismError.of("PROJECT_MANIFEST_MISSING", "prism.project.json is required.", {
+      path: "/files",
+    });
   }
   const value = parseJson(file.content, "prism.project.json");
   if (
-    typeof value !== "object" || value === null ||
-    !("schemaVersion" in value) || value.schemaVersion !== "1.0.0"
+    typeof value !== "object" ||
+    value === null ||
+    !("schemaVersion" in value) ||
+    value.schemaVersion !== "1.0.0"
   ) {
     throw PrismError.of(
       "PROJECT_MANIFEST_INVALID",
@@ -668,9 +834,12 @@ function parseDeclaredMaterials(
   }
   const value = parseJson(file.content, "prism.materials.json");
   if (
-    typeof value !== "object" || value === null ||
-    !("schemaVersion" in value) || value.schemaVersion !== "1.0.0" ||
-    !("materials" in value) || !Array.isArray(value.materials)
+    typeof value !== "object" ||
+    value === null ||
+    !("schemaVersion" in value) ||
+    value.schemaVersion !== "1.0.0" ||
+    !("materials" in value) ||
+    !Array.isArray(value.materials)
   ) {
     throw PrismError.of(
       "PROJECT_MATERIAL_MANIFEST_INVALID",
@@ -724,21 +893,17 @@ function parseDeclaredMaterials(
 function parseJson(content: string, path: string): Record<string, unknown> {
   try {
     const value: unknown = JSON.parse(content);
-    if (typeof value !== "object" || value === null || Array.isArray(value)) throw new Error();
+    if (typeof value !== "object" || value === null || Array.isArray(value))
+      throw new Error();
     return value as Record<string, unknown>;
   } catch {
-    throw PrismError.of(
-      "PROJECT_JSON_INVALID",
-      `${path} is not valid JSON.`,
-      { path: `/files/${path}` },
-    );
+    throw PrismError.of("PROJECT_JSON_INVALID", `${path} is not valid JSON.`, {
+      path: `/files/${path}`,
+    });
   }
 }
 
-function putDraft(
-  draft: ProjectSourceDraft,
-  mode: "create" | "replace",
-) {
+function putDraft(draft: ProjectSourceDraft, mode: "create" | "replace") {
   return {
     kind: "put-document" as const,
     collection: SOURCE_DRAFT_COLLECTION,
@@ -747,125 +912,24 @@ function putDraft(
   };
 }
 
-function visualPipelineRoutes(storage: StorageCapability): readonly HttpRoute[] {
-  return [
-    {
-      method: "POST",
-      path: "/api/visual-pipelines/:id/drafts",
-      summary: "Save and validate a Visual Pipeline Draft",
-      handler: async (request) => {
-        requireBuilder(request.call);
-        const params = record(request.params, "/params");
-        const body = record(request.body, "/body");
-        const input = record(body.spec, "/spec") as unknown as VisualPipelineSpec;
-        const spec: PublishedVisualPipeline = {
-          ...input,
-          configurationFingerprint: fingerprintVisualConfiguration(input),
-          fingerprint: fingerprintVisualPipeline(input),
-        };
-        const validation = validateVisualPipelineSpec(spec);
-        if (hasErrors(validation.diagnostics)) throw new PrismError(validation.diagnostics);
-        return {
-          status: 201,
-          body: await storage.resources.saveDraft(request.call, {
-            kind: VISUAL_PIPELINE_KIND,
-            id: string(params.id, "/params/id"),
-            name: string(body.name, "/body/name"),
-            spec,
-          }),
-        };
-      },
-    },
-    {
-      method: "POST",
-      path: "/api/visual-pipelines/:id/publish",
-      summary: "Publish an exact Visual Pipeline Draft revision",
-      handler: async (request) => {
-        requireBuilder(request.call);
-        const params = record(request.params, "/params");
-        const body = record(request.body, "/body");
-        return {
-          status: 201,
-          body: await storage.resources.publish(
-            request.call,
-            VISUAL_PIPELINE_KIND,
-            string(params.id, "/params/id"),
-            positiveInteger(body.revision, "/body/revision"),
-          ),
-        };
-      },
-    },
-    {
-      method: "GET",
-      path: "/api/visual-pipelines/:id/diff",
-      summary: "Diff two published Visual Pipeline revisions",
-      handler: async (request) => {
-        const params = record(request.params, "/params");
-        const query = record(request.query, "/query");
-        const id = string(params.id, "/params/id");
-        const [from, to] = await Promise.all([
-          storage.resources.get<PublishedVisualPipeline>(
-            request.call,
-            VISUAL_PIPELINE_KIND,
-            id,
-            positiveInteger(query.from, "/query/from"),
-          ),
-          storage.resources.get<PublishedVisualPipeline>(
-            request.call,
-            VISUAL_PIPELINE_KIND,
-            id,
-            positiveInteger(query.to, "/query/to"),
-          ),
-        ]);
-        if (from === null || to === null) {
-          throw PrismError.of(
-            "VISUAL_PIPELINE_REVISION_UNAVAILABLE",
-            "Visual Pipeline diff requires two exact published revisions.",
-          );
-        }
-        const fromNodes = new Map(from.spec.nodes.map((node) => [node.nodeId, node]));
-        const toNodes = new Map(to.spec.nodes.map((node) => [node.nodeId, node]));
-        const added = [...toNodes.keys()].filter((id) => !fromNodes.has(id)).sort();
-        const removed = [...fromNodes.keys()].filter((id) => !toNodes.has(id)).sort();
-        const configurationChanged = [...toNodes.keys()].filter((nodeId) => {
-          const prior = fromNodes.get(nodeId);
-          const next = toNodes.get(nodeId);
-          return prior !== undefined && next !== undefined &&
-            fingerprintJson(prior.configuration) !== fingerprintJson(next.configuration);
-        }).sort();
-        return {
-          status: 200,
-          body: {
-            id,
-            from: from.revision,
-            to: to.revision,
-            added,
-            removed,
-            configurationChanged,
-            fromConfigurationFingerprint: from.spec.configurationFingerprint,
-            toConfigurationFingerprint: to.spec.configurationFingerprint,
-            pipelineChanged: from.spec.fingerprint !== to.spec.fingerprint,
-          },
-        };
-      },
-    },
-  ];
-}
-
 function codeProjectRoutes(capability: CodeProjectCapability): readonly HttpRoute[] {
   return [
     {
       method: "GET",
       path: "/api/code-projects",
+      access: { kind: "permission", permission: "project.read" },
       summary: "List Code Projects",
-      handler: async (request) => ({ status: 200, body: await capability.list(request.call) }),
+      handler: async (request) => ({
+        status: 200,
+        body: await capability.list(request.call),
+      }),
     },
     {
       method: "POST",
       path: "/api/code-projects",
+      access: { kind: "permission", permission: "project.create" },
       summary: "Create a Code Project and source draft",
       handler: async (request) => {
-        requireBuilder(request.call);
         const body = record(request.body, "/body");
         return {
           status: 201,
@@ -873,7 +937,9 @@ function codeProjectRoutes(capability: CodeProjectCapability): readonly HttpRout
             ...(typeof body.id === "string" ? { id: body.id } : {}),
             slug: string(body.slug, "/body/slug"),
             name: string(body.name, "/body/name"),
-            ...(typeof body.description === "string" ? { description: body.description } : {}),
+            ...(typeof body.description === "string"
+              ? { description: body.description }
+              : {}),
           }),
         };
       },
@@ -881,6 +947,7 @@ function codeProjectRoutes(capability: CodeProjectCapability): readonly HttpRout
     {
       method: "GET",
       path: "/api/code-projects/:id/draft",
+      access: { kind: "permission", permission: "project.read" },
       summary: "Load autosaved source draft",
       handler: async (request) => ({
         status: 200,
@@ -893,9 +960,9 @@ function codeProjectRoutes(capability: CodeProjectCapability): readonly HttpRout
     {
       method: "PUT",
       path: "/api/code-projects/:id/draft/:version",
+      access: { kind: "permission", permission: "project.source.write" },
       summary: "CAS autosave source draft",
       handler: async (request) => {
-        requireBuilder(request.call);
         const params = record(request.params, "/params");
         const body = record(request.body, "/body");
         return {
@@ -912,6 +979,7 @@ function codeProjectRoutes(capability: CodeProjectCapability): readonly HttpRout
     {
       method: "GET",
       path: "/api/code-projects/:id/draft/materials",
+      access: { kind: "permission", permission: "project.read" },
       summary: "Project-scoped declared, not-built Material catalog",
       handler: async (request) => ({
         status: 200,
@@ -924,9 +992,10 @@ function codeProjectRoutes(capability: CodeProjectCapability): readonly HttpRout
     {
       method: "POST",
       path: "/api/code-projects/:id/draft/:version/publish",
+      access: { kind: "permission", permission: "project.source.publish" },
+      changeReason: "required",
       summary: "Publish immutable canonical Project Source revision",
       handler: async (request) => {
-        requireBuilder(request.call);
         const params = record(request.params, "/params");
         return {
           status: 200,
@@ -941,6 +1010,7 @@ function codeProjectRoutes(capability: CodeProjectCapability): readonly HttpRout
     {
       method: "GET",
       path: "/api/code-projects/:id/source/revisions",
+      access: { kind: "permission", permission: "project.read" },
       summary: "List published source revisions",
       handler: async (request) => ({
         status: 200,
@@ -953,6 +1023,7 @@ function codeProjectRoutes(capability: CodeProjectCapability): readonly HttpRout
     {
       method: "GET",
       path: "/api/code-projects/:id/source/diff",
+      access: { kind: "permission", permission: "project.read" },
       summary: "Diff published or draft source identities",
       handler: async (request) => {
         const params = record(request.params, "/params");
@@ -971,16 +1042,6 @@ function codeProjectRoutes(capability: CodeProjectCapability): readonly HttpRout
   ];
 }
 
-function requireBuilder(context: CallContext): void {
-  if (!context.principal.roles.includes("BUILDER") && !context.principal.roles.includes("system")) {
-    throw PrismError.of(
-      "PROJECT_BUILDER_REQUIRED",
-      "Code Project mutation requires the BUILDER role.",
-      { principalId: context.principal.id },
-    );
-  }
-}
-
 function record(value: unknown, path: string): Record<string, unknown> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw PrismError.of("PROJECT_REQUEST_INVALID", "Expected an object.", { path });
@@ -990,7 +1051,9 @@ function record(value: unknown, path: string): Record<string, unknown> {
 
 function string(value: unknown, path: string): string {
   if (typeof value !== "string" || value.trim() === "") {
-    throw PrismError.of("PROJECT_REQUEST_INVALID", "Expected a non-empty string.", { path });
+    throw PrismError.of("PROJECT_REQUEST_INVALID", "Expected a non-empty string.", {
+      path,
+    });
   }
   return value;
 }
@@ -998,7 +1061,9 @@ function string(value: unknown, path: string): string {
 function positiveInteger(value: unknown, path: string): number {
   const parsed = typeof value === "string" ? Number(value) : value;
   if (typeof parsed !== "number" || !Number.isInteger(parsed) || parsed < 1) {
-    throw PrismError.of("PROJECT_REQUEST_INVALID", "Expected a positive integer.", { path });
+    throw PrismError.of("PROJECT_REQUEST_INVALID", "Expected a positive integer.", {
+      path,
+    });
   }
   return parsed;
 }
@@ -1016,49 +1081,86 @@ function files(value: unknown, path: string): readonly ProjectSourceFile[] {
     return {
       path: string(file.path, `${path}/${index}/path`),
       mediaType: string(file.mediaType, `${path}/${index}/mediaType`),
-      content: typeof file.content === "string"
-        ? file.content
-        : (() => { throw PrismError.of("PROJECT_REQUEST_INVALID", "Expected text content.", { path: `${path}/${index}/content` }); })(),
+      content:
+        typeof file.content === "string"
+          ? file.content
+          : (() => {
+              throw PrismError.of("PROJECT_REQUEST_INVALID", "Expected text content.", {
+                path: `${path}/${index}/content`,
+              });
+            })(),
     };
   });
 }
 
 function defaultFiles(command: CreateCodeProjectCommand): readonly ProjectSourceFile[] {
-  const project = JSON.stringify({
-    schemaVersion: "1.0.0",
-    id: command.id ?? command.slug,
-    slug: command.slug,
-    name: command.name,
-  }, null, 2);
-  return [
-    textFile("package.json", JSON.stringify({
-      name: command.slug,
-      private: true,
-      type: "module",
-      dependencies: {},
-    }, null, 2), "application/json"),
-    textFile("pnpm-lock.yaml", [
-      "lockfileVersion: '9.0'",
-      "settings:",
-      "  autoInstallPeers: true",
-      "  excludeLinksFromLockfile: false",
-      "importers:",
-      "  .: {}",
-      "",
-    ].join("\n"), "application/yaml"),
-    textFile("prism.project.json", project, "application/json"),
-    textFile("prism.materials.json", JSON.stringify({
+  const project = JSON.stringify(
+    {
       schemaVersion: "1.0.0",
-      materials: [],
-    }, null, 2), "application/json"),
-    textFile("src/client/index.tsx", [
-      "export async function mount(context: { root: HTMLElement }): Promise<void> {",
-      `  context.root.textContent = ${JSON.stringify(command.name)};`,
-      "}",
-      "",
-    ].join("\n"), "text/typescript-jsx"),
+      id: command.id ?? command.slug,
+      slug: command.slug,
+      name: command.name,
+    },
+    null,
+    2,
+  );
+  return [
+    textFile(
+      "package.json",
+      JSON.stringify(
+        {
+          name: command.slug,
+          private: true,
+          type: "module",
+          dependencies: {},
+        },
+        null,
+        2,
+      ),
+      "application/json",
+    ),
+    textFile(
+      "pnpm-lock.yaml",
+      [
+        "lockfileVersion: '9.0'",
+        "settings:",
+        "  autoInstallPeers: true",
+        "  excludeLinksFromLockfile: false",
+        "importers:",
+        "  .: {}",
+        "",
+      ].join("\n"),
+      "application/yaml",
+    ),
+    textFile("prism.project.json", project, "application/json"),
+    textFile(
+      "prism.materials.json",
+      JSON.stringify(
+        {
+          schemaVersion: "1.0.0",
+          materials: [],
+        },
+        null,
+        2,
+      ),
+      "application/json",
+    ),
+    textFile(
+      "src/client/index.tsx",
+      [
+        "export async function mount(context: { root: HTMLElement }): Promise<void> {",
+        `  context.root.textContent = ${JSON.stringify(command.name)};`,
+        "}",
+        "",
+      ].join("\n"),
+      "text/typescript-jsx",
+    ),
     textFile("src/server/index.ts", "export const actions = {};\n", "text/typescript"),
-    textFile("tests/project.test.ts", "export default async () => ({ passed: true });\n", "text/typescript"),
+    textFile(
+      "tests/project.test.ts",
+      "export default async () => ({ passed: true });\n",
+      "text/typescript",
+    ),
   ];
 }
 

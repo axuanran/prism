@@ -117,10 +117,7 @@ describe("semantic annotations", () => {
       version: "2.0.0",
     });
     try {
-      findSemanticAnnotation(
-        [semanticAnnotation(Alpha, { value: "x" })],
-        AlphaV2,
-      );
+      findSemanticAnnotation([semanticAnnotation(Alpha, { value: "x" })], AlphaV2);
       throw new Error("expected version mismatch");
     } catch (error) {
       expect(error).toBeInstanceOf(PrismError);

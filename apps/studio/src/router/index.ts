@@ -1,49 +1,56 @@
-import { createRouter, createWebHistory } from 'vue-router';
-import CapabilityInspectorView from '../views/CapabilityInspectorView.vue';
-import CodeProjectsView from '../views/CodeProjectsView.vue';
-import DashboardView from '../views/DashboardView.vue';
-import OrganizationView from '../views/OrganizationView.vue';
-import PipelineEditorView from '../views/PipelineEditorView.vue';
-import ResourcesView from '../views/ResourcesView.vue';
+import { createRouter, createWebHistory } from "vue-router";
+import ApprovalsView from "../views/ApprovalsView.vue";
+import CapabilityInspectorView from "../views/CapabilityInspectorView.vue";
+import CodeProjectsView from "../views/CodeProjectsView.vue";
+import DashboardView from "../views/DashboardView.vue";
+import OrganizationView from "../views/OrganizationView.vue";
+import PipelineEditorView from "../views/PipelineEditorView.vue";
+import ResourcesView from "../views/ResourcesView.vue";
 
 export const router = createRouter({
   history: createWebHistory(),
   routes: [
     {
-      path: '/',
-      name: 'dashboard',
+      path: "/",
+      name: "dashboard",
       component: DashboardView,
-      meta: { title: '概览', eyebrow: '运行概况' },
+      meta: { title: "概览", eyebrow: "运行概况" },
     },
     {
-      path: '/resources',
-      name: 'resources',
+      path: "/resources",
+      name: "resources",
       component: ResourcesView,
-      meta: { title: '配置资源', eyebrow: '业务配置' },
+      meta: { title: "配置资源", eyebrow: "业务配置" },
     },
     {
-      path: '/organization',
-      name: 'organization',
+      path: "/organization",
+      name: "organization",
       component: OrganizationView,
-      meta: { title: '组织', eyebrow: '业务配置' },
+      meta: { title: "组织", eyebrow: "业务配置" },
     },
     {
-      path: '/studio/projects/:slug?',
-      name: 'code-projects',
+      path: "/approvals",
+      name: "approvals",
+      component: ApprovalsView,
+      meta: { title: "变更审批", eyebrow: "治理与复核" },
+    },
+    {
+      path: "/studio/projects/:slug?",
+      name: "code-projects",
       component: CodeProjectsView,
-      meta: { title: '代码项目', eyebrow: 'Programmable Studio' },
+      meta: { title: "代码项目", eyebrow: "Programmable Studio" },
     },
     {
-      path: '/developer/capabilities',
-      name: 'capability-inspector',
+      path: "/developer/capabilities",
+      name: "capability-inspector",
       component: CapabilityInspectorView,
-      meta: { title: '能力检查器', eyebrow: '开发者工具' },
+      meta: { title: "能力检查器", eyebrow: "开发者工具" },
     },
     {
-      path: '/developer/pipelines',
-      name: 'pipeline-editor',
+      path: "/developer/pipelines",
+      name: "pipeline-editor",
       component: PipelineEditorView,
-      meta: { title: '流水线编辑器', eyebrow: '开发者工具' },
+      meta: { title: "流水线编辑器", eyebrow: "开发者工具" },
     },
   ],
   scrollBehavior: () => ({ top: 0 }),

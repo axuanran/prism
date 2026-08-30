@@ -28,7 +28,7 @@ provider -> JsonValue -> Codec.decode -> TDomain
 - Memory and PostgreSQL implement one legal-value contract and share one conformance suite.
 - Provider swapping cannot depend on JavaScript object identity/prototypes.
 - Encoding/decoding is visible code rather than implicit `JSON.stringify` behavior.
-- Storage validates JSON storability, not a Resource type's JSON Schema or domain semantics; those remain adapter/service responsibilities.
+- Raw providers validate JSON storability. Storage-plugin composition adds registered Resource JSON Schema and semantic validation through the provider-independent facade; neither rule is duplicated in transports or domain services.
 - Other codecs can add Date, identifier or value-object representations without widening the provider contract.
 
 ## Cost to reverse

@@ -19,7 +19,7 @@
     "build": "tsc --build"
   },
   "dependencies": {
-    "@prismengine/contracts-data": "workspace:*",
+    "@prismengine/contracts-data": "workspace:0.1.20",
     "@sinclair/typebox": "^0.34.0",
     "semver": "^7.6.3"
   },

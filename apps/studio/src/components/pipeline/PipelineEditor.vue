@@ -1,23 +1,23 @@
 <script setup lang="ts">
-import { computed, markRaw, nextTick, onMounted, ref, watch } from 'vue';
-import { VueFlow } from '@vue-flow/core';
-import type { Connection, NodeMouseEvent } from '@vue-flow/core';
-import { api, localizeDiagnostic } from '../../api/client';
+import { computed, markRaw, nextTick, onMounted, ref, watch } from "vue";
+import { VueFlow } from "@vue-flow/core";
+import type { Connection, NodeMouseEvent } from "@vue-flow/core";
+import { api, localizeDiagnostic } from "../../api/client";
 import type {
   DatasetPayload,
   Diagnostic,
   OperationDescriptor,
   PipelineExecutionResponse,
   PipelineSpec,
-} from '../../api/types';
-import ConfigForm from '../config/ConfigForm.vue';
-import { createDefaultValue } from '../config/schema';
-import PipelineOperationNode from './PipelineOperationNode.vue';
-import type { PipelineNodeData } from './PipelineOperationNode.vue';
+} from "../../api/types";
+import ConfigForm from "../config/ConfigForm.vue";
+import { createDefaultValue } from "../config/schema";
+import PipelineOperationNode from "./PipelineOperationNode.vue";
+import type { PipelineNodeData } from "./PipelineOperationNode.vue";
 
 interface StudioFlowNode {
   readonly id: string;
-  readonly type: 'operation';
+  readonly type: "operation";
   position: { x: number; y: number };
   readonly data: PipelineNodeData;
 }
@@ -30,14 +30,17 @@ interface StudioFlowEdge {
   readonly targetHandle: string;
 }
 
-const props = withDefaults(defineProps<{
-  modelValue: PipelineSpec;
-  embedded?: boolean;
-  readonly?: boolean;
-}>(), { embedded: false, readonly: false });
+const props = withDefaults(
+  defineProps<{
+    modelValue: PipelineSpec;
+    embedded?: boolean;
+    readonly?: boolean;
+  }>(),
+  { embedded: false, readonly: false },
+);
 
 const emit = defineEmits<{
-  'update:modelValue': [value: PipelineSpec];
+  "update:modelValue": [value: PipelineSpec];
 }>();
 
 const NODE_GRID_X = 260;
@@ -48,30 +51,37 @@ const loadError = ref<string | null>(null);
 const flowNodes = ref<StudioFlowNode[]>([]);
 const flowEdges = ref<StudioFlowEdge[]>([]);
 const selectedNodeId = ref<string | null>(null);
-const connectionSourceNodeId = ref('');
-const connectionSourcePort = ref('');
-const connectionTargetNodeId = ref('');
-const connectionTargetPort = ref('');
+const connectionSourceNodeId = ref("");
+const connectionSourcePort = ref("");
+const connectionTargetNodeId = ref("");
+const connectionTargetPort = ref("");
 const validating = ref(false);
 const executing = ref(false);
-const validationResult = ref<{ readonly valid: boolean; readonly diagnostics: readonly Diagnostic[] } | null>(null);
+const validationResult = ref<{
+  readonly valid: boolean;
+  readonly diagnostics: readonly Diagnostic[];
+} | null>(null);
 const executionResult = ref<PipelineExecutionResponse | null>(null);
 const actionError = ref<string | null>(null);
 let suppressPropSync = false;
 
 const nodeTypes = { operation: markRaw(PipelineOperationNode) };
-const operationById = computed(() => new Map(operations.value.map((operation) => [operation.id, operation])));
+const operationById = computed(
+  () => new Map(operations.value.map((operation) => [operation.id, operation])),
+);
 const operationGroups = computed(() => {
   const groups = new Map<string, OperationDescriptor[]>();
   for (const operation of operations.value) {
-    const category = operation.category ?? '其他';
+    const category = operation.category ?? "其他";
     const items = groups.get(category) ?? [];
     items.push(operation);
     groups.set(category, items);
   }
   return [...groups.entries()].map(([category, items]) => ({ category, items }));
 });
-const selectedFlowNode = computed<StudioFlowNode | undefined>(() => flowNodes.value.find((node) => node.id === selectedNodeId.value));
+const selectedFlowNode = computed<StudioFlowNode | undefined>(() =>
+  flowNodes.value.find((node) => node.id === selectedNodeId.value),
+);
 const selectedOperation = computed(() => {
   const operationId = selectedFlowNode.value?.data?.operationId;
   return operationId ? operationById.value.get(operationId) : undefined;
@@ -86,70 +96,107 @@ const selectedConfig = computed({
     const spec = currentSpec();
     publishSpec({
       ...spec,
-      nodes: spec.nodes.map((node) => node.id === selectedNodeId.value ? { ...node, config } : node),
+      nodes: spec.nodes.map((node) =>
+        node.id === selectedNodeId.value ? { ...node, config } : node,
+      ),
     });
   },
 });
 const selectedDiagnostics = computed(() => {
   if (!selectedNodeId.value) return [];
-  return [...(validationResult.value?.diagnostics ?? []), ...(executionResult.value?.diagnostics ?? [])]
+  return [
+    ...(validationResult.value?.diagnostics ?? []),
+    ...(executionResult.value?.diagnostics ?? []),
+  ]
     .filter((item) => item.nodeId === selectedNodeId.value)
-    .map((item) => ({ ...item, path: item.path?.replace(/^\/?nodes\/\d+\/config\/?/, '') }));
+    .map((item) => ({
+      ...item,
+      path: item.path?.replace(/^\/?nodes\/\d+\/config\/?/, ""),
+    }));
 });
-const connectionRows = computed(() => flowEdges.value.map((edge) => {
-  const source = flowNodes.value.find((node) => node.id === edge.source);
-  const target = flowNodes.value.find((node) => node.id === edge.target);
-  return {
-    id: edge.id,
-    source: source?.data?.title ?? '步骤',
-    sourcePort: portTitle(source?.data?.outputs, edge.sourceHandle),
-    target: target?.data?.title ?? '步骤',
-    targetPort: portTitle(target?.data?.inputs, edge.targetHandle),
-  };
-}));
-const connectionSourceNodes = computed(() => flowNodes.value.filter((node) => node.data.outputs.length > 0));
-const connectionTargetNodes = computed(() => flowNodes.value.filter((node) => node.data.inputs.length > 0));
-const connectionSourcePorts = computed(() =>
-  flowNodes.value.find((node) => node.id === connectionSourceNodeId.value)?.data.outputs ?? []);
-const connectionTargetPorts = computed(() =>
-  flowNodes.value.find((node) => node.id === connectionTargetNodeId.value)?.data.inputs ?? []);
+const connectionRows = computed(() =>
+  flowEdges.value.map((edge) => {
+    const source = flowNodes.value.find((node) => node.id === edge.source);
+    const target = flowNodes.value.find((node) => node.id === edge.target);
+    return {
+      id: edge.id,
+      source: source?.data?.title ?? "步骤",
+      sourcePort: portTitle(source?.data?.outputs, edge.sourceHandle),
+      target: target?.data?.title ?? "步骤",
+      targetPort: portTitle(target?.data?.inputs, edge.targetHandle),
+    };
+  }),
+);
+const connectionSourceNodes = computed(() =>
+  flowNodes.value.filter((node) => node.data.outputs.length > 0),
+);
+const connectionTargetNodes = computed(() =>
+  flowNodes.value.filter((node) => node.data.inputs.length > 0),
+);
+const connectionSourcePorts = computed(
+  () =>
+    flowNodes.value.find((node) => node.id === connectionSourceNodeId.value)?.data
+      .outputs ?? [],
+);
+const connectionTargetPorts = computed(
+  () =>
+    flowNodes.value.find((node) => node.id === connectionTargetNodeId.value)?.data.inputs ??
+    [],
+);
 
 function newNodeId(): string {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return `node-${crypto.randomUUID()}`;
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function")
+    return `node-${crypto.randomUUID()}`;
   return `node-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 }
 
-function portTitle(ports: PipelineNodeData['inputs'] | undefined, portName: string | null | undefined): string {
-  return ports?.find((port) => port.name === portName)?.title ?? '端口';
+function portTitle(
+  ports: PipelineNodeData["inputs"] | undefined,
+  portName: string | null | undefined,
+): string {
+  return ports?.find((port) => port.name === portName)?.title ?? "端口";
 }
 
 function prepareConnectionDefaults(): void {
-  if (!connectionSourceNodes.value.some((node) => node.id === connectionSourceNodeId.value)) {
-    connectionSourceNodeId.value = connectionSourceNodes.value[0]?.id ?? '';
+  if (
+    !connectionSourceNodes.value.some((node) => node.id === connectionSourceNodeId.value)
+  ) {
+    connectionSourceNodeId.value = connectionSourceNodes.value[0]?.id ?? "";
   }
-  if (!connectionTargetNodes.value.some((node) => node.id === connectionTargetNodeId.value)) {
-    connectionTargetNodeId.value = connectionTargetNodes.value.find((node) => node.id !== connectionSourceNodeId.value)?.id
-      ?? connectionTargetNodes.value[0]?.id
-      ?? '';
+  if (
+    !connectionTargetNodes.value.some((node) => node.id === connectionTargetNodeId.value)
+  ) {
+    connectionTargetNodeId.value =
+      connectionTargetNodes.value.find((node) => node.id !== connectionSourceNodeId.value)
+        ?.id ??
+      connectionTargetNodes.value[0]?.id ??
+      "";
   }
-  if (!connectionSourcePorts.value.some((port) => port.name === connectionSourcePort.value)) {
-    connectionSourcePort.value = connectionSourcePorts.value[0]?.name ?? '';
+  if (
+    !connectionSourcePorts.value.some((port) => port.name === connectionSourcePort.value)
+  ) {
+    connectionSourcePort.value = connectionSourcePorts.value[0]?.name ?? "";
   }
-  if (!connectionTargetPorts.value.some((port) => port.name === connectionTargetPort.value)) {
-    connectionTargetPort.value = connectionTargetPorts.value[0]?.name ?? '';
+  if (
+    !connectionTargetPorts.value.some((port) => port.name === connectionTargetPort.value)
+  ) {
+    connectionTargetPort.value = connectionTargetPorts.value[0]?.name ?? "";
   }
 }
 
-function toFlowNode(node: PipelineSpec['nodes'][number], index: number): StudioFlowNode {
+function toFlowNode(node: PipelineSpec["nodes"][number], index: number): StudioFlowNode {
   const operation = operationById.value.get(node.operation);
   return {
     id: node.id,
-    type: 'operation',
-    position: node.position ?? { x: (index % 3) * NODE_GRID_X, y: Math.floor(index / 3) * NODE_GRID_Y },
+    type: "operation",
+    position: node.position ?? {
+      x: (index % 3) * NODE_GRID_X,
+      y: Math.floor(index / 3) * NODE_GRID_Y,
+    },
     data: {
       operationId: node.operation,
-      title: node.label ?? operation?.title ?? '不可用步骤',
-      category: operation?.category ?? '未分类',
+      title: node.label ?? operation?.title ?? "不可用步骤",
+      category: operation?.category ?? "未分类",
       ...(operation?.description ? { description: operation.description } : {}),
       inputs: operation?.inputs ?? [],
       outputs: operation?.outputs ?? [],
@@ -169,17 +216,32 @@ function syncFromSpec(spec: PipelineSpec): void {
   }));
 }
 
-function derivedOutputs(nodes: readonly PipelineSpec['nodes'][number][], edges: readonly PipelineSpec['edges'][number][]): PipelineSpec['outputs'] {
+function derivedOutputs(
+  nodes: readonly PipelineSpec["nodes"][number][],
+  edges: readonly PipelineSpec["edges"][number][],
+): PipelineSpec["outputs"] {
   const hasOutgoing = new Set(edges.map((edge) => edge.fromNode));
-  const terminalIds = new Set(nodes.filter((node) => !hasOutgoing.has(node.id)).map((node) => node.id));
-  const preserved = props.modelValue.outputs.filter((output) => terminalIds.has(output.fromNode));
+  const terminalIds = new Set(
+    nodes.filter((node) => !hasOutgoing.has(node.id)).map((node) => node.id),
+  );
+  const preserved = props.modelValue.outputs.filter((output) =>
+    terminalIds.has(output.fromNode),
+  );
   if (preserved.length > 0) return preserved;
   return nodes
     .filter((node) => !hasOutgoing.has(node.id))
     .flatMap((node, index) => {
       const operation = operationById.value.get(node.operation);
       const port = operation?.outputs[0];
-      return port ? [{ name: node.label ?? operation.title ?? `输出 ${index + 1}`, fromNode: node.id, fromPort: port.name }] : [];
+      return port
+        ? [
+            {
+              name: node.label ?? operation.title ?? `输出 ${index + 1}`,
+              fromNode: node.id,
+              fromPort: port.name,
+            },
+          ]
+        : [];
     });
 }
 
@@ -188,7 +250,7 @@ function currentSpec(): PipelineSpec {
     const existing = props.modelValue.nodes.find((item) => item.id === node.id);
     return {
       id: node.id,
-      operation: node.data?.operationId ?? existing?.operation ?? '',
+      operation: node.data?.operationId ?? existing?.operation ?? "",
       config: existing?.config ?? {},
       label: node.data?.title,
       position: { x: node.position.x, y: node.position.y },
@@ -196,9 +258,9 @@ function currentSpec(): PipelineSpec {
   });
   const edges = flowEdges.value.map((edge) => ({
     fromNode: edge.source,
-    fromPort: edge.sourceHandle ?? '',
+    fromPort: edge.sourceHandle ?? "",
     toNode: edge.target,
-    toPort: edge.targetHandle ?? '',
+    toPort: edge.targetHandle ?? "",
   }));
   return {
     id: props.modelValue.id,
@@ -211,7 +273,7 @@ function currentSpec(): PipelineSpec {
 
 function publishSpec(spec = currentSpec()): void {
   suppressPropSync = true;
-  emit('update:modelValue', spec);
+  emit("update:modelValue", spec);
   void nextTick(() => {
     suppressPropSync = false;
   });
@@ -221,21 +283,25 @@ function addOperation(operation: OperationDescriptor): void {
   if (props.readonly) return;
   const id = newNodeId();
   const defaultConfig = createDefaultValue(operation.configSchema) ?? {};
-  const config = operation.inputs.length === 0
-    && typeof defaultConfig === 'object'
-    && defaultConfig !== null
-    && 'name' in defaultConfig
-    && !String((defaultConfig as { readonly name?: unknown }).name ?? '').trim()
-    ? { ...defaultConfig, name: props.modelValue.inputs[0]?.name ?? 'source' }
-    : defaultConfig;
+  const config =
+    operation.inputs.length === 0 &&
+    typeof defaultConfig === "object" &&
+    defaultConfig !== null &&
+    "name" in defaultConfig &&
+    !String((defaultConfig as { readonly name?: unknown }).name ?? "").trim()
+      ? { ...defaultConfig, name: props.modelValue.inputs[0]?.name ?? "source" }
+      : defaultConfig;
   const node: StudioFlowNode = {
     id,
-    type: 'operation',
-    position: { x: (flowNodes.value.length % 3) * NODE_GRID_X, y: Math.floor(flowNodes.value.length / 3) * NODE_GRID_Y },
+    type: "operation",
+    position: {
+      x: (flowNodes.value.length % 3) * NODE_GRID_X,
+      y: Math.floor(flowNodes.value.length / 3) * NODE_GRID_Y,
+    },
     data: {
       operationId: operation.id,
       title: operation.title,
-      category: operation.category ?? '其他',
+      category: operation.category ?? "其他",
       ...(operation.description ? { description: operation.description } : {}),
       inputs: operation.inputs,
       outputs: operation.outputs,
@@ -243,7 +309,10 @@ function addOperation(operation: OperationDescriptor): void {
   };
   flowNodes.value = [...flowNodes.value, node];
   const spec = currentSpec();
-  publishSpec({ ...spec, nodes: spec.nodes.map((item) => item.id === id ? { ...item, config } : item) });
+  publishSpec({
+    ...spec,
+    nodes: spec.nodes.map((item) => (item.id === id ? { ...item, config } : item)),
+  });
   selectedNodeId.value = id;
   validationResult.value = null;
   executionResult.value = null;
@@ -251,22 +320,33 @@ function addOperation(operation: OperationDescriptor): void {
 
 function connect(connection: Connection): void {
   if (props.readonly || !connection.sourceHandle || !connection.targetHandle) return;
-  const withoutExistingTarget = flowEdges.value.filter((edge) =>
-    edge.target !== connection.target || edge.targetHandle !== connection.targetHandle);
-  flowEdges.value = [...withoutExistingTarget, {
-    id: `edge-${newNodeId()}`,
-    source: connection.source,
-    sourceHandle: connection.sourceHandle,
-    target: connection.target,
-    targetHandle: connection.targetHandle,
-  }];
+  const withoutExistingTarget = flowEdges.value.filter(
+    (edge) =>
+      edge.target !== connection.target || edge.targetHandle !== connection.targetHandle,
+  );
+  flowEdges.value = [
+    ...withoutExistingTarget,
+    {
+      id: `edge-${newNodeId()}`,
+      source: connection.source,
+      sourceHandle: connection.sourceHandle,
+      target: connection.target,
+      targetHandle: connection.targetHandle,
+    },
+  ];
   publishSpec();
   validationResult.value = null;
   executionResult.value = null;
 }
 
 function connectSelection(): void {
-  if (!connectionSourceNodeId.value || !connectionSourcePort.value || !connectionTargetNodeId.value || !connectionTargetPort.value) return;
+  if (
+    !connectionSourceNodeId.value ||
+    !connectionSourcePort.value ||
+    !connectionTargetNodeId.value ||
+    !connectionTargetPort.value
+  )
+    return;
   connect({
     source: connectionSourceNodeId.value,
     sourceHandle: connectionSourcePort.value,
@@ -289,20 +369,27 @@ function deleteSelectedNode(): void {
   const id = selectedNodeId.value;
   if (!id || props.readonly) return;
   flowNodes.value = flowNodes.value.filter((node) => node.id !== id);
-  flowEdges.value = flowEdges.value.filter((edge) => edge.source !== id && edge.target !== id);
+  flowEdges.value = flowEdges.value.filter(
+    (edge) => edge.source !== id && edge.target !== id,
+  );
   selectedNodeId.value = null;
   publishSpec();
 }
 
 function emptyInputs(spec: PipelineSpec): Readonly<Record<string, DatasetPayload>> {
-  return Object.fromEntries(spec.inputs.map((input) => [input.name, {
-    columns: input.schema.columns.map((column) => ({
-      name: column.name,
-      kind: typeof column.type.kind === 'string' ? column.type.kind : 'string',
-    })),
-    rows: [],
-    truncated: false,
-  }]));
+  return Object.fromEntries(
+    spec.inputs.map((input) => [
+      input.name,
+      {
+        columns: input.schema.columns.map((column) => ({
+          name: column.name,
+          kind: typeof column.type.kind === "string" ? column.type.kind : "string",
+        })),
+        rows: [],
+        truncated: false,
+      },
+    ]),
+  );
 }
 
 async function validatePipeline(): Promise<void> {
@@ -313,7 +400,7 @@ async function validatePipeline(): Promise<void> {
     publishSpec(spec);
     validationResult.value = await api.validatePipeline(spec);
   } catch (cause: unknown) {
-    actionError.value = cause instanceof Error ? cause.message : '流水线校验失败。';
+    actionError.value = cause instanceof Error ? cause.message : "流水线校验失败。";
   } finally {
     validating.value = false;
   }
@@ -327,7 +414,7 @@ async function executePipeline(): Promise<void> {
     publishSpec(spec);
     executionResult.value = await api.executePipeline(spec, emptyInputs(spec));
   } catch (cause: unknown) {
-    actionError.value = cause instanceof Error ? cause.message : '流水线执行失败。';
+    actionError.value = cause instanceof Error ? cause.message : "流水线执行失败。";
   } finally {
     executing.value = false;
   }
@@ -340,7 +427,7 @@ async function loadOperations(): Promise<void> {
     operations.value = await api.listOperations();
     syncFromSpec(props.modelValue);
   } catch (cause: unknown) {
-    loadError.value = cause instanceof Error ? cause.message : '无法读取可用步骤。';
+    loadError.value = cause instanceof Error ? cause.message : "无法读取可用步骤。";
   } finally {
     loadingOperations.value = false;
   }
@@ -349,29 +436,51 @@ watch(flowNodes, prepareConnectionDefaults, { immediate: true });
 watch(connectionSourceNodeId, prepareConnectionDefaults);
 watch(connectionTargetNodeId, prepareConnectionDefaults);
 
-watch(() => props.modelValue, (spec) => syncFromSpec(spec), { deep: true });
+watch(
+  () => props.modelValue,
+  (spec) => syncFromSpec(spec),
+  { deep: true },
+);
 onMounted(() => void loadOperations());
 </script>
 
 <template>
-  <section class="pipeline-editor" :class="{ 'pipeline-editor--embedded': embedded }" aria-labelledby="pipeline-editor-title">
+  <section
+    class="pipeline-editor"
+    :class="{ 'pipeline-editor--embedded': embedded }"
+    aria-labelledby="pipeline-editor-title"
+  >
     <header class="pipeline-editor__header">
       <div>
         <p>可视化计算</p>
         <h3 id="pipeline-editor-title">流水线编辑器</h3>
-        <span>从左侧添加步骤，拖动端口建立数据连接；所有步骤配置均由配置契约自动生成。</span>
+        <span
+          >从左侧添加步骤，拖动端口建立数据连接；所有步骤配置均由配置契约自动生成。</span
+        >
       </div>
       <div class="pipeline-editor__actions">
-        <button class="button button--secondary" type="button" :disabled="validating || loadingOperations" @click="validatePipeline">
-          {{ validating ? '验证中…' : '验证' }}
+        <button
+          class="button button--secondary"
+          type="button"
+          :disabled="validating || loadingOperations"
+          @click="validatePipeline"
+        >
+          {{ validating ? "验证中…" : "验证" }}
         </button>
-        <button class="button button--primary" type="button" :disabled="executing || loadingOperations" @click="executePipeline">
-          {{ executing ? '执行中…' : '执行' }}
+        <button
+          class="button button--primary"
+          type="button"
+          :disabled="executing || loadingOperations"
+          @click="executePipeline"
+        >
+          {{ executing ? "执行中…" : "执行" }}
         </button>
       </div>
     </header>
 
-    <p v-if="loadError || actionError" class="inline-alert" role="alert">{{ loadError ?? actionError }}</p>
+    <p v-if="loadError || actionError" class="inline-alert" role="alert">
+      {{ loadError ?? actionError }}
+    </p>
 
     <div class="pipeline-editor__workspace">
       <aside class="pipeline-palette" aria-label="步骤面板">
@@ -379,7 +488,11 @@ onMounted(() => void loadOperations());
           <strong>步骤</strong>
           <span v-if="loadingOperations">加载中</span>
         </div>
-        <div v-for="group in operationGroups" :key="group.category" class="pipeline-palette__group">
+        <div
+          v-for="group in operationGroups"
+          :key="group.category"
+          class="pipeline-palette__group"
+        >
           <p>{{ group.category }}</p>
           <button
             v-for="operation in group.items"
@@ -390,10 +503,15 @@ onMounted(() => void loadOperations());
             @click="addOperation(operation)"
           >
             <strong>{{ operation.title }}</strong>
-            <span>{{ operation.description ?? '添加计算步骤' }}</span>
+            <span>{{ operation.description ?? "添加计算步骤" }}</span>
           </button>
         </div>
-        <p v-if="!loadingOperations && operations.length === 0" class="pipeline-palette__empty">暂无可添加步骤。</p>
+        <p
+          v-if="!loadingOperations && operations.length === 0"
+          class="pipeline-palette__empty"
+        >
+          暂无可添加步骤。
+        </p>
       </aside>
 
       <div class="pipeline-canvas" aria-label="流水线画布">
@@ -420,7 +538,9 @@ onMounted(() => void loadOperations());
               <span>当前步骤</span>
               <h4>{{ selectedFlowNode.data?.title }}</h4>
             </div>
-            <button type="button" :disabled="readonly" @click="deleteSelectedNode">删除步骤</button>
+            <button type="button" :disabled="readonly" @click="deleteSelectedNode">
+              删除步骤
+            </button>
           </div>
           <ConfigForm
             v-model="selectedConfig"
@@ -437,35 +557,61 @@ onMounted(() => void loadOperations());
       </aside>
     </div>
 
-    <section v-if="flowNodes.length > 1" class="pipeline-connections" aria-labelledby="connection-title">
+    <section
+      v-if="flowNodes.length > 1"
+      class="pipeline-connections"
+      aria-labelledby="connection-title"
+    >
       <div class="pipeline-connections__heading">
         <div>
           <h4 id="connection-title">端口连接</h4>
           <span>{{ connectionRows.length }} 条已连接</span>
         </div>
         <div class="pipeline-connections__builder">
-          <label>从
+          <label
+            >从
             <select v-model="connectionSourceNodeId" :disabled="readonly">
-              <option v-for="node in connectionSourceNodes" :key="node.id" :value="node.id">{{ node.data.title }}</option>
+              <option v-for="node in connectionSourceNodes" :key="node.id" :value="node.id">
+                {{ node.data.title }}
+              </option>
             </select>
           </label>
-          <label>输出
+          <label
+            >输出
             <select v-model="connectionSourcePort" :disabled="readonly">
-              <option v-for="port in connectionSourcePorts" :key="port.name" :value="port.name">{{ port.title ?? '输出端口' }}</option>
+              <option
+                v-for="port in connectionSourcePorts"
+                :key="port.name"
+                :value="port.name"
+              >
+                {{ port.title ?? "输出端口" }}
+              </option>
             </select>
           </label>
           <i aria-hidden="true">→</i>
-          <label>到
+          <label
+            >到
             <select v-model="connectionTargetNodeId" :disabled="readonly">
-              <option v-for="node in connectionTargetNodes" :key="node.id" :value="node.id">{{ node.data.title }}</option>
+              <option v-for="node in connectionTargetNodes" :key="node.id" :value="node.id">
+                {{ node.data.title }}
+              </option>
             </select>
           </label>
-          <label>输入
+          <label
+            >输入
             <select v-model="connectionTargetPort" :disabled="readonly">
-              <option v-for="port in connectionTargetPorts" :key="port.name" :value="port.name">{{ port.title ?? '输入端口' }}</option>
+              <option
+                v-for="port in connectionTargetPorts"
+                :key="port.name"
+                :value="port.name"
+              >
+                {{ port.title ?? "输入端口" }}
+              </option>
             </select>
           </label>
-          <button type="button" :disabled="readonly" @click="connectSelection">建立连接</button>
+          <button type="button" :disabled="readonly" @click="connectSelection">
+            建立连接
+          </button>
         </div>
       </div>
       <ul v-if="connectionRows.length > 0">
@@ -473,54 +619,108 @@ onMounted(() => void loadOperations());
           <span>{{ edge.source }} · {{ edge.sourcePort }}</span>
           <i aria-hidden="true">→</i>
           <span>{{ edge.target }} · {{ edge.targetPort }}</span>
-          <button type="button" :disabled="readonly" @click="disconnect(edge.id)">断开</button>
+          <button type="button" :disabled="readonly" @click="disconnect(edge.id)">
+            断开
+          </button>
         </li>
       </ul>
-      <p v-else class="pipeline-connections__empty">选择两端步骤和端口后建立连接，也可直接在画布拖动圆点。</p>
+      <p v-else class="pipeline-connections__empty">
+        选择两端步骤和端口后建立连接，也可直接在画布拖动圆点。
+      </p>
     </section>
 
-    <section v-if="validationResult" class="pipeline-feedback" :class="{ 'pipeline-feedback--success': validationResult.valid }" aria-live="polite">
+    <section
+      v-if="validationResult"
+      class="pipeline-feedback"
+      :class="{ 'pipeline-feedback--success': validationResult.valid }"
+      aria-live="polite"
+    >
       <div>
-        <strong>{{ validationResult.valid ? '验证通过' : '需要修正' }}</strong>
-        <span>{{ validationResult.valid ? '流水线结构与配置有效。' : `发现 ${validationResult.diagnostics.length} 项问题。` }}</span>
+        <strong>{{ validationResult.valid ? "验证通过" : "需要修正" }}</strong>
+        <span>{{
+          validationResult.valid
+            ? "流水线结构与配置有效。"
+            : `发现 ${validationResult.diagnostics.length} 项问题。`
+        }}</span>
       </div>
       <ul v-if="validationResult.diagnostics.length > 0">
-        <li v-for="item in validationResult.diagnostics" :key="`${item.nodeId}:${item.code}:${item.path}`">{{ localizeDiagnostic(item) }}</li>
+        <li
+          v-for="item in validationResult.diagnostics"
+          :key="`${item.nodeId}:${item.code}:${item.path}`"
+        >
+          {{ localizeDiagnostic(item) }}
+        </li>
       </ul>
     </section>
 
-    <section v-if="executionResult" class="pipeline-results" aria-labelledby="pipeline-result-title">
+    <section
+      v-if="executionResult"
+      class="pipeline-results"
+      aria-labelledby="pipeline-result-title"
+    >
       <header>
         <div>
           <p>查看结果 / Trace</p>
-          <h4 id="pipeline-result-title">{{ executionResult.status === 'success' ? '执行完成' : '执行失败' }}</h4>
+          <h4 id="pipeline-result-title">
+            {{ executionResult.status === "success" ? "执行完成" : "执行失败" }}
+          </h4>
         </div>
         <span>总耗时 {{ executionResult.trace.totalDurationMs }} ms</span>
       </header>
       <div class="pipeline-results__trace">
         <article v-for="node in executionResult.trace.nodes" :key="node.nodeId">
           <div>
-            <strong>{{ flowNodes.find((item) => item.id === node.nodeId)?.data?.title ?? node.label ?? '计算步骤' }}</strong>
-            <span :class="`trace-status trace-status--${node.phase}`">{{ node.phase === 'ok' ? '完成' : node.phase === 'skipped' ? '跳过' : '失败' }}</span>
+            <strong>{{
+              flowNodes.find((item) => item.id === node.nodeId)?.data?.title ??
+              node.label ??
+              "计算步骤"
+            }}</strong>
+            <span :class="`trace-status trace-status--${node.phase}`">{{
+              node.phase === "ok" ? "完成" : node.phase === "skipped" ? "跳过" : "失败"
+            }}</span>
           </div>
           <dl>
-            <div><dt>输入行数</dt><dd>{{ node.inputRows }}</dd></div>
-            <div><dt>输出行数</dt><dd>{{ node.outputRows }}</dd></div>
-            <div><dt>耗时</dt><dd>{{ node.durationMs }} ms</dd></div>
+            <div>
+              <dt>输入行数</dt>
+              <dd>{{ node.inputRows }}</dd>
+            </div>
+            <div>
+              <dt>输出行数</dt>
+              <dd>{{ node.outputRows }}</dd>
+            </div>
+            <div>
+              <dt>耗时</dt>
+              <dd>{{ node.durationMs }} ms</dd>
+            </div>
           </dl>
           <ul v-if="node.diagnostics.length > 0">
-            <li v-for="item in node.diagnostics" :key="item.code">{{ localizeDiagnostic(item) }}</li>
+            <li v-for="item in node.diagnostics" :key="item.code">
+              {{ localizeDiagnostic(item) }}
+            </li>
           </ul>
         </article>
       </div>
-      <div v-if="Object.keys(executionResult.outputs).length > 0" class="pipeline-results__datasets">
+      <div
+        v-if="Object.keys(executionResult.outputs).length > 0"
+        class="pipeline-results__datasets"
+      >
         <details v-for="(dataset, name) in executionResult.outputs" :key="name">
           <summary>{{ name }} · {{ dataset.rows.length }} 行</summary>
           <div class="table-scroll">
             <table>
-              <thead><tr><th v-for="column in dataset.columns" :key="column.name" scope="col">{{ column.name }}</th></tr></thead>
+              <thead>
+                <tr>
+                  <th v-for="column in dataset.columns" :key="column.name" scope="col">
+                    {{ column.name }}
+                  </th>
+                </tr>
+              </thead>
               <tbody>
-                <tr v-for="(row, index) in dataset.rows" :key="index"><td v-for="column in dataset.columns" :key="column.name">{{ row[column.name] ?? '—' }}</td></tr>
+                <tr v-for="(row, index) in dataset.rows" :key="index">
+                  <td v-for="column in dataset.columns" :key="column.name">
+                    {{ row[column.name] ?? "—" }}
+                  </td>
+                </tr>
               </tbody>
             </table>
           </div>
@@ -585,7 +785,9 @@ onMounted(() => void loadOperations());
 
 .pipeline-editor__workspace {
   display: grid;
-  grid-template-columns: var(--pipeline-palette-width) minmax(0, 1fr) var(--pipeline-panel-width);
+  grid-template-columns: var(--pipeline-palette-width) minmax(0, 1fr) var(
+      --pipeline-panel-width
+    );
   min-height: var(--canvas-min-height);
 }
 

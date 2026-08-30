@@ -1,6 +1,11 @@
+import { createHash, randomUUID } from "node:crypto";
 import type { CallContext } from "@prismengine/contracts-data";
 import { PrismError, assertJsonValue } from "@prismengine/contracts-data";
 import type {
+  AuditJournal,
+  AuditQuery,
+  AuditRecord,
+  AuditVerification,
   AtomicWriteCapability,
   AtomicWriteRequest,
   AtomicWriteResult,
@@ -13,12 +18,14 @@ import type {
 import {
   ResourceEventType,
   StorageDiagnosticCode,
+  assertAtomicWriteIdentifiers,
+  assertStorageAuditContext,
+  assertStorageNamespace,
+  validatingDocumentCollection,
+  validatingAuditJournal,
+  validatingResourceStore,
 } from "@prismengine/contracts-storage";
-import type {
-  EventBus,
-  Resource,
-  ResourceQuery,
-} from "@prismengine/kernel";
+import type { EventBus, Resource, ResourceQuery } from "@prismengine/kernel";
 
 export type AtomicWriteFaultPoint =
   | { readonly point: "after-operation"; readonly operationIndex: number }
@@ -33,6 +40,92 @@ const NOOP_EVENTS: EventBus = {
   async publish(): Promise<void> {},
   subscribe: () => () => {},
 };
+interface AuditChange {
+  readonly action: string;
+  readonly targetKind: string;
+  readonly targetId: string;
+  readonly before: unknown;
+  readonly after: unknown;
+}
+
+class MemoryAuditJournal implements AuditJournal {
+  private readonly records: AuditRecord[] = [];
+
+  append(context: CallContext, change: AuditChange): void {
+    const previous = this.records.at(-1);
+    const sequence = this.records.length + 1;
+    const unsigned = {
+      sequence,
+      id: randomUUID(),
+      timestamp: new Date().toISOString(),
+      principalId: context.principal.id,
+      action: change.action,
+      targetKind: change.targetKind,
+      targetId: change.targetId,
+      beforeFingerprint: change.before === null ? null : fingerprint(change.before),
+      afterFingerprint: change.after === null ? null : fingerprint(change.after),
+      ...(context.changeReason ? { reason: context.changeReason } : {}),
+      correlationId: context.correlationId,
+      ...(context.approvalId ? { approvalId: context.approvalId } : {}),
+      previousHash: previous?.entryHash ?? null,
+    };
+    this.records.push(
+      Object.freeze({
+        ...unsigned,
+        entryHash: fingerprint(unsigned),
+      }),
+    );
+  }
+
+  async list(
+    _context: CallContext,
+    query: AuditQuery = {},
+  ): Promise<readonly AuditRecord[]> {
+    const limit = Math.max(0, Math.min(query.limit ?? 100, 1_000));
+    return this.records
+      .filter(
+        (record) =>
+          record.sequence > (query.afterSequence ?? 0) &&
+          (query.targetKind === undefined || record.targetKind === query.targetKind) &&
+          (query.targetId === undefined || record.targetId === query.targetId),
+      )
+      .slice(0, limit)
+      .map((record) => immutableCopy(record));
+  }
+
+  async verify(_context: CallContext): Promise<AuditVerification> {
+    let previousHash: string | null = null;
+    for (const record of this.records) {
+      const { entryHash, ...unsigned } = record;
+      if (record.previousHash !== previousHash || fingerprint(unsigned) !== entryHash) {
+        return {
+          valid: false,
+          checked: record.sequence - 1,
+          brokenAtSequence: record.sequence,
+        };
+      }
+      previousHash = entryHash;
+    }
+    return { valid: true, checked: this.records.length };
+  }
+}
+
+function fingerprint(value: unknown): string {
+  const canonical = (item: unknown): unknown => {
+    if (Array.isArray(item)) return item.map(canonical);
+    if (item !== null && typeof item === "object") {
+      return Object.fromEntries(
+        Object.entries(item as Record<string, unknown>)
+          .sort(([left], [right]) => left.localeCompare(right))
+          .map(([key, child]) => [key, canonical(child)]),
+      );
+    }
+    return item;
+  };
+  return createHash("sha256")
+    .update(JSON.stringify(canonical(value)))
+    .digest("hex");
+}
 
 function cloneValue<T>(value: T, seen = new Map<object, object>()): T {
   if (value === null || typeof value !== "object") return value;
@@ -105,6 +198,18 @@ function publishedImmutable(kind: string, id: string, revision: number): PrismEr
     { kind, id, revision },
   );
 }
+function resourceConflict(
+  kind: string,
+  id: string,
+  expectedUpdatedAt: string | null,
+  actualUpdatedAt: string | null,
+): PrismError {
+  return storageError(
+    StorageDiagnosticCode.RESOURCE_CONFLICT,
+    `Resource ${kind}/${id} changed after it was loaded.`,
+    { kind, id, expectedUpdatedAt, actualUpdatedAt },
+  );
+}
 
 function latest(revisions: readonly Resource[]): Resource {
   return revisions[revisions.length - 1]!;
@@ -119,7 +224,10 @@ function nextTimestamp(previous?: string): string {
 class MemoryResourceStore implements ResourceStore {
   private readonly byKind = new Map<string, Map<string, Resource[]>>();
 
-  constructor(private readonly events: EventBus) {}
+  constructor(
+    private readonly events: EventBus,
+    private readonly audit: MemoryAuditJournal,
+  ) {}
 
   async get<TSpec>(
     _context: CallContext,
@@ -182,10 +290,27 @@ class MemoryResourceStore implements ResourceStore {
     // a Decimal or a Date alive by reference, which is exactly how a spec that
     // cannot survive a real database reached production once already.
     assertJsonValue(command.spec, "/spec");
+    const existing =
+      command.id === undefined ? undefined : this.revisionsFor(command.kind, command.id);
+    const currentBeforeSave = existing === undefined ? undefined : latest(existing);
+    if (
+      command.expectedUpdatedAt !== undefined &&
+      command.expectedUpdatedAt !== (currentBeforeSave?.updatedAt ?? null)
+    ) {
+      throw resourceConflict(
+        command.kind,
+        command.id ?? "(assigned)",
+        command.expectedUpdatedAt,
+        currentBeforeSave?.updatedAt ?? null,
+      );
+    }
 
     let resource: Resource<TSpec>;
 
-    if (command.id === undefined || this.revisionsFor(command.kind, command.id) === undefined) {
+    if (
+      command.id === undefined ||
+      this.revisionsFor(command.kind, command.id) === undefined
+    ) {
       // PUT semantics: a caller-chosen id creates the resource when absent.
       // Scheme ids are business-meaningful and are referenced by a run's pin,
       // so the caller must be able to choose one.
@@ -238,6 +363,13 @@ class MemoryResourceStore implements ResourceStore {
     }
 
     const result = immutableCopy(resource);
+    this.audit.append(context, {
+      action: "resource.draft.save",
+      targetKind: result.kind,
+      targetId: result.id,
+      before: currentBeforeSave ?? null,
+      after: result,
+    });
     await this.events.publish(ResourceEventType.DraftSaved, result, {
       correlationId: context.correlationId,
     });
@@ -249,6 +381,7 @@ class MemoryResourceStore implements ResourceStore {
     kind: string,
     id: string,
     revision: number,
+    expectedUpdatedAt?: string,
   ): Promise<Resource<TSpec>> {
     const revisions = this.revisionsFor(kind, id);
     if (revisions === undefined) throw resourceNotFound(kind, id);
@@ -257,6 +390,9 @@ class MemoryResourceStore implements ResourceStore {
     const current = revisions[index];
     if (current === undefined) throw revisionNotFound(kind, id, revision);
     if (current.status !== "draft") throw publishedImmutable(kind, id, revision);
+    if (expectedUpdatedAt !== undefined && current.updatedAt !== expectedUpdatedAt) {
+      throw resourceConflict(kind, id, expectedUpdatedAt, current.updatedAt);
+    }
 
     const published: Resource = {
       ...current,
@@ -265,6 +401,13 @@ class MemoryResourceStore implements ResourceStore {
     };
     revisions[index] = published;
     const result = immutableCopy(published as Resource<TSpec>);
+    this.audit.append(context, {
+      action: "resource.publish",
+      targetKind: result.kind,
+      targetId: result.id,
+      before: current,
+      after: result,
+    });
     await this.events.publish(ResourceEventType.Published, result, {
       correlationId: context.correlationId,
     });
@@ -298,6 +441,13 @@ class MemoryResourceStore implements ResourceStore {
     };
     revisions.push(draft);
     const result = immutableCopy(draft);
+    this.audit.append(context, {
+      action: "resource.clone",
+      targetKind: result.kind,
+      targetId: result.id,
+      before: source,
+      after: result,
+    });
     await this.events.publish(ResourceEventType.DraftSaved, result, {
       correlationId: context.correlationId,
     });
@@ -307,6 +457,7 @@ class MemoryResourceStore implements ResourceStore {
   async archive(context: CallContext, kind: string, id: string): Promise<void> {
     const revisions = this.revisionsFor(kind, id);
     if (revisions === undefined) throw resourceNotFound(kind, id);
+    const before = immutableCopy(latest(revisions));
     const now = nextTimestamp(latest(revisions).updatedAt);
     for (let index = 0; index < revisions.length; index += 1) {
       const resource = revisions[index];
@@ -314,11 +465,16 @@ class MemoryResourceStore implements ResourceStore {
         revisions[index] = { ...resource, status: "archived", updatedAt: now };
       }
     }
-    await this.events.publish(
-      ResourceEventType.Archived,
-      immutableCopy({ kind, id }),
-      { correlationId: context.correlationId },
-    );
+    this.audit.append(context, {
+      action: "resource.archive",
+      targetKind: kind,
+      targetId: id,
+      before,
+      after: latest(revisions),
+    });
+    await this.events.publish(ResourceEventType.Archived, immutableCopy({ kind, id }), {
+      correlationId: context.correlationId,
+    });
   }
 
   private resourcesFor(kind: string): Map<string, Resource[]> {
@@ -345,10 +501,7 @@ function fieldValue(document: object, field: string): unknown {
   return Reflect.get(document, field);
 }
 
-function matchesWhere(
-  document: object,
-  where: DocumentQuery["where"],
-): boolean {
+function matchesWhere(document: object, where: DocumentQuery["where"]): boolean {
   if (where === undefined) return true;
   return Object.entries(where).every(([field, expected]) =>
     Object.is(fieldValue(document, field), expected),
@@ -376,10 +529,15 @@ function naturalNumber(value: number | undefined, fallback: number): number {
   return Math.max(0, Math.trunc(value));
 }
 
-class MemoryDocumentCollection<TDocument extends { readonly id: string }>
-  implements DocumentCollection<TDocument>
-{
+class MemoryDocumentCollection<
+  TDocument extends { readonly id: string },
+> implements DocumentCollection<TDocument> {
   private readonly documents = new Map<string, TDocument>();
+
+  constructor(
+    private readonly name: string,
+    private readonly audit: MemoryAuditJournal,
+  ) {}
 
   async get(_context: CallContext, id: string): Promise<TDocument | null> {
     const document = this.documents.get(id);
@@ -419,29 +577,56 @@ class MemoryDocumentCollection<TDocument extends { readonly id: string }>
     }
     const offset = naturalNumber(query.offset, 0);
     const limit = naturalNumber(query.limit, Number.POSITIVE_INFINITY);
-    return documents.slice(offset, offset + limit).map((document) => immutableCopy(document));
+    return documents
+      .slice(offset, offset + limit)
+      .map((document) => immutableCopy(document));
   }
 
-  async put(_context: CallContext, document: TDocument): Promise<TDocument> {
+  async put(context: CallContext, document: TDocument): Promise<TDocument> {
     assertJsonValue(document, "/document");
+    const before = this.documents.get(document.id) ?? null;
     const stored = immutableCopy(document);
     this.documents.set(document.id, stored);
+    this.audit.append(context, {
+      action: "document.put",
+      targetKind: this.name,
+      targetId: document.id,
+      before,
+      after: stored,
+    });
     return immutableCopy(stored);
   }
 
-  async putMany(
-    _context: CallContext,
-    documents: readonly TDocument[],
-  ): Promise<void> {
-    // Validate everything before storing anything: a half-written batch is
-    // harder to reason about than a rejected one.
-    documents.forEach((document, index) => assertJsonValue(document, `/documents/${index}`));
+  async putMany(context: CallContext, documents: readonly TDocument[]): Promise<void> {
+    documents.forEach((document, index) =>
+      assertJsonValue(document, `/documents/${index}`),
+    );
+    const before = new Map(
+      documents.map((document) => [document.id, this.documents.get(document.id) ?? null]),
+    );
     const stored = documents.map((document) => immutableCopy(document));
     for (const document of stored) this.documents.set(document.id, document);
+    for (const document of stored) {
+      this.audit.append(context, {
+        action: "document.put",
+        targetKind: this.name,
+        targetId: document.id,
+        before: before.get(document.id) ?? null,
+        after: document,
+      });
+    }
   }
 
-  async delete(_context: CallContext, id: string): Promise<void> {
+  async delete(context: CallContext, id: string): Promise<void> {
+    const before = this.documents.get(id) ?? null;
     this.documents.delete(id);
+    this.audit.append(context, {
+      action: "document.delete",
+      targetKind: this.name,
+      targetId: id,
+      before,
+      after: null,
+    });
   }
 
   async count(_context: CallContext, query: DocumentQuery = {}): Promise<number> {
@@ -468,6 +653,8 @@ class MemoryDocumentCollection<TDocument extends { readonly id: string }>
 
 export class MemoryStorage implements StorageCapability, AtomicWriteCapability {
   readonly resources: ResourceStore;
+  private readonly auditWriter = new MemoryAuditJournal();
+  readonly audit: AuditJournal = validatingAuditJournal(this.auditWriter);
   private readonly collections = new Map<
     string,
     MemoryDocumentCollection<{ readonly id: string }>
@@ -477,26 +664,47 @@ export class MemoryStorage implements StorageCapability, AtomicWriteCapability {
     events: EventBus = NOOP_EVENTS,
     private readonly atomicWriteFault?: AtomicWriteFaultInjector,
   ) {
-    this.resources = new MemoryResourceStore(events);
+    this.resources = validatingResourceStore(
+      new MemoryResourceStore(events, this.auditWriter),
+    );
+  }
+
+  async productionReadiness(context: CallContext) {
+    const audit = await this.audit.verify(context);
+    return [
+      {
+        id: "database.pitr" as const,
+        passed: false,
+        evidence: JSON.stringify({ provider: "storage.memory", durable: false }),
+      },
+      {
+        id: "audit-journal.valid" as const,
+        passed: audit.valid,
+        evidence: JSON.stringify({ checked: audit.checked }),
+      },
+    ];
   }
 
   collection<TDocument extends { readonly id: string }>(
     name: string,
   ): DocumentCollection<TDocument> {
+    assertStorageNamespace(name, "collection");
     let collection = this.collections.get(name);
     if (collection === undefined) {
-      collection = new MemoryDocumentCollection();
+      collection = new MemoryDocumentCollection(name, this.auditWriter);
       this.collections.set(name, collection);
     }
     // The collection name is the runtime type boundary; repeated callers own its document type.
     const typedCollection = collection as unknown as DocumentCollection<TDocument>;
-    return typedCollection;
+    return validatingDocumentCollection(typedCollection);
   }
 
   async execute(
-    _context: CallContext,
+    context: CallContext,
     request: AtomicWriteRequest,
   ): Promise<AtomicWriteResult> {
+    assertStorageAuditContext(context);
+    assertAtomicWriteIdentifiers(request);
     validateAtomicRequest(request);
     const drafts = new Map<string, Map<string, { readonly id: string }>>();
     const draftFor = (name: string): Map<string, { readonly id: string }> => {
@@ -510,18 +718,28 @@ export class MemoryStorage implements StorageCapability, AtomicWriteCapability {
 
     for (const precondition of request.preconditions) {
       const document = draftFor(precondition.collection).get(precondition.id);
-      const satisfied = precondition.kind === "document-absent"
-        ? document === undefined
-        : document !== undefined && Object.entries(precondition.fields ?? {}).every(
-            ([field, expected]) => Object.is(fieldValue(document, field), expected),
-          );
+      const satisfied =
+        precondition.kind === "document-absent"
+          ? document === undefined
+          : document !== undefined &&
+            Object.entries(precondition.fields ?? {}).every(([field, expected]) =>
+              Object.is(fieldValue(document, field), expected),
+            );
       if (!satisfied) throw atomicConflict(request.requestId, precondition);
     }
 
-    for (let operationIndex = 0; operationIndex < request.operations.length; operationIndex += 1) {
+    const auditChanges: AuditChange[] = [];
+    for (
+      let operationIndex = 0;
+      operationIndex < request.operations.length;
+      operationIndex += 1
+    ) {
       const operation = request.operations[operationIndex];
       if (operation === undefined) continue;
       const draft = draftFor(operation.collection);
+      const targetId =
+        operation.kind === "put-document" ? operation.document.id : operation.id;
+      const before = draft.get(targetId) ?? null;
       if (operation.kind === "delete-document") {
         draft.delete(operation.id);
       } else {
@@ -538,6 +756,13 @@ export class MemoryStorage implements StorageCapability, AtomicWriteCapability {
         }
         draft.set(operation.document.id, immutableCopy(operation.document));
       }
+      auditChanges.push({
+        action: operation.kind === "delete-document" ? "document.delete" : "document.put",
+        targetKind: operation.collection,
+        targetId,
+        before,
+        after: operation.kind === "delete-document" ? null : operation.document,
+      });
       this.atomicWriteFault?.hit({ point: "after-operation", operationIndex });
     }
     this.atomicWriteFault?.hit({ point: "before-commit" });
@@ -545,11 +770,12 @@ export class MemoryStorage implements StorageCapability, AtomicWriteCapability {
     for (const [name, documents] of drafts) {
       let collection = this.collections.get(name);
       if (collection === undefined) {
-        collection = new MemoryDocumentCollection();
+        collection = new MemoryDocumentCollection(name, this.auditWriter);
         this.collections.set(name, collection);
       }
       collection.replace(documents);
     }
+    for (const change of auditChanges) this.auditWriter.append(context, change);
     this.atomicWriteFault?.hit({ point: "after-commit" });
     return { requestId: request.requestId, operationCount: request.operations.length };
   }
@@ -611,7 +837,6 @@ function atomicConflict(
     },
   );
 }
-
 
 export function createMemoryStorage(
   events?: EventBus,

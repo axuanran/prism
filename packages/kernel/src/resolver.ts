@@ -3,6 +3,8 @@ import type { Diagnostic } from "@prismengine/contracts-data";
 import semver from "semver";
 import { normalizeRequirement } from "./capability.js";
 import type { AnyPluginDefinition } from "./plugin.js";
+import { assertPluginDefinition, kernelIdentityField } from "./identity.js";
+import { ENGINE_VERSION } from "./version.js";
 
 export interface ProviderRecord {
   readonly capabilityId: string;
@@ -36,13 +38,28 @@ export interface Resolution {
  * duplicate plugin ids, duplicate providers, missing capabilities, semver
  * mismatches and dependency cycles.
  */
-export function resolvePlugins(
-  plugins: readonly AnyPluginDefinition[],
-): Resolution {
+export function resolvePlugins(plugins: readonly AnyPluginDefinition[]): Resolution {
   const diagnostics: Diagnostic[] = [];
 
   const byId = new Map<string, AnyPluginDefinition>();
-  for (const plugin of plugins) {
+  for (const [pluginIndex, plugin] of plugins.entries()) {
+    try {
+      assertPluginDefinition(plugin);
+    } catch (error) {
+      diagnostics.push(
+        diagnostic(
+          EngineDiagnosticCode.KERNEL_IDENTITY_INVALID,
+          "Kernel identity metadata is invalid.",
+          {
+            details: {
+              pluginIndex,
+              field: kernelIdentityField(error),
+            },
+          },
+        ),
+      );
+      continue;
+    }
     const existing = byId.get(plugin.id);
     if (existing) {
       diagnostics.push(
@@ -56,6 +73,39 @@ export function resolvePlugins(
     }
     byId.set(plugin.id, plugin);
   }
+  for (const plugin of byId.values()) {
+    if (plugin.engineRange === undefined) {
+      diagnostics.push(
+        diagnostic(
+          EngineDiagnosticCode.PLUGIN_ENGINE_COMPATIBILITY_UNDECLARED,
+          `Plugin "${plugin.id}" does not declare an Engine compatibility range.`,
+          {
+            severity: "warning",
+            details: { pluginId: plugin.id, engineVersion: ENGINE_VERSION },
+          },
+        ),
+      );
+      continue;
+    }
+    if (
+      semver.validRange(plugin.engineRange) === null ||
+      !semver.satisfies(ENGINE_VERSION, plugin.engineRange)
+    ) {
+      diagnostics.push(
+        diagnostic(
+          EngineDiagnosticCode.PLUGIN_ENGINE_COMPATIBILITY_INVALID,
+          `Plugin "${plugin.id}" is incompatible with Prism Engine ${ENGINE_VERSION}.`,
+          {
+            details: {
+              pluginId: plugin.id,
+              engineVersion: ENGINE_VERSION,
+              engineRange: plugin.engineRange,
+            },
+          },
+        ),
+      );
+    }
+  }
 
   const providers = new Map<string, ProviderRecord>();
   for (const plugin of byId.values()) {
@@ -66,7 +116,9 @@ export function resolvePlugins(
           diagnostic(
             EngineDiagnosticCode.CAPABILITY_DUPLICATE_PROVIDER,
             `Capability "${token.id}" is provided by both "${existing.pluginId}" and "${plugin.id}".`,
-            { details: { capabilityId: token.id, plugins: [existing.pluginId, plugin.id] } },
+            {
+              details: { capabilityId: token.id, plugins: [existing.pluginId, plugin.id] },
+            },
           ),
         );
         continue;

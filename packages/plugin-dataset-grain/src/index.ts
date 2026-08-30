@@ -74,10 +74,7 @@ const capability: GrainCapability = {
     };
   },
   read(schema) {
-    return findSemanticAnnotation(
-      schema.semanticAnnotations,
-      GrainAnnotation,
-    )?.spec;
+    return findSemanticAnnotation(schema.semanticAnnotations, GrainAnnotation)?.spec;
   },
   normalize,
 };
@@ -91,12 +88,10 @@ export const grainPlanAnalyzer: PlanAnalysisExtension = {
 export const grainPlugin = definePlugin({
   id: "dataset.grain",
   version: GRAIN_PLUGIN_VERSION,
+  engineRange: "^0.1.20",
   provides: [GrainCapabilityToken],
   register(context) {
-    context.extensions.contribute(
-      PlanAnalysisExtensionPoint,
-      grainPlanAnalyzer,
-    );
+    context.extensions.contribute(PlanAnalysisExtensionPoint, grainPlanAnalyzer);
     context.provide(GrainCapabilityToken, capability);
   },
 });
@@ -129,10 +124,12 @@ function analyzeNode(
         "A grain-safe Lookup must fail when the lookup key is ambiguous.",
       );
     }
-    return handled(source, [uniqueConstraint(
-      "table",
-      node.keys.map((key) => key.right),
-    )]);
+    return handled(source, [
+      uniqueConstraint(
+        "table",
+        node.keys.map((key) => key.right),
+      ),
+    ]);
   }
 
   if (node.kind === "join") {
@@ -148,10 +145,18 @@ function analyzeNode(
       );
     }
     const constraints: PlanConstraint[] = [
-      uniqueConstraint("right", node.keys.map((key) => key.right)),
+      uniqueConstraint(
+        "right",
+        node.keys.map((key) => key.right),
+      ),
     ];
     if (node.expectedCardinality === "one-to-one") {
-      constraints.push(uniqueConstraint("left", node.keys.map((key) => key.left)));
+      constraints.push(
+        uniqueConstraint(
+          "left",
+          node.keys.map((key) => key.left),
+        ),
+      );
     }
     return handled(left, constraints);
   }
@@ -163,8 +168,9 @@ function analyzeNode(
 
   if (node.kind === "project") {
     const outputColumns = new Set(node.outputType.columns.map((column) => column.name));
-    const missing = [...new Set([...grain.dimensions, ...grain.uniqueBy])]
-      .filter((column) => !outputColumns.has(column));
+    const missing = [...new Set([...grain.dimensions, ...grain.uniqueBy])].filter(
+      (column) => !outputColumns.has(column),
+    );
     if (missing.length > 0) {
       return invalid(
         GrainDiagnosticCode.MISSING_COLUMN,
@@ -217,10 +223,7 @@ function handled(
   };
 }
 
-function invalid(
-  code: string,
-  message: string,
-): AnalysisResult<PlanNodeAnalysisValue> {
+function invalid(code: string, message: string): AnalysisResult<PlanNodeAnalysisValue> {
   return {
     kind: "invalid",
     diagnostics: [diagnostic(code, message)],
@@ -263,8 +266,9 @@ function sortedUnique(values: readonly string[]): readonly string[] {
 
 function assertColumns(schema: TableType, grain: GrainSpec): void {
   const columns = new Set(schema.columns.map((column) => column.name));
-  const missing = [...new Set([...grain.dimensions, ...grain.uniqueBy])]
-    .filter((column) => !columns.has(column));
+  const missing = [...new Set([...grain.dimensions, ...grain.uniqueBy])].filter(
+    (column) => !columns.has(column),
+  );
   if (missing.length > 0) {
     throw PrismError.of(
       GrainDiagnosticCode.MISSING_COLUMN,

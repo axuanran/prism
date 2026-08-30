@@ -8,14 +8,38 @@ on:
         required: true
         default: latest
         type: string
+      finalize-only:
+        description: Finalize previously built and signed image digests after npm publication
+        required: true
+        default: false
+        type: boolean
+      resume-packages:
+        description: Resume a partial exact-tarball npm publication after SRI verification
+        required: true
+        default: false
+        type: boolean
+      worker-digest:
+        description: Exact sha256 Worker digest required for finalize-only recovery
+        required: false
+        type: string
+      host-digest:
+        description: Exact sha256 Host digest required for finalize-only recovery
+        required: false
+        type: string
 
 permissions:
   contents: read
   id-token: write
+  packages: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   publish:
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     services:
       postgres:
         image: postgres:17
@@ -30,26 +54,225 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
-    env:
-      NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-      PRISM_TEST_DATABASE_URL: postgres://prism:prism@127.0.0.1:55432/postgres
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4 release line
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4 release line
         with:
           version: 11.21.0
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4 release line
         with:
-          node-version: 24
+          node-version: 24.20.0
           cache: pnpm
           registry-url: https://registry.npmjs.org
+      - name: Reject conflicting recovery modes
+        if: ${{ inputs['finalize-only'] && inputs['resume-packages'] }}
+        run: exit 1
+      - name: Ref, manifest, and npm version preflight
+        if: ${{ !inputs['finalize-only'] && !inputs['resume-packages'] }}
+        env:
+          RELEASE_NPM_TAG: ${{ inputs['npm-tag'] }}
+          RELEASE_REF_PROTECTED: ${{ github.ref_protected }}
+        run: >-
+          node scripts/release-preflight.mjs
+          --mode release
+          --ref "$GITHUB_REF"
+          --ref-protected "$RELEASE_REF_PROTECTED"
+          --npm-tag "$RELEASE_NPM_TAG"
+      - name: Partial npm publication recovery preflight
+        if: ${{ inputs['resume-packages'] && !inputs['finalize-only'] }}
+        env:
+          RELEASE_NPM_TAG: ${{ inputs['npm-tag'] }}
+          RELEASE_REF_PROTECTED: ${{ github.ref_protected }}
+        run: >-
+          node scripts/release-preflight.mjs
+          --mode resume
+          --ref "$GITHUB_REF"
+          --ref-protected "$RELEASE_REF_PROTECTED"
+          --npm-tag "$RELEASE_NPM_TAG"
+      - name: Finalization recovery preflight
+        if: ${{ inputs['finalize-only'] && !inputs['resume-packages'] }}
+        env:
+          RELEASE_REF_PROTECTED: ${{ github.ref_protected }}
+        run: >-
+          node scripts/release-preflight.mjs
+          --mode finalize
+          --ref "$GITHUB_REF"
+          --ref-protected "$RELEASE_REF_PROTECTED"
+          --worker-digest "${{ inputs['worker-digest'] }}"
+          --host-digest "${{ inputs['host-digest'] }}"
       - run: pnpm install --frozen-lockfile
+        if: ${{ !inputs['finalize-only'] }}
       - run: pnpm build:ci
+        if: ${{ !inputs['finalize-only'] }}
       - run: pnpm typecheck:ci
+        if: ${{ !inputs['finalize-only'] }}
       - run: pnpm lint
-      - run: pnpm test
+        if: ${{ !inputs['finalize-only'] }}
+      - name: Run required PostgreSQL tests
+        if: ${{ !inputs['finalize-only'] }}
+        env:
+          PRISM_TEST_DATABASE_URL: postgres://prism:prism@127.0.0.1:55432/postgres
+          PRISM_REQUIRE_POSTGRES_TESTS: "1"
+        run: pnpm test
       - run: pnpm --filter @prismengine/studio build
+        if: ${{ !inputs['finalize-only'] }}
+      - name: Prepare public package tarballs
+        if: ${{ !inputs['finalize-only'] }}
+        run: pnpm release:prepare-packages
+      - name: Generate SPDX SBOM
+        if: ${{ !inputs['finalize-only'] }}
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0 release line
+        with:
+          path: .
+          format: spdx-json
+          output-file: prism-engine.spdx.json
+          upload-artifact: false
+      - name: Install cosign
+        uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3 release line
+      - name: Keyless-sign SBOM
+        if: ${{ !inputs['finalize-only'] }}
+        run: >-
+          cosign sign-blob --yes
+          --bundle prism-engine.spdx.json.sigstore.json
+          prism-engine.spdx.json
+      - name: Keyless-sign prepared package evidence
+        if: ${{ !inputs['finalize-only'] }}
+        run: >-
+          cosign sign-blob --yes
+          --bundle release/npm/release-packages.json.sigstore.json
+          release/npm/release-packages.json
+      - name: Read Worker image version
+        id: worker-version
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3 release line
+      - name: Login to GHCR for digest operations
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3 release line
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and publish isolated Worker image
+        if: ${{ !inputs['finalize-only'] }}
+        id: worker-build
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6 release line
+        with:
+          context: .
+          file: docker/worker.Dockerfile
+          outputs: type=image,name=ghcr.io/${{ github.repository }}/worker,push-by-digest=true,name-canonical=true,push=true
+          build-args: |
+            PRISM_VERSION=${{ steps.worker-version.outputs.version }}
+          provenance: mode=max
+          sbom: true
+      - name: Keyless-sign Worker image
+        if: ${{ !inputs['finalize-only'] }}
+        run: >-
+          cosign sign --yes
+          ghcr.io/${{ github.repository }}/worker@${{ steps.worker-build.outputs.digest }}
+      - name: Build and publish Production Host image
+        if: ${{ !inputs['finalize-only'] }}
+        id: host-build
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6 release line
+        with:
+          context: .
+          file: docker/host.Dockerfile
+          outputs: type=image,name=ghcr.io/${{ github.repository }}/host,push-by-digest=true,name-canonical=true,push=true
+          build-args: |
+            PRISM_VERSION=${{ steps.worker-version.outputs.version }}
+          provenance: mode=max
+          sbom: true
+      - name: Keyless-sign Production Host image
+        if: ${{ !inputs['finalize-only'] }}
+        run: >-
+          cosign sign --yes
+          ghcr.io/${{ github.repository }}/host@${{ steps.host-build.outputs.digest }}
+      - name: Verify supplied image signatures
+        if: ${{ inputs['finalize-only'] }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          IDENTITY="https://github.com/$GITHUB_REPOSITORY/.github/workflows/release.yml@$GITHUB_REF"
+          cosign verify \
+            --certificate-identity "$IDENTITY" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            "ghcr.io/${{ github.repository }}/worker@${{ inputs['worker-digest'] }}"
+          cosign verify \
+            --certificate-identity "$IDENTITY" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            "ghcr.io/${{ github.repository }}/host@${{ inputs['host-digest'] }}"
+      - name: Record signed image identities
+        if: ${{ !inputs['finalize-only'] }}
+        shell: bash
+        env:
+          RELEASE_REF: ${{ github.ref }}
+          RELEASE_VERSION: ${{ steps.worker-version.outputs.version }}
+          RELEASE_SOURCE_SHA: ${{ github.sha }}
+          RELEASE_REPOSITORY: ${{ github.repository }}
+          WORKER_DIGEST: ${{ steps.worker-build.outputs.digest }}
+          HOST_DIGEST: ${{ steps.host-build.outputs.digest }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { writeFileSync } from "node:fs";
+          const digest = /^sha256:[0-9a-f]{64}$/u;
+          if (!digest.test(process.env.WORKER_DIGEST ?? "") ||
+              !digest.test(process.env.HOST_DIGEST ?? "")) {
+            throw new Error("Image build returned a noncanonical digest.");
+          }
+          writeFileSync("release-images.json", `${JSON.stringify({
+            version: process.env.RELEASE_VERSION,
+            ref: process.env.RELEASE_REF,
+            sourceSha: process.env.RELEASE_SOURCE_SHA,
+            repository: process.env.RELEASE_REPOSITORY,
+            workerDigest: process.env.WORKER_DIGEST,
+            hostDigest: process.env.HOST_DIGEST,
+          }, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+          NODE
+      - name: Keyless-sign image identity evidence
+        if: ${{ !inputs['finalize-only'] }}
+        run: >-
+          cosign sign-blob --yes
+          --bundle release-images.json.sigstore.json
+          release-images.json
+      - name: Verify custom release evidence
+        if: ${{ !inputs['finalize-only'] }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          IDENTITY="https://github.com/$GITHUB_REPOSITORY/.github/workflows/release.yml@$GITHUB_REF"
+          cosign verify-blob \
+            --bundle release/npm/release-packages.json.sigstore.json \
+            --certificate-identity "$IDENTITY" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            release/npm/release-packages.json
+          cosign verify-blob \
+            --bundle release-images.json.sigstore.json \
+            --certificate-identity "$IDENTITY" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            release-images.json
+      - name: Upload signed supply-chain evidence
+        if: ${{ !inputs['finalize-only'] }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4 release line
+        with:
+          name: prism-engine-sbom
+          path: |
+            prism-engine.spdx.json
+            prism-engine.spdx.json.sigstore.json
+            release-images.json
+            release-images.json.sigstore.json
+            release/npm/*.tgz
+            release/npm/release-packages.json
+            release/npm/release-packages.json.sigstore.json
+          if-no-files-found: error
+          retention-days: 90
+      - name: Logout GHCR before npm operations
+        run: docker logout ghcr.io
       - name: Verify npm token and @prismengine scope access
+        if: ${{ !inputs['finalize-only'] }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         shell: bash
         run: |
           set -euo pipefail
@@ -77,14 +300,45 @@ jobs:
           # Token publishes the bootstrap 0.1.0 packages. After they exist,
           # each package can configure release.yml as its Trusted Publisher.
           echo "npm bootstrap authentication PASS."
-      # Recursive publish follows workspace topology: contracts/SDK/providers
-      # precede @prismengine/platform. workflow_dispatch + NPM_TOKEN is required;
-      # local development can never accidentally publish.
-      - name: Publish Apache-2.0 packages
+      # Exact prepared tarballs are published in deterministic dependency order.
+      # Existing versions are skipped only after exact registry SRI equality.
+      - name: Publish exact Apache-2.0 package tarballs
+        if: ${{ !inputs['finalize-only'] }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          RELEASE_NPM_TAG: ${{ inputs['npm-tag'] }}
+          RELEASE_REF_PROTECTED: ${{ github.ref_protected }}
         run: >-
-          pnpm --recursive --filter './packages/**'
-          publish --access public --provenance --no-git-checks
-          --tag '${{ inputs.npm-tag }}'
+          node scripts/release-preflight.mjs
+          --mode publish
+          --ref "$GITHUB_REF"
+          --ref-protected "$RELEASE_REF_PROTECTED"
+          --source-sha "$GITHUB_SHA"
+          --npm-tag "$RELEASE_NPM_TAG"
+      - name: Keyless-sign npm publication result
+        if: ${{ always() && !inputs['finalize-only'] && hashFiles('release/npm/publication-result.json') != '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cosign sign-blob --yes \
+            --bundle release/npm/publication-result.json.sigstore.json \
+            release/npm/publication-result.json
+          IDENTITY="https://github.com/$GITHUB_REPOSITORY/.github/workflows/release.yml@$GITHUB_REF"
+          cosign verify-blob \
+            --bundle release/npm/publication-result.json.sigstore.json \
+            --certificate-identity "$IDENTITY" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            release/npm/publication-result.json
+      - name: Upload npm publication recovery evidence
+        if: ${{ always() && !inputs['finalize-only'] }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4 release line
+        with:
+          name: prism-engine-publication-result
+          path: |
+            release/npm/publication-result.json
+            release/npm/publication-result.json.sigstore.json
+          if-no-files-found: warn
+          retention-days: 90
 
       - name: Smoke-install public distribution from a clean directory
         shell: bash
@@ -99,7 +353,9 @@ jobs:
             const fs = require('node:fs');
             for (const dir of fs.readdirSync('packages')) {
               const path = 'packages/' + dir + '/package.json';
-              if (fs.existsSync(path)) console.log(require('./' + path).name);
+              if (!fs.existsSync(path)) continue;
+              const manifest = require('./' + path);
+              if (manifest.private !== true) console.log(manifest.name);
             }
           ")
           SMOKE="$(mktemp -d)"
@@ -188,3 +444,24 @@ jobs:
           }
           console.log(`Registry smoke PASS: platform ${PRISM_PLATFORM_VERSION}; ${ids.join(", ")}`);
           NODE
+      - name: Login to GHCR for final tags
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3 release line
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Finalize Worker and Host release tags
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.worker-version.outputs.version }}"
+          WORKER_DIGEST="${{ inputs['finalize-only'] && inputs['worker-digest'] || steps.worker-build.outputs.digest }}"
+          HOST_DIGEST="${{ inputs['finalize-only'] && inputs['host-digest'] || steps.host-build.outputs.digest }}"
+          docker buildx imagetools create \
+            --tag "ghcr.io/${{ github.repository }}/worker:$VERSION" \
+            --tag "ghcr.io/${{ github.repository }}/worker:sha-$GITHUB_SHA" \
+            "ghcr.io/${{ github.repository }}/worker@$WORKER_DIGEST"
+          docker buildx imagetools create \
+            --tag "ghcr.io/${{ github.repository }}/host:$VERSION" \
+            --tag "ghcr.io/${{ github.repository }}/host:sha-$GITHUB_SHA" \
+            "ghcr.io/${{ github.repository }}/host@$HOST_DIGEST"

@@ -51,7 +51,10 @@ packages/plugin-sdk                     supported plugin-authoring facade
 packages/platform                       compatible public distribution/composition
 packages/project-sdk                    browser project ABI helpers and public types
 packages/contracts-data                 JSON, Codec, Decimal, Arrow Dataset, RunPin
+packages/contracts-governance           exact change approval and target-fingerprint contract
 packages/contracts-artifact             provider-neutral immutable Artifact contract
+packages/contracts-secret               persistable SecretRef and runtime resolution contract
+packages/contracts-worker               Worker launcher/transport and isolation profile contract
 packages/contracts-storage              Resource/Document storage contracts
 packages/contracts-calculation          PipelineSpec, analysis extensions, SemanticPlan
 packages/contracts-organization         generic organization contracts
@@ -61,13 +64,23 @@ packages/plugin-storage-postgres        durable Kysely/PostgreSQL provider
 packages/plugin-calculation-memory      semantic lowering + memory backend
 packages/plugin-organization-basic      generic organization provider
 packages/plugin-http-fastify            explicit HTTP route host
+packages/plugin-governance-approval     durable request/review/authorize workflow
+packages/plugin-studio-api              generic Resource/Organization/Calculation HTTP adapter
 packages/plugin-type-quantity           optional dimensional type algebra
 packages/plugin-dataset-grain           optional Dataset/Plan grain analysis
 packages/plugin-material-registry       shared Material discovery for Studio and Runtime
 packages/plugin-code-project            source Draft CAS and immutable Source revisions
-packages/plugin-project-build           isolated Build Worker and immutable Project Releases
+packages/plugin-project-build           isolated Build Worker and approval-gated Releases
 packages/plugin-artifact-store-local     local content-addressed Artifact provider
+packages/plugin-artifact-store-s3       S3-compatible Object Lock production Artifact provider
+packages/plugin-audit-export-s3         append-only audit export to S3 Object Lock COMPLIANCE
+packages/plugin-observability-otel       OTLP HTTP traces/metrics and collector readiness
+packages/plugin-secret-local            allowlisted development env/file Secret provider
+packages/plugin-secret-vault            Vault KV v2 production Secret provider
+packages/plugin-worker-local            development-only local child-process launcher
+packages/plugin-worker-container        Docker container launcher with framed IPC bridge
 packages/plugin-project-runtime         Active Release CAS and App/Action worker runtime
+apps/host                               production Project control-plane composition
 packages/testing                        engine/data/PG/conformance test fixtures
 apps/studio                             generic configuration/pipeline UI foundation
 ```
@@ -132,6 +145,18 @@ Dependencies are inferred directly from `requires`; undeclared service access th
 
 ## PostgreSQL
 
+Run the real PostgreSQL 17 persistence suite without a preinstalled server:
+
+```sh
+pnpm test:postgres:embedded
+```
+
+The runner uses the packaged native binary on Linux and macOS. On Windows it
+uses the `Ubuntu` WSL distribution when available because PostgreSQL refuses to
+run under an administrator account; set `PRISM_TEST_WSL_DISTRO` to select a
+different distribution. The cluster binds only to `127.0.0.1`, uses test-only
+trust authentication inside WSL, and is removed after the suite.
+
 Start a real local PostgreSQL from Bash/WSL:
 
 ```sh
@@ -166,9 +191,53 @@ try {
 
 CI runs a real `postgres:17` service and fails if the PostgreSQL suite executes zero tests. No fake database substitutes for persistence verification.
 
+## Production Host
+
+`@prismengine/host` is the runnable, domain-neutral Project control plane. It
+composes PostgreSQL storage/migration journal, S3 Artifact and WORM audit
+providers, Vault, OTLP, the remote Docker Worker launcher, Code Projects,
+Build, Runtime and `http.fastify`. Configuration is strict environment input;
+logs expose only a redacted summary.
+
+Production startup requires hash-pinned external evidence and acquires a
+PostgreSQL advisory session lock for the deployment ID. A second Host for the
+same deployment fails with `HOST_SINGLE_WRITER_UNAVAILABLE`; this prevents
+independent Runtime managers from serving different Active Releases. Migrations
+also use cross-process PostgreSQL advisory locks.
+
+`deploy/helm/prism` installs one Recreate-strategy Host pod with non-root,
+read-only-rootfs, seccomp, dropped capabilities, mTLS Docker credentials,
+read-only evidence and default-deny NetworkPolicy. The chart intentionally
+requires image digests and explicit egress CIDRs.
+
+`plugin-studio-api` supplies the remaining live Studio contracts: generic
+configuration-exposed Resource lifecycle, Organization people/units/
+assignments, and Calculation operation/validation/preview execution. Dedicated
+Project and Visual Resources remain inaccessible through generic mutation
+routes, so the adapter cannot bypass their exact validation lifecycles.
+
+Critical production mutations require an exact, unexpired durable Approval.
+Only permission/method/route/fingerprint and governance metadata are stored;
+request params/body/Secret values are discarded after hashing. Requester,
+reviewer and publisher must be three distinct principals, and the Approval ID
+is copied into the mutation Audit record.
+The Approval atomically becomes `CONSUMED/PENDING` before the handler, so its
+ID cannot be replayed. Handler completion records `SUCCEEDED` or `FAILED`; a
+failed business attempt requires a new Approval rather than reusing authority.
+
 ## Generic Studio
 
-Core Studio contains the generic JSON Schema renderer, presentation mapping, custom editor registry, Vue Flow pipeline editor, Resource UI, Organization UI, and developer Capability inspector. It contains no hospital-performance page or private API.
+Core Studio contains the generic JSON Schema renderer, presentation mapping,
+custom editor registry, Vue Flow pipeline editor, Resource UI, Organization UI,
+developer Capability inspector, and the Code Projects control plane. The
+Visual Pipeline workspace edits one complete build-scoped pipeline through
+server-generated exact Material refs, explicit Draft save, validation,
+Draft-to-published Diff and Release composition. It contains no
+hospital-performance page or private API.
+Studio includes a Change Approvals workspace. A critical operation without an
+Approval ID creates an exact request and stops; a second principal reviews it,
+then a third principal repeats the operation with the approved ID and identical
+change reason.
 
 Run the domain-neutral offline mock:
 
@@ -177,6 +246,47 @@ VITE_USE_MOCKS=true pnpm --filter @prismengine/studio dev
 ```
 
 A Solution supplies its own host routes and domain pages while reusing public Studio foundations after those APIs stabilize.
+
+Live Studio does not send principal or role headers. Its host owns the
+session/token boundary and supplies a trusted request principal to
+`http.fastify`; local development must opt into an explicit development
+principal.
+
+Production mode fails closed until the host provides trusted OIDC/session
+identity, route permissions, OpenTelemetry, and evidence for single-hospital
+deployment isolation, external Artifact/Secret storage, audit-chain/WORM
+controls, PostgreSQL PITR, restore drills, worker container isolation and
+signed supply-chain artifacts. `storage.memory`, `artifact.store.local` and
+`secret.local` are deliberately classified as development providers.
+
+Production adapters are included but never auto-configured:
+
+- `artifact.store.s3` uses the shared canonical Artifact hash/layout and probes
+  Bucket Versioning plus Object Lock;
+- `secret.vault` supports host-owned tokens or Kubernetes auth and reads one
+  selected Vault KV v2 field;
+- `storage.audit-export.s3` exports sequence/hash-bound audit records with S3
+  Object Lock `COMPLIANCE` retention and verifies remote bytes idempotently.
+- `worker.launcher@1.0.0` is required by Build and Runtime;
+  `worker.launcher.local` is process-only and fails production readiness;
+  `worker.launcher.container` bridges the existing IPC protocol over framed
+  stdin/stdout and enforces non-root, no network, read-only rootfs, dropped
+  capabilities, no-new-privileges, PID/CPU/memory limits and explicit mounts.
+- `plugin-observability-otel` installs the Node OpenTelemetry SDK with OTLP
+  HTTP trace/metric exporters and requires a live collector health probe;
+  auth headers are never included in readiness evidence.
+
+`composeProductionReadiness` combines these live probes with deployment-owned
+PITR, restore, isolation, OTLP and supply-chain checks. No endpoint, token,
+credential or hospital identifier is stored in this repository.
+
+`pnpm production:verify-postgres-restore` performs a real `pg_dump` /
+`pg_restore` drill into a disposable database whose name must begin with
+`prism_restore_verify_`. Destructive restore is blocked unless
+`PRISM_RESTORE_VERIFY_ALLOW_DESTRUCTIVE` exactly equals that database name. It
+compares source/restored logical dumps, verifies audit-chain links, and writes
+mode-0600 `backup-restore.verified` evidence. Connection passwords are passed
+through `PGPASSWORD`, not command arguments or evidence.
 
 ## Toolchain
 
@@ -193,6 +303,12 @@ Prism runtime packages depend on neither compiler. Local compilation uses TS7 de
 
 All public packages share one compatible version line. `@prismengine/platform` uses exact workspace versions, and `pnpm pack` rewrites them to exact public versions in the tarball. The manually dispatched release workflow runs build/typecheck/lint, real PostgreSQL tests and Studio build before publishing Apache-2.0 packages with npm provenance. It then installs Platform/SDK/Testing from the registry in a fresh directory, checks peers, imports the default composition, rejects leaked workspace/link dependencies, and verifies LICENSE/NOTICE (`.github/workflows/release.yml`).
 
+The same workflow builds `docker/worker.Dockerfile`, deploys only the
+Build/Runtime/bridge production dependency closure, includes an offline pnpm
+store, pushes version and commit tags to GHCR with BuildKit provenance/SBOM,
+and keyless-signs the immutable image digest with cosign. Production
+configuration references the digest, never a mutable tag.
+
 Publishing requires the repository `NPM_TOKEN` secret. Until `@prismengine/platform@0.1.0` and `@prismengine/plugin-sdk@0.1.0` exist in the registry, private Solutions may validate with temporary local links but must not commit those links or a generated lockfile.
 
 ## Development
@@ -204,6 +320,7 @@ pnpm typecheck
 pnpm lint
 pnpm test
 pnpm --filter @prismengine/studio build
+pnpm --dir apps/studio test:e2e
 ```
 
 Primary gates:
@@ -214,6 +331,8 @@ Primary gates:
 - PostgreSQL tests use a real server;
 - architecture tests protect dependency direction, database-driver isolation and license metadata;
 - Studio builds independently of every private Solution.
+- Playwright drives real Chromium against a real in-memory HTTP Host for the
+  Author → Reviewer → Publisher Approval lifecycle.
 
 ## Architecture decisions
 

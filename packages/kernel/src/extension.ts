@@ -1,3 +1,5 @@
+import { assertKernelId, assertKernelVersion } from "./identity.js";
+
 /**
  * Typed extension points.
  *
@@ -19,7 +21,9 @@ export function defineExtensionPoint<TContribution>(spec: {
   id: string;
   version: string;
 }): ExtensionPoint<TContribution> {
-  return { id: spec.id, version: spec.version };
+  assertKernelId(spec.id, "extension.id");
+  assertKernelVersion(spec.version, "extension.version");
+  return Object.freeze({ id: spec.id, version: spec.version });
 }
 
 export interface Contribution<TContribution> {

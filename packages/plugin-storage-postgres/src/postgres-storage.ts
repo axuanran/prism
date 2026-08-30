@@ -1,6 +1,7 @@
 import type { CallContext } from "@prismengine/contracts-data";
 import { PrismError, assertJsonValue } from "@prismengine/contracts-data";
 import type {
+  AuditJournal,
   AtomicWriteCapability,
   AtomicWriteRequest,
   AtomicWriteResult,
@@ -13,11 +14,19 @@ import type {
 import {
   ResourceEventType,
   StorageDiagnosticCode,
+  assertAtomicWriteIdentifiers,
+  assertStorageAuditContext,
+  assertStorageNamespace,
+  validatingDocumentCollection,
+  validatingAuditJournal,
+  validatingResourceStore,
 } from "@prismengine/contracts-storage";
 import type { EventBus, Resource, ResourceQuery } from "@prismengine/kernel";
 import type { Kysely, Selectable, Transaction } from "kysely";
 import { sql } from "kysely";
 import type { PostgresDatabase, ResourceRevisionTable } from "./database.js";
+import { PostgresAuditJournal } from "./postgres-audit.js";
+import { postgresProviderFailure } from "./provider-failure.js";
 
 export type AtomicWriteFaultPoint =
   | { readonly point: "after-operation"; readonly operationIndex: number }
@@ -65,6 +74,18 @@ function publishedImmutable(kind: string, id: string, revision: number): PrismEr
     StorageDiagnosticCode.RESOURCE_PUBLISHED_IMMUTABLE,
     `Published resource ${kind}/${id} revision ${revision} is immutable.`,
     { kind, id, revision },
+  );
+}
+function resourceConflict(
+  kind: string,
+  id: string,
+  expectedUpdatedAt: string | null,
+  actualUpdatedAt: string | null,
+): PrismError {
+  return storageError(
+    StorageDiagnosticCode.RESOURCE_CONFLICT,
+    `Resource ${kind}/${id} changed after it was loaded.`,
+    { kind, id, expectedUpdatedAt, actualUpdatedAt },
   );
 }
 
@@ -120,11 +141,10 @@ async function guarded<T>(operation: string, action: () => Promise<T>): Promise<
   try {
     return await action();
   } catch (error) {
-    if (error instanceof PrismError) throw error;
-    throw storageError(
+    throw postgresProviderFailure(
+      error,
       StorageDiagnosticCode.RESOURCE_VALIDATION_FAILED,
       `PostgreSQL storage could not ${operation}.`,
-      { cause: error instanceof Error ? error.message : String(error) },
     );
   }
 }
@@ -134,6 +154,7 @@ class PostgresResourceStore implements ResourceStore {
     private readonly db: Kysely<PostgresDatabase>,
     private readonly schema: string,
     private readonly events: EventBus,
+    private readonly audit: PostgresAuditJournal,
   ) {}
 
   async get<TSpec>(
@@ -182,10 +203,7 @@ class PostgresResourceStore implements ResourceStore {
     });
   }
 
-  async list(
-    _context: CallContext,
-    query: ResourceQuery,
-  ): Promise<readonly Resource[]> {
+  async list(_context: CallContext, query: ResourceQuery): Promise<readonly Resource[]> {
     return guarded("list resources", async () => {
       let statement = this.db
         .withSchema(this.schema)
@@ -197,7 +215,8 @@ class PostgresResourceStore implements ResourceStore {
             .onRef("logical.current_revision", "=", "revision.revision"),
         )
         .selectAll("revision");
-      if (query.kind !== undefined) statement = statement.where("revision.kind", "=", query.kind);
+      if (query.kind !== undefined)
+        statement = statement.where("revision.kind", "=", query.kind);
       if (query.status !== undefined) {
         statement = statement.where("revision.status", "=", query.status);
       }
@@ -247,6 +266,12 @@ class PostgresResourceStore implements ResourceStore {
           .executeTakeFirst();
 
         if (logical === undefined) {
+          if (
+            command.expectedUpdatedAt !== undefined &&
+            command.expectedUpdatedAt !== null
+          ) {
+            throw resourceConflict(command.kind, id, command.expectedUpdatedAt, null);
+          }
           const now = nextTimestamp();
           await database
             .insertInto("resource")
@@ -272,7 +297,15 @@ class PostgresResourceStore implements ResourceStore {
             })
             .returningAll()
             .executeTakeFirstOrThrow();
-          return mapResource<TSpec>(row);
+          const result = mapResource<TSpec>(row);
+          await this.audit.append(transaction, context, {
+            action: "resource.draft.save",
+            targetKind: result.kind,
+            targetId: result.id,
+            before: null,
+            after: result,
+          });
+          return result;
         }
 
         const current = await this.revision(
@@ -281,6 +314,18 @@ class PostgresResourceStore implements ResourceStore {
           id,
           logical.current_revision,
         );
+        const actualUpdatedAt = asIso(current.updated_at);
+        if (
+          command.expectedUpdatedAt !== undefined &&
+          command.expectedUpdatedAt !== actualUpdatedAt
+        ) {
+          throw resourceConflict(
+            command.kind,
+            id,
+            command.expectedUpdatedAt,
+            actualUpdatedAt,
+          );
+        }
         if (current.status === "archived") {
           throw storageError(
             StorageDiagnosticCode.RESOURCE_VALIDATION_FAILED,
@@ -331,7 +376,15 @@ class PostgresResourceStore implements ResourceStore {
             .where("id", "=", id)
             .execute();
         }
-        return mapResource<TSpec>(row);
+        const result = mapResource<TSpec>(row);
+        await this.audit.append(transaction, context, {
+          action: "resource.draft.save",
+          targetKind: result.kind,
+          targetId: result.id,
+          before: mapResource(current),
+          after: result,
+        });
+        return result;
       }),
     );
     await this.events.publish(ResourceEventType.DraftSaved, resource, {
@@ -345,6 +398,7 @@ class PostgresResourceStore implements ResourceStore {
     kind: string,
     id: string,
     revision: number,
+    expectedUpdatedAt?: string,
   ): Promise<Resource<TSpec>> {
     const resource = await guarded("publish a resource", () =>
       this.db.transaction().execute(async (transaction) => {
@@ -359,6 +413,10 @@ class PostgresResourceStore implements ResourceStore {
         if (logical === undefined) throw resourceNotFound(kind, id);
         const current = await this.revision(transaction, kind, id, revision);
         if (current.status !== "draft") throw publishedImmutable(kind, id, revision);
+        const actualUpdatedAt = asIso(current.updated_at);
+        if (expectedUpdatedAt !== undefined && expectedUpdatedAt !== actualUpdatedAt) {
+          throw resourceConflict(kind, id, expectedUpdatedAt, actualUpdatedAt);
+        }
         const now = nextTimestamp(current.updated_at);
         const row = await database
           .updateTable("resource_revision")
@@ -374,7 +432,15 @@ class PostgresResourceStore implements ResourceStore {
           .where("kind", "=", kind)
           .where("id", "=", id)
           .execute();
-        return mapResource<TSpec>(row);
+        const result = mapResource<TSpec>(row);
+        await this.audit.append(transaction, context, {
+          action: "resource.publish",
+          targetKind: result.kind,
+          targetId: result.id,
+          before: mapResource(current),
+          after: result,
+        });
+        return result;
       }),
     );
     await this.events.publish(ResourceEventType.Published, resource, {
@@ -403,12 +469,7 @@ class PostgresResourceStore implements ResourceStore {
         const sourceRevision = revision ?? logical.current_revision;
         const source = await this.revision(transaction, kind, id, sourceRevision);
         assertJsonValue(source.spec, "/spec");
-        const latest = await this.revision(
-          transaction,
-          kind,
-          id,
-          logical.current_revision,
-        );
+        const latest = await this.revision(transaction, kind, id, logical.current_revision);
         const nextRevision = logical.current_revision + 1;
         const now = nextTimestamp(latest.updated_at);
         const row = await database
@@ -431,7 +492,15 @@ class PostgresResourceStore implements ResourceStore {
           .where("kind", "=", kind)
           .where("id", "=", id)
           .execute();
-        return mapResource<TSpec>(row);
+        const result = mapResource<TSpec>(row);
+        await this.audit.append(transaction, context, {
+          action: "resource.clone",
+          targetKind: result.kind,
+          targetId: result.id,
+          before: mapResource(source),
+          after: result,
+        });
+        return result;
       }),
     );
     await this.events.publish(ResourceEventType.DraftSaved, resource, {
@@ -452,12 +521,7 @@ class PostgresResourceStore implements ResourceStore {
           .forUpdate()
           .executeTakeFirst();
         if (logical === undefined) throw resourceNotFound(kind, id);
-        const latest = await this.revision(
-          transaction,
-          kind,
-          id,
-          logical.current_revision,
-        );
+        const latest = await this.revision(transaction, kind, id, logical.current_revision);
         const now = nextTimestamp(latest.updated_at);
         await database
           .updateTable("resource_revision")
@@ -471,6 +535,13 @@ class PostgresResourceStore implements ResourceStore {
           .where("kind", "=", kind)
           .where("id", "=", id)
           .execute();
+        await this.audit.append(transaction, context, {
+          action: "resource.archive",
+          targetKind: kind,
+          targetId: id,
+          before: mapResource(latest),
+          after: { ...mapResource(latest), status: "archived", updatedAt: asIso(now) },
+        });
       }),
     );
     await this.events.publish(ResourceEventType.Archived, Object.freeze({ kind, id }), {
@@ -497,13 +568,14 @@ class PostgresResourceStore implements ResourceStore {
   }
 }
 
-class PostgresDocumentCollection<TDocument extends { readonly id: string }>
-  implements DocumentCollection<TDocument>
-{
+class PostgresDocumentCollection<
+  TDocument extends { readonly id: string },
+> implements DocumentCollection<TDocument> {
   constructor(
     private readonly db: Kysely<PostgresDatabase>,
     private readonly schema: string,
     private readonly collection: string,
+    private readonly audit: PostgresAuditJournal,
   ) {}
 
   async get(_context: CallContext, id: string): Promise<TDocument | null> {
@@ -572,45 +644,71 @@ class PostgresDocumentCollection<TDocument extends { readonly id: string }>
     });
   }
 
-  async put(_context: CallContext, document: TDocument): Promise<TDocument> {
+  async put(context: CallContext, document: TDocument): Promise<TDocument> {
     assertJsonValue(document, "/document");
-    return guarded("store a document", async () => {
-      const now = new Date();
-      const row = await this.db
-        .withSchema(this.schema)
-        .insertInto("document")
-        .values({
-          collection: this.collection,
-          id: document.id,
-          body: document,
-          created_at: now,
-          updated_at: now,
-        })
-        .onConflict((conflict) =>
-          conflict.columns(["collection", "id"]).doUpdateSet({
+    return guarded("store a document", () =>
+      this.db.transaction().execute(async (transaction) => {
+        const database = transaction.withSchema(this.schema);
+        const before = await database
+          .selectFrom("document")
+          .select("body")
+          .where("collection", "=", this.collection)
+          .where("id", "=", document.id)
+          .forUpdate()
+          .executeTakeFirst();
+        const now = new Date();
+        const row = await database
+          .insertInto("document")
+          .values({
+            collection: this.collection,
+            id: document.id,
             body: document,
+            created_at: now,
             updated_at: now,
-          }),
-        )
-        .returning("body")
-        .executeTakeFirstOrThrow();
-      return jsonDocument<TDocument>(row.body);
-    });
+          })
+          .onConflict((conflict) =>
+            conflict.columns(["collection", "id"]).doUpdateSet({
+              body: document,
+              updated_at: now,
+            }),
+          )
+          .returning("body")
+          .executeTakeFirstOrThrow();
+        const stored = jsonDocument<TDocument>(row.body);
+        await this.audit.append(transaction, context, {
+          action: "document.put",
+          targetKind: this.collection,
+          targetId: document.id,
+          before: before?.body ?? null,
+          after: stored,
+        });
+        return stored;
+      }),
+    );
   }
 
-  async putMany(
-    _context: CallContext,
-    documents: readonly TDocument[],
-  ): Promise<void> {
+  async putMany(context: CallContext, documents: readonly TDocument[]): Promise<void> {
     documents.forEach((document, index) =>
       assertJsonValue(document, `/documents/${index}`),
     );
     if (documents.length === 0) return;
     await guarded("store documents", () =>
       this.db.transaction().execute(async (transaction) => {
+        const database = transaction.withSchema(this.schema);
+        const prior = await database
+          .selectFrom("document")
+          .select(["id", "body"])
+          .where("collection", "=", this.collection)
+          .where(
+            "id",
+            "in",
+            documents.map((document) => document.id),
+          )
+          .forUpdate()
+          .execute();
+        const before = new Map(prior.map((row) => [row.id, row.body]));
         const now = new Date();
-        await transaction
-          .withSchema(this.schema)
+        await database
           .insertInto("document")
           .values(
             documents.map((document) => ({
@@ -628,19 +726,44 @@ class PostgresDocumentCollection<TDocument extends { readonly id: string }>
             })),
           )
           .execute();
+        for (const document of documents) {
+          await this.audit.append(transaction, context, {
+            action: "document.put",
+            targetKind: this.collection,
+            targetId: document.id,
+            before: before.get(document.id) ?? null,
+            after: document,
+          });
+        }
       }),
     );
   }
 
-  async delete(_context: CallContext, id: string): Promise<void> {
-    await guarded("delete a document", async () => {
-      await this.db
-        .withSchema(this.schema)
-        .deleteFrom("document")
-        .where("collection", "=", this.collection)
-        .where("id", "=", id)
-        .execute();
-    });
+  async delete(context: CallContext, id: string): Promise<void> {
+    await guarded("delete a document", () =>
+      this.db.transaction().execute(async (transaction) => {
+        const database = transaction.withSchema(this.schema);
+        const before = await database
+          .selectFrom("document")
+          .select("body")
+          .where("collection", "=", this.collection)
+          .where("id", "=", id)
+          .forUpdate()
+          .executeTakeFirst();
+        await database
+          .deleteFrom("document")
+          .where("collection", "=", this.collection)
+          .where("id", "=", id)
+          .execute();
+        await this.audit.append(transaction, context, {
+          action: "document.delete",
+          targetKind: this.collection,
+          targetId: id,
+          before: before?.body ?? null,
+          after: null,
+        });
+      }),
+    );
   }
 
   async count(_context: CallContext, query: DocumentQuery = {}): Promise<number> {
@@ -731,8 +854,16 @@ function atomicConflict(
   );
 }
 
+export interface PostgresReadinessEvidence {
+  readonly id: "database.pitr" | "audit-journal.valid";
+  readonly passed: boolean;
+  readonly evidence: string;
+}
+
 export class PostgresStorage implements StorageCapability, AtomicWriteCapability {
   readonly resources: ResourceStore;
+  private readonly auditWriter: PostgresAuditJournal;
+  readonly audit: AuditJournal;
 
   constructor(
     private readonly db: Kysely<PostgresDatabase>,
@@ -740,26 +871,91 @@ export class PostgresStorage implements StorageCapability, AtomicWriteCapability
     events: EventBus = NOOP_EVENTS,
     private readonly atomicWriteFault?: AtomicWriteFaultInjector,
   ) {
-    this.resources = new PostgresResourceStore(db, schema, events);
+    this.auditWriter = new PostgresAuditJournal(db, schema);
+    this.audit = validatingAuditJournal(this.auditWriter);
+    this.resources = validatingResourceStore(
+      new PostgresResourceStore(db, schema, events, this.auditWriter),
+    );
   }
 
   collection<TDocument extends { readonly id: string }>(
     name: string,
   ): DocumentCollection<TDocument> {
-    return new PostgresDocumentCollection<TDocument>(this.db, this.schema, name);
+    assertStorageNamespace(name, "collection");
+    return validatingDocumentCollection(
+      new PostgresDocumentCollection<TDocument>(
+        this.db,
+        this.schema,
+        name,
+        this.auditWriter,
+      ),
+    );
+  }
+
+  async productionReadiness(
+    context: CallContext,
+  ): Promise<readonly PostgresReadinessEvidence[]> {
+    const settings = await sql<{
+      readonly serverVersion: string;
+      readonly walLevel: string;
+      readonly archiveMode: string;
+      readonly inRecovery: boolean;
+    }>`
+      select
+        current_setting('server_version') as "serverVersion",
+        current_setting('wal_level') as "walLevel",
+        coalesce(current_setting('archive_mode', true), 'off') as "archiveMode",
+        pg_is_in_recovery() as "inRecovery"
+    `.execute(this.db);
+    const row = settings.rows[0];
+    if (row === undefined) {
+      throw PrismError.of(
+        "POSTGRES_READINESS_FAILED",
+        "PostgreSQL readiness query returned no result.",
+      );
+    }
+    const audit = await this.audit.verify(context);
+    const major = Number.parseInt(row.serverVersion.split(".")[0] ?? "", 10);
+    const pitr =
+      major >= 17 &&
+      ["replica", "logical"].includes(row.walLevel) &&
+      ["on", "always"].includes(row.archiveMode);
+    return [
+      {
+        id: "database.pitr",
+        passed: pitr,
+        evidence: JSON.stringify({
+          serverMajor: major,
+          walLevel: row.walLevel,
+          archiveMode: row.archiveMode,
+          inRecovery: row.inRecovery,
+        }),
+      },
+      {
+        id: "audit-journal.valid",
+        passed: audit.valid,
+        evidence: JSON.stringify({
+          checked: audit.checked,
+          brokenAtSequence: audit.brokenAtSequence ?? null,
+        }),
+      },
+    ];
   }
 
   async execute(
-    _context: CallContext,
+    context: CallContext,
     request: AtomicWriteRequest,
   ): Promise<AtomicWriteResult> {
+    assertStorageAuditContext(context);
+    assertAtomicWriteIdentifiers(request);
     validateAtomicRequest(request);
     const result = await guarded("execute an atomic write", () =>
       this.db.transaction().execute(async (transaction) => {
         const database = transaction.withSchema(this.schema);
         for (const target of atomicTargets(request)) {
-          await sql`select pg_advisory_xact_lock(hashtextextended(${target}, 0))`
-            .execute(transaction);
+          await sql`select pg_advisory_xact_lock(hashtextextended(${target}, 0))`.execute(
+            transaction,
+          );
         }
         for (const precondition of request.preconditions) {
           const row = await database
@@ -769,14 +965,16 @@ export class PostgresStorage implements StorageCapability, AtomicWriteCapability
             .where("id", "=", precondition.id)
             .executeTakeFirst();
           const body = row?.body;
-          const satisfied = precondition.kind === "document-absent"
-            ? body === undefined
-            : body !== undefined && Object.entries(precondition.fields ?? {}).every(
-                ([field, expected]) =>
-                  typeof body === "object" &&
-                  body !== null &&
-                  Object.is(Reflect.get(body, field), expected),
-              );
+          const satisfied =
+            precondition.kind === "document-absent"
+              ? body === undefined
+              : body !== undefined &&
+                Object.entries(precondition.fields ?? {}).every(
+                  ([field, expected]) =>
+                    typeof body === "object" &&
+                    body !== null &&
+                    Object.is(Reflect.get(body, field), expected),
+                );
           if (!satisfied) throw atomicConflict(request.requestId, precondition);
         }
 
@@ -788,6 +986,14 @@ export class PostgresStorage implements StorageCapability, AtomicWriteCapability
         ) {
           const operation = request.operations[operationIndex];
           if (operation === undefined) continue;
+          const targetId =
+            operation.kind === "put-document" ? operation.document.id : operation.id;
+          const before = await database
+            .selectFrom("document")
+            .select("body")
+            .where("collection", "=", operation.collection)
+            .where("id", "=", targetId)
+            .executeTakeFirst();
           if (operation.kind === "delete-document") {
             await database
               .deleteFrom("document")
@@ -803,13 +1009,7 @@ export class PostgresStorage implements StorageCapability, AtomicWriteCapability
               updated_at: now,
             };
             if (operation.mode === "create") {
-              const existing = await database
-                .selectFrom("document")
-                .select("id")
-                .where("collection", "=", operation.collection)
-                .where("id", "=", operation.document.id)
-                .executeTakeFirst();
-              if (existing !== undefined) {
+              if (before !== undefined) {
                 throw atomicConflict(request.requestId, {
                   kind: "document-absent",
                   collection: operation.collection,
@@ -844,9 +1044,18 @@ export class PostgresStorage implements StorageCapability, AtomicWriteCapability
               }
             }
           }
+          await this.auditWriter.append(transaction, context, {
+            action:
+              operation.kind === "delete-document" ? "document.delete" : "document.put",
+            targetKind: operation.collection,
+            targetId,
+            before: before?.body ?? null,
+            after: operation.kind === "delete-document" ? null : operation.document,
+          });
           this.atomicWriteFault?.hit({ point: "after-operation", operationIndex });
         }
         this.atomicWriteFault?.hit({ point: "before-commit" });
+
         return {
           requestId: request.requestId,
           operationCount: request.operations.length,

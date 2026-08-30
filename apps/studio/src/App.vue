@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue';
-import { RouterLink, RouterView, useRoute } from 'vue-router';
-import { useEngineStore } from './stores/engine';
+import { computed, onMounted, ref, watch } from "vue";
+import { RouterLink, RouterView, useRoute } from "vue-router";
+import { useEngineStore } from "./stores/engine";
 
 interface NavItem {
   to: string;
@@ -10,22 +10,23 @@ interface NavItem {
 }
 
 const businessNavigation: NavItem[] = [
-  { to: '/', label: '概览', shortLabel: '总' },
-  { to: '/resources', label: '配置资源', shortLabel: '资' },
-  { to: '/organization', label: '组织', shortLabel: '组' },
+  { to: "/", label: "概览", shortLabel: "总" },
+  { to: "/resources", label: "配置资源", shortLabel: "资" },
+  { to: "/approvals", label: "变更审批", shortLabel: "审" },
+  { to: "/organization", label: "组织", shortLabel: "组" },
 ];
 
 const developerNavigation: NavItem[] = [
-  { to: '/studio/projects', label: '代码项目', shortLabel: 'CODE' },
-  { to: '/developer/capabilities', label: '能力检查器', shortLabel: 'DEV' },
-  { to: '/developer/pipelines', label: '流水线编辑器', shortLabel: 'FLOW' },
+  { to: "/studio/projects", label: "代码项目", shortLabel: "CODE" },
+  { to: "/developer/capabilities", label: "能力检查器", shortLabel: "DEV" },
+  { to: "/developer/pipelines", label: "流水线编辑器", shortLabel: "FLOW" },
 ];
 
 const route = useRoute();
 const engineStore = useEngineStore();
 const mobileNavigationOpen = ref(false);
-const pageTitle = computed(() => String(route.meta.title ?? 'Prism Studio'));
-const pageEyebrow = computed(() => String(route.meta.eyebrow ?? '工作台'));
+const pageTitle = computed(() => String(route.meta.title ?? "Prism Studio"));
+const pageEyebrow = computed(() => String(route.meta.eyebrow ?? "工作台"));
 
 onMounted(() => {
   void engineStore.load();
@@ -49,9 +50,15 @@ watch(
       @click="mobileNavigationOpen = false"
     ></button>
 
-    <aside id="studio-navigation" class="side-navigation" :class="{ 'side-navigation--open': mobileNavigationOpen }">
+    <aside
+      id="studio-navigation"
+      class="side-navigation"
+      :class="{ 'side-navigation--open': mobileNavigationOpen }"
+    >
       <div class="brand">
-        <div class="brand__mark" aria-hidden="true"><span></span><span></span><span></span></div>
+        <div class="brand__mark" aria-hidden="true">
+          <span></span><span></span><span></span>
+        </div>
         <div>
           <strong>Prism</strong>
           <span>Studio</span>
@@ -83,7 +90,9 @@ watch(
             class="navigation__item navigation__item--developer"
             active-class="navigation__item--active"
           >
-            <span class="navigation__mark navigation__mark--developer" aria-hidden="true">{{ item.shortLabel }}</span>
+            <span class="navigation__mark navigation__mark--developer" aria-hidden="true">{{
+              item.shortLabel
+            }}</span>
             <span>{{ item.label }}</span>
           </RouterLink>
         </div>
@@ -93,7 +102,7 @@ watch(
         <span class="connection-dot" aria-hidden="true"></span>
         <div>
           <strong>V0.1 业务环境</strong>
-          <span>{{ engineStore.error ? '服务连接异常' : '实时引擎连接' }}</span>
+          <span>{{ engineStore.error ? "服务连接异常" : "实时引擎连接" }}</span>
         </div>
       </div>
     </aside>
@@ -118,7 +127,7 @@ watch(
         </div>
         <div class="top-bar__meta" aria-label="当前环境">
           <span>PRISM ENGINE</span>
-          <strong>V{{ engineStore.inspection?.engineVersion ?? '—' }}</strong>
+          <strong>V{{ engineStore.inspection?.engineVersion ?? "—" }}</strong>
         </div>
       </header>
 

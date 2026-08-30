@@ -1,0 +1,44 @@
+{
+  "name": "@prismengine/plugin-studio-api",
+  "version": "0.1.20",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "scripts": {
+    "build": "tsc --build"
+  },
+  "dependencies": {
+    "@prismengine/contracts-calculation": "workspace:0.1.20",
+    "@prismengine/contracts-data": "workspace:0.1.20",
+    "@prismengine/contracts-organization": "workspace:0.1.20",
+    "@prismengine/contracts-storage": "workspace:0.1.20",
+    "@prismengine/kernel": "workspace:0.1.20",
+    "@prismengine/plugin-http-fastify": "workspace:0.1.20"
+  },
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/axuanran/prism",
+    "directory": "packages/plugin-studio-api"
+  },
+  "devDependencies": {
+    "@prismengine/plugin-calculation-memory": "workspace:0.1.20",
+    "@prismengine/plugin-organization-basic": "workspace:0.1.20",
+    "@prismengine/plugin-storage-memory": "workspace:0.1.20"
+  },
+  "homepage": "https://github.com/axuanran/prism#readme",
+  "bugs": {
+    "url": "https://github.com/axuanran/prism/issues"
+  }
+}

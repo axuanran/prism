@@ -1,15 +1,17 @@
 <script setup lang="ts">
-import { ref } from 'vue';
-import type { PipelineSpec } from '../api/types';
-import PipelineEditor from '../components/pipeline/PipelineEditor.vue';
+import { ref } from "vue";
+import type { PipelineSpec } from "../api/types";
+import PipelineEditor from "../components/pipeline/PipelineEditor.vue";
 
 const pipeline = ref<PipelineSpec>({
-  id: 'studio-pipeline',
-  inputs: [{
-    name: 'source',
-    description: '编辑器执行时提供的空白示例数据',
-    schema: { kind: 'table', columns: [] },
-  }],
+  id: "studio-pipeline",
+  inputs: [
+    {
+      name: "source",
+      description: "编辑器执行时提供的空白示例数据",
+      schema: { kind: "table", columns: [] },
+    },
+  ],
   nodes: [],
   edges: [],
   outputs: [],
@@ -22,7 +24,9 @@ const pipeline = ref<PipelineSpec>({
       <div class="page-intro__copy">
         <p class="page-intro__label">Pipeline Editor</p>
         <h2>计算流水线</h2>
-        <p class="page-intro__description">组合通用计算步骤，检查端口、配置、结果与执行跟踪。此页属于开发者工具。</p>
+        <p class="page-intro__description">
+          组合通用计算步骤，检查端口、配置、结果与执行跟踪。此页属于开发者工具。
+        </p>
       </div>
       <span class="developer-badge">DEVELOPER</span>
     </div>

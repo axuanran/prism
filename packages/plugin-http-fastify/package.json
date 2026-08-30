@@ -19,8 +19,9 @@
     "build": "tsc --build"
   },
   "dependencies": {
-    "@prismengine/contracts-data": "workspace:*",
-    "@prismengine/kernel": "workspace:*",
+    "@prismengine/contracts-data": "workspace:0.1.20",
+    "@prismengine/kernel": "workspace:0.1.20",
+    "@opentelemetry/api": "^1.9.0",
     "@sinclair/typebox": "^0.34.41",
     "fastify": "^5.6.1"
   },

@@ -8,7 +8,9 @@ import type {
   ProjectCodeMaterial,
 } from "@prismengine/contracts-project";
 
-export function defineProjectApp(module: ProjectClientModule<HTMLElement>): ProjectClientModule<HTMLElement> {
+export function defineProjectApp(
+  module: ProjectClientModule<HTMLElement>,
+): ProjectClientModule<HTMLElement> {
   return module;
 }
 
@@ -22,11 +24,13 @@ export function defineCodeMaterial<
   TInput extends JsonValue = JsonValue,
   TConfiguration extends JsonValue = JsonValue,
   TOutput extends JsonValue = JsonValue,
->(execute: (
-  input: TInput,
-  configuration: TConfiguration,
-  context: Parameters<ProjectCodeMaterial>[2],
-) => TOutput | Promise<TOutput>): ProjectCodeMaterial {
+>(
+  execute: (
+    input: TInput,
+    configuration: TConfiguration,
+    context: Parameters<ProjectCodeMaterial>[2],
+  ) => TOutput | Promise<TOutput>,
+): ProjectCodeMaterial {
   // Generic authoring narrows JSON inputs; the Runtime validates JSON before invocation.
   return execute as unknown as ProjectCodeMaterial;
 }

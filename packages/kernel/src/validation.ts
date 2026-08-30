@@ -42,7 +42,9 @@ const FORMATS: Readonly<Record<string, (value: string) => boolean>> = {
   "date-time": (value) => !Number.isNaN(Date.parse(value)),
   time: (value) => ISO_TIME.test(value),
   uuid: (value) =>
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value),
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      value,
+    ),
   email: (value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value),
 };
 

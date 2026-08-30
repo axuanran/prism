@@ -121,7 +121,8 @@ describe("schema formats", () => {
   });
 
   it("rejects an impossible calendar date", () => {
-    expect(validateAgainstSchema(dated, { effectiveFrom: "2026-02-30" }).length)
-      .toBeGreaterThan(0);
+    expect(
+      validateAgainstSchema(dated, { effectiveFrom: "2026-02-30" }).length,
+    ).toBeGreaterThan(0);
   });
 });

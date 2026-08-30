@@ -22,13 +22,7 @@ export const D = Decimal.clone({
 export type DecimalValue = Decimal;
 
 export type RoundingMode =
-  | "half-up"
-  | "half-even"
-  | "half-down"
-  | "up"
-  | "down"
-  | "ceiling"
-  | "floor";
+  "half-up" | "half-even" | "half-down" | "up" | "down" | "ceiling" | "floor";
 
 const ROUNDING_MODES: Record<RoundingMode, Decimal.Rounding> = {
   "half-up": Decimal.ROUND_HALF_UP,
@@ -114,10 +108,7 @@ export function isDecimalString(value: unknown): value is DecimalString {
  * Parses a stored decimal. Fails loudly: a malformed stored value must not
  * become NaN and silently poison an aggregate.
  */
-export function parseDecimalString(
-  value: DecimalString | string,
-  path?: string,
-): Decimal {
+export function parseDecimalString(value: DecimalString | string, path?: string): Decimal {
   const parsed = isDecimalString(value) ? new D(value) : undefined;
   if (parsed === undefined) {
     throw PrismError.of(

@@ -17,10 +17,8 @@ import {
   storagePostgresPlugin,
   type PostgresMigrationJournal,
 } from "@prismengine/plugin-storage-postgres";
-import {
-  createScratchDatabase,
-  probePostgres,
-} from "@prismengine/testing";
+import { workerLocalPlugin } from "@prismengine/plugin-worker-local";
+import { createScratchDatabase, probePostgres } from "@prismengine/testing";
 
 const probe = await probePostgres();
 const describePostgres = probe.url === undefined ? describe.skip : describe;
@@ -39,6 +37,7 @@ describePostgres("Project Build PostgreSQL recovery", () => {
           storagePostgresPlugin({ connectionString: scratch.url }),
           localArtifactStorePlugin({ root: artifacts }),
           codeProjectPlugin,
+          workerLocalPlugin,
           projectBuildPlugin(),
         ],
         migrationJournal: journal,
@@ -64,6 +63,15 @@ describePostgres("Project Build PostgreSQL recovery", () => {
       const builds = host.engine.capability(ProjectBuildCapabilityToken);
       const completed = await builds.build(context, created.project.id, source.revision);
       expect(completed.status).toBe("SUCCESS");
+      const artifactSet = await builds.artifactSet(context, completed.id);
+      if (artifactSet === null) throw new Error("Build Artifact Set was not created");
+      await builds.composeRelease(
+        context,
+        created.project.id,
+        completed.id,
+        [],
+        artifactSet.runtimeProfile,
+      );
       await host.engine.stop();
       await host.journal.dispose();
       running.splice(running.indexOf(host), 1);
@@ -77,10 +85,9 @@ describePostgres("Project Build PostgreSQL recovery", () => {
         expect.arrayContaining([expect.stringContaining("Vite client build PASS")]),
       );
       await expect(
-        host.engine.capability(ArtifactStoreCapabilityToken).verify(
-          context,
-          release!.spec.clientArtifact,
-        ),
+        host.engine
+          .capability(ArtifactStoreCapabilityToken)
+          .verify(context, release!.spec.clientArtifact),
       ).resolves.toBe(true);
     } finally {
       for (const host of running) {

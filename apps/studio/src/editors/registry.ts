@@ -1,10 +1,10 @@
-import type { Component } from 'vue';
+import type { Component } from "vue";
 
 const editors = new Map<string, Component>();
 
 export function registerEditor(id: string, component: Component): void {
   const key = id.trim();
-  if (!key) throw new Error('编辑器标识不能为空。');
+  if (!key) throw new Error("编辑器标识不能为空。");
   editors.set(key, component);
 }
 

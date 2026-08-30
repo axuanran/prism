@@ -37,26 +37,43 @@ interface RuntimeArtifact {
   readonly executable: ExecutablePlan;
 }
 
-function selectBackend(extensions: ExtensionRegistry, plan: CompiledPipeline["plan"]): CalculationBackend {
-  const contributed = extensions.all(BackendExtensionPoint)
+function selectBackend(
+  extensions: ExtensionRegistry,
+  plan: CompiledPipeline["plan"],
+): CalculationBackend {
+  const contributed = extensions
+    .all(BackendExtensionPoint)
     .map((contribution) => contribution.value)
     .filter((backend) => backend.id !== MEMORY_BACKEND.id);
-  return contributed.find((backend) => backendSupportsPlan(backend, plan)) ?? MEMORY_BACKEND;
+  return (
+    contributed.find((backend) => backendSupportsPlan(backend, plan)) ?? MEMORY_BACKEND
+  );
 }
 
 function planSummary(node: SemanticPlanNode): string {
   switch (node.kind) {
-    case "input": return `读取输入数据 ${node.dataset}`;
-    case "filter": return "按业务条件筛选数据行";
-    case "project": return `选择并重命名 ${node.columns.length} 个字段`;
-    case "formula": return `计算 ${node.columns.map((column) => column.name).join("、")} 派生字段`;
-    case "join": return `按 ${node.keys.map((key) => `${key.left}=${key.right}`).join("、")} 执行 ${node.joinType} 关联并校验 ${node.expectedCardinality} 基数`;
-    case "lookup": return `按 ${node.keys.map((key) => `${key.left}=${key.right}`).join("、")} 查找并补充业务属性`;
-    case "decision": return `按顺序匹配首条决策规则；未匹配时执行 ${node.onNoMatch}`;
-    case "aggregate": return `按 ${node.groupBy.join("、") || "全表"} 汇总 ${node.aggregations.map((item) => item.name).join("、")}`;
-    case "allocate": return `按权重分配到 ${node.output} 并校验金额守恒`;
-    case "validate": return `校验 ${node.assertions.length} 条逐行业务断言`;
-    case "output": return `生成管道业务输出 ${node.name}`;
+    case "input":
+      return `读取输入数据 ${node.dataset}`;
+    case "filter":
+      return "按业务条件筛选数据行";
+    case "project":
+      return `选择并重命名 ${node.columns.length} 个字段`;
+    case "formula":
+      return `计算 ${node.columns.map((column) => column.name).join("、")} 派生字段`;
+    case "join":
+      return `按 ${node.keys.map((key) => `${key.left}=${key.right}`).join("、")} 执行 ${node.joinType} 关联并校验 ${node.expectedCardinality} 基数`;
+    case "lookup":
+      return `按 ${node.keys.map((key) => `${key.left}=${key.right}`).join("、")} 查找并补充业务属性`;
+    case "decision":
+      return `按顺序匹配首条决策规则；未匹配时执行 ${node.onNoMatch}`;
+    case "aggregate":
+      return `按 ${node.groupBy.join("、") || "全表"} 汇总 ${node.aggregations.map((item) => item.name).join("、")}`;
+    case "allocate":
+      return `按权重分配到 ${node.output} 并校验金额守恒`;
+    case "validate":
+      return `校验 ${node.assertions.length} 条逐行业务断言`;
+    case "output":
+      return `生成管道业务输出 ${node.name}`;
   }
 }
 
@@ -67,7 +84,7 @@ function emptySnapshot(context: CallContext): InputSnapshot {
       capturedAt: context.asOf.knownAs?.capturedAt ?? new Date().toISOString(),
     },
     datasets: [],
-        parameters: [],
+    parameters: [],
   };
 }
 
@@ -89,7 +106,9 @@ function unavailableExecution(
   };
 }
 
-export function createCalculationCapability(extensions: ExtensionRegistry): CalculationCapability {
+export function createCalculationCapability(
+  extensions: ExtensionRegistry,
+): CalculationCapability {
   const runtimeArtifacts = new WeakMap<CompiledPipeline, RuntimeArtifact>();
 
   return {
@@ -125,7 +144,11 @@ export function createCalculationCapability(extensions: ExtensionRegistry): Calc
       };
       if (!hasErrors(lowered.diagnostics)) {
         context.signal?.throwIfAborted();
-        const executable = await backend.compile(lowered.plan, { call: context, planHash, versions });
+        const executable = await backend.compile(lowered.plan, {
+          call: context,
+          planHash,
+          versions,
+        });
         runtimeArtifacts.set(compiled, { backend, executable });
       }
       return compiled;
@@ -136,14 +159,24 @@ export function createCalculationCapability(extensions: ExtensionRegistry): Calc
       if (artifact === undefined) {
         const extra = hasErrors(plan.diagnostics)
           ? []
-          : [diagnostic(CalculationDiagnosticCode.OPERATION_CONFIG_INVALID, "Compiled plan does not belong to this calculation runtime.")];
+          : [
+              diagnostic(
+                CalculationDiagnosticCode.OPERATION_CONFIG_INVALID,
+                "Compiled plan does not belong to this calculation runtime.",
+              ),
+            ];
         return unavailableExecution(context, plan, options, extra);
       }
-      if (artifact.backend.id !== plan.backendId || artifact.executable.backendId !== plan.backendId) {
-        return unavailableExecution(context, plan, options, [diagnostic(
-          CalculationDiagnosticCode.OPERATION_CONFIG_INVALID,
-          `Compiled plan backend "${plan.backendId}" does not match its executable artifact.`,
-        )]);
+      if (
+        artifact.backend.id !== plan.backendId ||
+        artifact.executable.backendId !== plan.backendId
+      ) {
+        return unavailableExecution(context, plan, options, [
+          diagnostic(
+            CalculationDiagnosticCode.OPERATION_CONFIG_INVALID,
+            `Compiled plan backend "${plan.backendId}" does not match its executable artifact.`,
+          ),
+        ]);
       }
       return artifact.backend.execute(
         artifact.executable,
@@ -168,38 +201,38 @@ export function createCalculationCapability(extensions: ExtensionRegistry): Calc
     listOperations(_context): readonly OperationDescriptor[] {
       const registry = operationRegistry(extensions);
       if (hasErrors(registry.diagnostics)) throw new PrismError(registry.diagnostics);
-      return [...registry.operations.values()]
-        // Exposure is a declaration the engine must honour, not documentation.
-        // An operation meant for internal use must not reach the editor
-        // palette merely because it is registered.
-        .filter((operation) => isExposed(operation.exposure, "pipeline"))
-        .sort((left, right) => left.id.localeCompare(right.id))
-        .map((operation) => ({
-          id: operation.id,
-          version: operation.version,
-          title: operation.title,
-          ...(operation.description === undefined ? {} : { description: operation.description }),
-          ...(operation.category === undefined ? {} : { category: operation.category }),
-          inputs: operation.inputs,
-          outputs: operation.outputs,
-          configSchema: operation.config.schema,
-          ...(operation.presentation === undefined ? {} : { presentation: operation.presentation }),
-        }));
+      return (
+        [...registry.operations.values()]
+          // Exposure is a declaration the engine must honour, not documentation.
+          // An operation meant for internal use must not reach the editor
+          // palette merely because it is registered.
+          .filter((operation) => isExposed(operation.exposure, "pipeline"))
+          .sort((left, right) => left.id.localeCompare(right.id))
+          .map((operation) => ({
+            id: operation.id,
+            version: operation.version,
+            title: operation.title,
+            ...(operation.description === undefined
+              ? {}
+              : { description: operation.description }),
+            ...(operation.category === undefined ? {} : { category: operation.category }),
+            inputs: operation.inputs,
+            outputs: operation.outputs,
+            configSchema: operation.config.schema,
+            ...(operation.presentation === undefined
+              ? {}
+              : { presentation: operation.presentation }),
+          }))
+      );
     },
 
     compileExpression(_context, spec, scope) {
       const analysis = createAnalysisSession(extensions);
       const compiled = compilePublicExpression(spec, scope, analysis.typeService);
-      if (
-        "diagnostics" in compiled ||
-        analysis.registry.diagnostics.length === 0
-      ) {
+      if ("diagnostics" in compiled || analysis.registry.diagnostics.length === 0) {
         return "diagnostics" in compiled
           ? {
-              diagnostics: [
-                ...analysis.registry.diagnostics,
-                ...compiled.diagnostics,
-              ],
+              diagnostics: [...analysis.registry.diagnostics, ...compiled.diagnostics],
             }
           : compiled;
       }

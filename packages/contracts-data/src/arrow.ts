@@ -43,10 +43,12 @@ function arrowFailure(
   path: string,
   details?: Readonly<Record<string, unknown>>,
 ): never {
-  throw new PrismError(diagnostic(code, message, {
-    path,
-    ...(details === undefined ? {} : { details }),
-  }));
+  throw new PrismError(
+    diagnostic(code, message, {
+      path,
+      ...(details === undefined ? {} : { details }),
+    }),
+  );
 }
 
 function metadataForType(type: ValueType | TableType): Map<string, string> {
@@ -96,8 +98,9 @@ function annotationsFromMetadata(
   metadata: ReadonlyMap<string, string>,
   path: string,
 ): TypeAnnotations | undefined {
-  const present = metadata.get(ANNOTATIONS_PRESENT_METADATA) === "true"
-    || Object.values(ANNOTATION_METADATA).some((key) => metadata.has(key));
+  const present =
+    metadata.get(ANNOTATIONS_PRESENT_METADATA) === "true" ||
+    Object.values(ANNOTATION_METADATA).some((key) => metadata.has(key));
   if (!present) return undefined;
 
   const currency = metadata.get(ANNOTATION_METADATA.currency);
@@ -127,13 +130,12 @@ function typePropertiesFromMetadata(
   const semanticAnnotations =
     rawSemanticAnnotations === undefined
       ? undefined
-      : parseSemanticAnnotations(
-          rawSemanticAnnotations,
-          `${path}/semanticAnnotations`,
-        );
+      : parseSemanticAnnotations(rawSemanticAnnotations, `${path}/semanticAnnotations`);
   return {
     ...(rawNullable === undefined
-      ? (arrowNullable === true ? { nullable: true } : {})
+      ? arrowNullable === true
+        ? { nullable: true }
+        : {}
       : { nullable: metadataBoolean(rawNullable, `${path}/nullable`) }),
     ...(annotations === undefined ? {} : { annotations }),
     ...(semanticAnnotations === undefined ? {} : { semanticAnnotations }),
@@ -242,9 +244,9 @@ function fromArrowType(field: arrow.Field, path: string): ValueType {
     return { kind: "date", ...properties };
   }
   if (
-    arrow.DataType.isTimestamp(dataType)
-    && dataType.unit === arrow.TimeUnit.MILLISECOND
-    && dataType.timezone === "UTC"
+    arrow.DataType.isTimestamp(dataType) &&
+    dataType.unit === arrow.TimeUnit.MILLISECOND &&
+    dataType.timezone === "UTC"
   ) {
     return { kind: "datetime", ...properties };
   }
@@ -288,24 +290,38 @@ function dateValue(value: RowValue | undefined, field: FieldType, rowIndex: numb
     parsed = new Date(value.getTime());
   } else if (typeof value === "string") {
     if (field.type.kind === "date" && !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-      return invalidCell(field, rowIndex, `Date column "${field.name}" requires an ISO calendar date.`, { value });
+      return invalidCell(
+        field,
+        rowIndex,
+        `Date column "${field.name}" requires an ISO calendar date.`,
+        { value },
+      );
     }
     parsed = new Date(field.type.kind === "date" ? `${value}T00:00:00.000Z` : value);
   } else {
-    return invalidCell(field, rowIndex, `Column "${field.name}" requires a Date or ISO string.`);
+    return invalidCell(
+      field,
+      rowIndex,
+      `Column "${field.name}" requires a Date or ISO string.`,
+    );
   }
 
   if (!Number.isFinite(parsed.getTime())) {
-    return invalidCell(field, rowIndex, `Column "${field.name}" contains an invalid date.`, { value: String(value) });
+    return invalidCell(
+      field,
+      rowIndex,
+      `Column "${field.name}" contains an invalid date.`,
+      { value: String(value) },
+    );
   }
   if (field.type.kind === "date") {
     const canonical = parsed.toISOString().slice(0, 10);
     if (
-      (typeof value === "string" && canonical !== value)
-      || parsed.getUTCHours() !== 0
-      || parsed.getUTCMinutes() !== 0
-      || parsed.getUTCSeconds() !== 0
-      || parsed.getUTCMilliseconds() !== 0
+      (typeof value === "string" && canonical !== value) ||
+      parsed.getUTCHours() !== 0 ||
+      parsed.getUTCMinutes() !== 0 ||
+      parsed.getUTCSeconds() !== 0 ||
+      parsed.getUTCMilliseconds() !== 0
     ) {
       return arrowFailure(
         ArrowDiagnosticCode.VALUE_INVALID,
@@ -318,7 +334,11 @@ function dateValue(value: RowValue | undefined, field: FieldType, rowIndex: numb
   return parsed;
 }
 
-function decimalWords(value: RowValue | undefined, field: FieldType, rowIndex: number): Uint32Array {
+function decimalWords(
+  value: RowValue | undefined,
+  field: FieldType,
+  rowIndex: number,
+): Uint32Array {
   if (field.type.kind !== "decimal") {
     return invalidCell(field, rowIndex, `Column "${field.name}" is not a decimal column.`);
   }
@@ -368,15 +388,27 @@ function arrowCell(
 
   switch (field.type.kind) {
     case "null":
-      return invalidCell(field, rowIndex, `Null column "${field.name}" can contain only null values.`);
+      return invalidCell(
+        field,
+        rowIndex,
+        `Null column "${field.name}" can contain only null values.`,
+      );
     case "boolean":
       return typeof value === "boolean"
         ? value
-        : invalidCell(field, rowIndex, `Boolean column "${field.name}" requires a boolean.`);
+        : invalidCell(
+            field,
+            rowIndex,
+            `Boolean column "${field.name}" requires a boolean.`,
+          );
     case "int":
       return typeof value === "number" && Number.isSafeInteger(value)
         ? BigInt(value)
-        : invalidCell(field, rowIndex, `Integer column "${field.name}" requires a safe integer.`);
+        : invalidCell(
+            field,
+            rowIndex,
+            `Integer column "${field.name}" requires a safe integer.`,
+          );
     case "decimal":
       return decimalWords(value, field, rowIndex);
     case "string":
@@ -415,7 +447,9 @@ export function arrowBatchFromRows(
           "/columns",
         );
       }
-      const values = rows.map((row, rowIndex) => arrowCell(row[field.name], field, rowIndex));
+      const values = rows.map((row, rowIndex) =>
+        arrowCell(row[field.name], field, rowIndex),
+      );
       columns[field.name] = arrow.vectorFromArray(values, arrowField.type);
     }
     const table = new arrow.Table(arrowSchema, columns);
@@ -462,10 +496,18 @@ export function rowValueFromArrow(
     case "boolean":
       return typeof value === "boolean"
         ? value
-        : invalidCell(field, rowIndex, `Arrow boolean column "${field.name}" contains an invalid value.`);
+        : invalidCell(
+            field,
+            rowIndex,
+            `Arrow boolean column "${field.name}" contains an invalid value.`,
+          );
     case "int": {
       if (typeof value !== "bigint") {
-        return invalidCell(field, rowIndex, `Arrow Int64 column "${field.name}" contains an invalid value.`);
+        return invalidCell(
+          field,
+          rowIndex,
+          `Arrow Int64 column "${field.name}" contains an invalid value.`,
+        );
       }
       const number = Number(value);
       return Number.isSafeInteger(number)
@@ -479,7 +521,11 @@ export function rowValueFromArrow(
     }
     case "decimal": {
       if (!(value instanceof Uint32Array)) {
-        return invalidCell(field, rowIndex, `Arrow Decimal128 column "${field.name}" contains an invalid value.`);
+        return invalidCell(
+          field,
+          rowIndex,
+          `Arrow Decimal128 column "${field.name}" contains an invalid value.`,
+        );
       }
       const unscaled = arrow.util.bigNumToString(arrow.util.BN.decimal(value));
       return new D(scaledDecimalString(unscaled, field.type.scale));
@@ -487,24 +533,44 @@ export function rowValueFromArrow(
     case "string":
       return typeof value === "string"
         ? value
-        : invalidCell(field, rowIndex, `Arrow UTF-8 column "${field.name}" contains an invalid value.`);
+        : invalidCell(
+            field,
+            rowIndex,
+            `Arrow UTF-8 column "${field.name}" contains an invalid value.`,
+          );
     case "date": {
       if (typeof value !== "number" || !Number.isFinite(value)) {
-        return invalidCell(field, rowIndex, `Arrow date column "${field.name}" contains an invalid value.`);
+        return invalidCell(
+          field,
+          rowIndex,
+          `Arrow date column "${field.name}" contains an invalid value.`,
+        );
       }
       const date = new Date(value);
       if (!Number.isFinite(date.getTime())) {
-        return invalidCell(field, rowIndex, `Arrow date column "${field.name}" is outside the JS Date range.`);
+        return invalidCell(
+          field,
+          rowIndex,
+          `Arrow date column "${field.name}" is outside the JS Date range.`,
+        );
       }
       return date.toISOString().slice(0, 10);
     }
     case "datetime": {
       if (typeof value !== "number" || !Number.isFinite(value)) {
-        return invalidCell(field, rowIndex, `Arrow timestamp column "${field.name}" contains an invalid value.`);
+        return invalidCell(
+          field,
+          rowIndex,
+          `Arrow timestamp column "${field.name}" contains an invalid value.`,
+        );
       }
       const date = new Date(value);
       if (!Number.isFinite(date.getTime())) {
-        return invalidCell(field, rowIndex, `Arrow timestamp column "${field.name}" is outside the JS Date range.`);
+        return invalidCell(
+          field,
+          rowIndex,
+          `Arrow timestamp column "${field.name}" is outside the JS Date range.`,
+        );
       }
       return date.toISOString();
     }

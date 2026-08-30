@@ -1,6 +1,23 @@
 import { describe, expect, it } from "vitest";
 import { EngineDiagnosticCode, PrismError } from "@prismengine/contracts-data";
-import { createEngine, defineCapability, defineExtensionPoint, definePlugin } from "@prismengine/kernel";
+import {
+  InMemoryMigrationJournal,
+  MIGRATION_JOURNAL_MAX_ENTRIES,
+  createEngine,
+  defineCapability,
+  defineExtensionPoint,
+  definePlugin,
+  type AppliedMigration,
+  type MigrationJournal,
+} from "@prismengine/kernel";
+function deferred<T>() {
+  // tsconfig.test targets the compatibility lib that predates Promise.withResolvers.
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>((complete) => {
+    resolve = complete;
+  });
+  return { promise, resolve };
+}
 
 interface Greeter {
   greet(): string;
@@ -23,6 +40,7 @@ const CounterCapability = defineCapability<Counter>({
 const greeterPlugin = definePlugin({
   id: "greeter",
   version: "0.1.0",
+  engineRange: "^0.1.20",
   provides: [GreeterCapability],
   register(ctx) {
     ctx.provide(GreeterCapability, { greet: () => "hello" });
@@ -46,6 +64,7 @@ describe("engine lifecycle", () => {
     const consumer = definePlugin({
       id: "consumer",
       version: "0.1.0",
+      engineRange: "^0.1.20",
       requires: { greeter: GreeterCapability },
       start(ctx) {
         greeting = ctx.dependencies.greeter.greet();
@@ -65,6 +84,7 @@ describe("engine lifecycle", () => {
     const a = definePlugin({
       id: "a",
       version: "0.1.0",
+      engineRange: "^0.1.20",
       provides: [CounterCapability],
       register(ctx) {
         ctx.provide(CounterCapability, { next: () => 1 });
@@ -75,6 +95,7 @@ describe("engine lifecycle", () => {
     const b = definePlugin({
       id: "b",
       version: "0.1.0",
+      engineRange: "^0.1.20",
       requires: { counter: CounterCapability },
       start: () => void order.push("b"),
     });
@@ -91,6 +112,7 @@ describe("engine lifecycle", () => {
     const provider = definePlugin({
       id: "provider",
       version: "0.1.0",
+      engineRange: "^0.1.20",
       provides: [CounterCapability],
       register(ctx) {
         ctx.provide(CounterCapability, { next: () => 1 });
@@ -101,6 +123,7 @@ describe("engine lifecycle", () => {
     const consumer = definePlugin({
       id: "consumer",
       version: "0.1.0",
+      engineRange: "^0.1.20",
       requires: { counter: CounterCapability },
       stop: () => void order.push("consumer"),
     });
@@ -117,6 +140,7 @@ describe("engine lifecycle", () => {
     const orphan = definePlugin({
       id: "orphan",
       version: "0.1.0",
+      engineRange: "^0.1.20",
       requires: { greeter: GreeterCapability },
     });
 
@@ -132,6 +156,7 @@ describe("engine lifecycle", () => {
     const plugin = definePlugin({
       id: "optional-consumer",
       version: "0.1.0",
+      engineRange: "^0.1.20",
       requires: { greeter: { token: GreeterCapability, optional: true } },
       start(ctx) {
         seen = ctx.dependencies.greeter;
@@ -148,6 +173,7 @@ describe("engine lifecycle", () => {
     const consumer = definePlugin({
       id: "consumer",
       version: "0.1.0",
+      engineRange: "^0.1.20",
       requires: { greeter: { token: GreeterCapability, range: "^2.0.0" } },
     });
 
@@ -161,6 +187,7 @@ describe("engine lifecycle", () => {
     const consumer = definePlugin({
       id: "consumer",
       version: "0.1.0",
+      engineRange: "^0.1.20",
       requires: { greeter: { token: GreeterCapability, range: "^1.0.0" } },
     });
 
@@ -175,6 +202,7 @@ describe("engine lifecycle", () => {
     const a = definePlugin({
       id: "a",
       version: "0.1.0",
+      engineRange: "^0.1.20",
       provides: [CapA],
       requires: { b: CapB },
       register(ctx) {
@@ -185,6 +213,7 @@ describe("engine lifecycle", () => {
     const b = definePlugin({
       id: "b",
       version: "0.1.0",
+      engineRange: "^0.1.20",
       provides: [CapB],
       requires: { a: CapA },
       register(ctx) {
@@ -202,6 +231,7 @@ describe("engine lifecycle", () => {
     const rival = definePlugin({
       id: "rival",
       version: "0.1.0",
+      engineRange: "^0.1.20",
       provides: [GreeterCapability],
       register(ctx) {
         ctx.provide(GreeterCapability, { greet: () => "other" });
@@ -220,6 +250,7 @@ describe("engine lifecycle", () => {
     const provider = definePlugin({
       id: "provider",
       version: "0.1.0",
+      engineRange: "^0.1.20",
       provides: [CounterCapability],
       register(ctx) {
         ctx.provide(CounterCapability, { next: () => 1 });
@@ -231,6 +262,7 @@ describe("engine lifecycle", () => {
     const broken = definePlugin({
       id: "broken",
       version: "0.1.0",
+      engineRange: "^0.1.20",
       requires: { counter: CounterCapability },
       start() {
         events.push("broken:start");
@@ -253,7 +285,6 @@ describe("engine lifecycle", () => {
       "broken:stop",
       "provider:stop",
     ]);
-
   });
 
   it("cleans every registered plugin when registration fails", async () => {
@@ -262,12 +293,14 @@ describe("engine lifecycle", () => {
     const first = definePlugin({
       id: "first",
       version: "0.1.0",
+      engineRange: "^0.1.20",
       register: () => void events.push("first:register"),
       stop: () => void events.push("first:stop"),
     });
     const broken = definePlugin({
       id: "broken-register",
       version: "0.1.0",
+      engineRange: "^0.1.20",
       register() {
         events.push("broken:register");
         throw new Error("register failed");
@@ -287,12 +320,135 @@ describe("engine lifecycle", () => {
     ]);
   });
 
+  it("sanitizes non-Prism lifecycle failures while preserving cleanup", async () => {
+    const registerEvents: string[] = [];
+    const registerFailurePlugin = definePlugin({
+      id: "private-register-failure",
+      version: "0.1.0",
+      engineRange: "^0.1.20",
+      register() {
+        registerEvents.push("register");
+        throw new Error("postgres://admin:private-password@db.internal/plugin-register");
+      },
+      stop() {
+        registerEvents.push("stop");
+        throw { credential: "private-stop-credential" };
+      },
+    });
+    const registerEngine = createEngine({ plugins: [registerFailurePlugin] });
+    let registerFailure: unknown;
+    try {
+      await registerEngine.start();
+    } catch (error) {
+      registerFailure = error;
+    }
+    expect(registerFailure).toMatchObject({
+      diagnostics: [
+        {
+          code: EngineDiagnosticCode.PLUGIN_REGISTER_FAILED,
+          message: "Plugin lifecycle callback failed.",
+          details: { pluginId: "private-register-failure", errorType: "Error" },
+        },
+      ],
+    });
+    expect(registerEvents).toEqual(["register", "stop"]);
+    expect(registerEngine.inspect().diagnostics).toMatchObject([
+      {
+        code: EngineDiagnosticCode.PLUGIN_STOP_FAILED,
+        message: "Plugin lifecycle cleanup failed.",
+        details: { pluginId: "private-register-failure", errorType: "object" },
+      },
+    ]);
+    expect(
+      JSON.stringify({
+        failure: registerFailure,
+        inspection: registerEngine.inspect(),
+      }),
+    ).not.toContain("private-password");
+    expect(JSON.stringify(registerEngine.inspect())).not.toContain(
+      "private-stop-credential",
+    );
+
+    const startEvents: string[] = [];
+    const startFailurePlugin = definePlugin({
+      id: "private-start-failure",
+      version: "0.1.0",
+      engineRange: "^0.1.20",
+      start() {
+        startEvents.push("start");
+        throw { endpoint: "https://private.example", token: "private-token" };
+      },
+      stop() {
+        startEvents.push("stop");
+        const failure = new Error("private stop stack");
+        failure.name = "Private-Credential-Error";
+        throw failure;
+      },
+    });
+    const startEngine = createEngine({ plugins: [startFailurePlugin] });
+    let startFailure: unknown;
+    try {
+      await startEngine.start();
+    } catch (error) {
+      startFailure = error;
+    }
+    expect(startFailure).toMatchObject({
+      diagnostics: [
+        {
+          code: EngineDiagnosticCode.PLUGIN_START_FAILED,
+          message: "Plugin lifecycle callback failed.",
+          details: { pluginId: "private-start-failure", errorType: "object" },
+        },
+      ],
+    });
+    expect(startEvents).toEqual(["start", "stop"]);
+    expect(startEngine.inspect().diagnostics).toMatchObject([
+      {
+        code: EngineDiagnosticCode.PLUGIN_STOP_FAILED,
+        message: "Plugin lifecycle cleanup failed.",
+        details: { pluginId: "private-start-failure", errorType: "Error" },
+      },
+    ]);
+    const serializedStartFailure = JSON.stringify({
+      failure: startFailure,
+      inspection: startEngine.inspect(),
+    });
+    expect(serializedStartFailure).not.toContain("private-token");
+    expect(serializedStartFailure).not.toContain("private.example");
+    expect(serializedStartFailure).not.toContain("private stop stack");
+  });
+
+  it("preserves structured Prism lifecycle diagnostics", async () => {
+    const plugin = definePlugin({
+      id: "structured-failure",
+      version: "0.1.0",
+      engineRange: "^0.1.20",
+      start() {
+        throw PrismError.of("STRUCTURED_PLUGIN_FAILURE", "Structured failure.", {
+          safe: true,
+        });
+      },
+    });
+    const engine = createEngine({ plugins: [plugin] });
+
+    await expect(engine.start()).rejects.toMatchObject({
+      diagnostics: [
+        {
+          code: "STRUCTURED_PLUGIN_FAILURE",
+          message: "Structured failure.",
+          details: { safe: true },
+        },
+      ],
+    });
+  });
+
   it("blocks access to a capability the plugin did not declare", async () => {
     let thrown: unknown;
 
     const sneaky = definePlugin({
       id: "sneaky",
       version: "0.1.0",
+      engineRange: "^0.1.20",
       start(ctx) {
         try {
           ctx.services.get(GreeterCapability);
@@ -315,6 +471,7 @@ describe("engine lifecycle", () => {
     const liar = definePlugin({
       id: "liar",
       version: "0.1.0",
+      engineRange: "^0.1.20",
       register(ctx) {
         ctx.provide(GreeterCapability, { greet: () => "nope" });
       },
@@ -328,12 +485,13 @@ describe("engine lifecycle", () => {
 
   it("freezes the capability registry after the register phase", async () => {
     let thrown: unknown;
-    let captured: { provide: (token: typeof CounterCapability, service: Counter) => void } | undefined;
+    let captured:
+      { provide: (token: typeof CounterCapability, service: Counter) => void } | undefined;
 
     const late = definePlugin({
       id: "late",
       version: "0.1.0",
-      // Both are declared, so the failure below is about phase, not declaration.
+      engineRange: "^0.1.20", // Both are declared, so the failure below is about phase, not declaration.
       provides: [GreeterCapability, CounterCapability],
       register(ctx) {
         ctx.provide(GreeterCapability, { greet: () => "early" });
@@ -347,7 +505,6 @@ describe("engine lifecycle", () => {
         }
       },
     });
-
 
     const engine = createEngine({ plugins: [late] });
     await engine.start();
@@ -368,6 +525,7 @@ describe("engine lifecycle", () => {
     const first = definePlugin({
       id: "extension-v1",
       version: "0.1.0",
+      engineRange: "^0.1.20",
       register(ctx) {
         ctx.extensions.contribute(V1, { name: "v1" });
       },
@@ -375,6 +533,7 @@ describe("engine lifecycle", () => {
     const incompatible = definePlugin({
       id: "extension-v2",
       version: "0.1.0",
+      engineRange: "^0.1.20",
       register(ctx) {
         ctx.extensions.contribute(V2, { name: "v2" });
       },
@@ -398,6 +557,7 @@ describe("engine lifecycle", () => {
     const writer = definePlugin({
       id: "versioned-writer",
       version: "0.1.0",
+      engineRange: "^0.1.20",
       register(ctx) {
         ctx.extensions.contribute(V1, "value");
       },
@@ -405,6 +565,7 @@ describe("engine lifecycle", () => {
     const reader = definePlugin({
       id: "versioned-reader",
       version: "0.1.0",
+      engineRange: "^0.1.20",
       start(ctx) {
         ctx.extensions.values(V2);
       },
@@ -428,6 +589,7 @@ describe("engine lifecycle", () => {
     const host = definePlugin({
       id: "host",
       version: "0.1.0",
+      engineRange: "^0.1.20",
       register(ctx) {
         ctx.extensions.contribute(WidgetPoint, { name: "from-host" });
       },
@@ -436,6 +598,7 @@ describe("engine lifecycle", () => {
     const addon = definePlugin({
       id: "addon",
       version: "0.1.0",
+      engineRange: "^0.1.20",
       register(ctx) {
         ctx.extensions.contribute(WidgetPoint, { name: "from-addon" });
       },
@@ -446,6 +609,7 @@ describe("engine lifecycle", () => {
     const reader = definePlugin({
       id: "reader",
       version: "0.1.0",
+      engineRange: "^0.1.20",
       start(ctx) {
         collected = ctx.extensions.all(WidgetPoint);
       },
@@ -466,9 +630,24 @@ describe("engine lifecycle", () => {
     const plugin = definePlugin({
       id: "migrating",
       version: "0.1.0",
+      engineRange: "^0.1.20",
       migrations: [
-        { id: "0001-init", up: async () => void ran.push("0001-init") },
-        { id: "0002-more", up: async () => void ran.push("0002-more") },
+        {
+          id: "0001-init",
+          checksum: "1".repeat(64),
+          risk: "low",
+          requiresBackup: false,
+          externalEffects: [],
+          up: async () => void ran.push("0001-init"),
+        },
+        {
+          id: "0002-more",
+          checksum: "2".repeat(64),
+          risk: "low",
+          requiresBackup: false,
+          externalEffects: [],
+          up: async () => void ran.push("0002-more"),
+        },
       ],
     });
 
@@ -479,11 +658,245 @@ describe("engine lifecycle", () => {
 
     expect(ran).toEqual(["0001-init", "0002-more"]);
   });
+  it("preflights every pending migration before mutation and detects checksum drift", async () => {
+    const ran: string[] = [];
+    const journal = new InMemoryMigrationJournal();
+    const migration = {
+      id: "0001-risky",
+      checksum: "a".repeat(64),
+      risk: "high" as const,
+      requiresBackup: true,
+      externalEffects: [],
+      preflight: async () => void ran.push("preflight"),
+      up: async () => void ran.push("up"),
+    };
+    const plugin = definePlugin({
+      id: "preflight",
+      version: "0.1.0",
+      engineRange: "^0.1.20",
+      migrations: [migration],
+    });
+    const rejected = createEngine({ plugins: [plugin], migrationJournal: journal });
+    await expect(rejected.start()).rejects.toThrow("MIGRATION_BACKUP_REQUIRED");
+    expect(ran).toEqual([]);
+
+    const accepted = createEngine({
+      plugins: [plugin],
+      migrationJournal: journal,
+      confirmMigrationBackup: () => true,
+    });
+    await accepted.start();
+    expect(ran).toEqual(["preflight", "up"]);
+    await accepted.stop();
+
+    const changed = definePlugin({
+      id: "preflight",
+      version: "0.1.1",
+      engineRange: "^0.1.20",
+      migrations: [{ ...migration, checksum: "b".repeat(64) }],
+    });
+    const drifted = createEngine({ plugins: [changed], migrationJournal: journal });
+    await expect(drifted.start()).rejects.toThrow("MIGRATION_CHECKSUM_MISMATCH");
+  });
+
+  it("does not query the migration journal for migration-free plugins", async () => {
+    let journalCalls = 0;
+    const journal: MigrationJournal = {
+      applied: async () => {
+        journalCalls += 1;
+        return [];
+      },
+      record: async () => {
+        journalCalls += 1;
+      },
+      run: async () => {
+        journalCalls += 1;
+        return "applied";
+      },
+    };
+    const plugin = definePlugin({
+      id: "without-migrations",
+      version: "1.0.0",
+      engineRange: "^0.1.20",
+    });
+
+    const engine = createEngine({ plugins: [plugin], migrationJournal: journal });
+    await engine.start();
+    expect(journalCalls).toBe(0);
+  });
+
+  it("rejects corrupt migration journal snapshots before migration work", async () => {
+    const migration = {
+      id: "0001-safe",
+      checksum: "a".repeat(64),
+      risk: "high" as const,
+      requiresBackup: true,
+      externalEffects: ["declared effect"],
+      preflight: async () => undefined,
+      up: async () => undefined,
+    };
+    const snapshots: readonly unknown[] = [
+      { private: "private-object" },
+      [
+        { id: migration.id, checksum: migration.checksum },
+        { id: migration.id, checksum: migration.checksum },
+      ],
+      Array.from({ length: MIGRATION_JOURNAL_MAX_ENTRIES + 1 }, (_, index) => ({
+        id: `oversized-${index}`,
+      })),
+      [{ id: migration.id, checksum: "private-checksum" }],
+      [{ id: "private\nmigration", checksum: migration.checksum }],
+    ];
+
+    for (const snapshot of snapshots) {
+      let approvalCalls = 0;
+      let preflightCalls = 0;
+      let upCalls = 0;
+      let startCalls = 0;
+      let runCalls = 0;
+      const plugin = definePlugin({
+        id: "journal-reader",
+        version: "1.0.0",
+        engineRange: "^0.1.20",
+        migrations: [
+          {
+            ...migration,
+            preflight: async () => {
+              preflightCalls += 1;
+            },
+            up: async () => {
+              upCalls += 1;
+            },
+          },
+        ],
+        start() {
+          startCalls += 1;
+        },
+      });
+      const journal: MigrationJournal = {
+        applied: async () => snapshot as readonly AppliedMigration[],
+        record: async () => undefined,
+        run: async () => {
+          runCalls += 1;
+          return "applied";
+        },
+      };
+      const engine = createEngine({
+        plugins: [plugin],
+        migrationJournal: journal,
+        confirmMigrationBackup: () => {
+          approvalCalls += 1;
+          return true;
+        },
+        approveMigrationExternalEffects: () => {
+          approvalCalls += 1;
+          return true;
+        },
+      });
+
+      let failure: unknown;
+      try {
+        await engine.start();
+      } catch (error) {
+        failure = error;
+      }
+      expect((failure as PrismError).diagnostics).toMatchObject([
+        {
+          code: "MIGRATION_JOURNAL_INVALID",
+          message: "Migration journal returned invalid metadata.",
+          details: { pluginId: plugin.id },
+        },
+      ]);
+      expect(JSON.stringify(failure)).not.toContain("private");
+      expect(approvalCalls).toBe(0);
+      expect(preflightCalls).toBe(0);
+      expect(upCalls).toBe(0);
+      expect(startCalls).toBe(0);
+      expect(runCalls).toBe(0);
+    }
+  });
+
+  it("accepts the journal row boundary and checksum-less legacy rows", async () => {
+    let preflightCalls = 0;
+    let upCalls = 0;
+    let startCalls = 0;
+    const migration = {
+      id: "historical-0",
+      checksum: "b".repeat(64),
+      risk: "low" as const,
+      requiresBackup: false,
+      externalEffects: [],
+      preflight: async () => {
+        preflightCalls += 1;
+      },
+      up: async () => {
+        upCalls += 1;
+      },
+    };
+    const snapshot = Array.from({ length: MIGRATION_JOURNAL_MAX_ENTRIES }, (_, index) => ({
+      id: `historical-${index}`,
+    }));
+    const journal: MigrationJournal = {
+      applied: async () => snapshot,
+      record: async () => undefined,
+      run: async (_pluginId, _migrationId, _checksum, _action) => "skipped",
+    };
+    const plugin = definePlugin({
+      id: "legacy-journal",
+      version: "1.0.0",
+      engineRange: "^0.1.20",
+      migrations: [migration],
+      start() {
+        startCalls += 1;
+      },
+    });
+
+    const engine = createEngine({ plugins: [plugin], migrationJournal: journal });
+    await engine.start();
+    expect(preflightCalls).toBe(0);
+    expect(upCalls).toBe(0);
+    expect(startCalls).toBe(1);
+  });
+  it("serializes the same migration across concurrent Engines", async () => {
+    const journal = new InMemoryMigrationJournal();
+    const started = deferred<void>();
+    const release = deferred<void>();
+    let runs = 0;
+    const plugin = definePlugin({
+      id: "concurrent-migration",
+      version: "0.1.0",
+      engineRange: "^0.1.20",
+      migrations: [
+        {
+          id: "0001-once",
+          checksum: "c".repeat(64),
+          risk: "low",
+          requiresBackup: false,
+          externalEffects: [],
+          async up() {
+            runs += 1;
+            started.resolve();
+            await release.promise;
+          },
+        },
+      ],
+    });
+    const first = createEngine({ plugins: [plugin], migrationJournal: journal });
+    const second = createEngine({ plugins: [plugin], migrationJournal: journal });
+    const firstStart = first.start();
+    await started.promise;
+    const secondStart = second.start();
+    release.resolve();
+    await Promise.all([firstStart, secondStart]);
+    expect(runs).toBe(1);
+    await Promise.all([first.stop(), second.stop()]);
+  });
 
   it("exposes the dependency graph for the capability inspector", async () => {
     const consumer = definePlugin({
       id: "consumer",
       version: "0.1.0",
+      engineRange: "^0.1.20",
       requires: { greeter: GreeterCapability },
     });
 
@@ -512,6 +925,7 @@ describe("engine lifecycle", () => {
     const provider = definePlugin({
       id: "restartable",
       version: "0.1.0",
+      engineRange: "^0.1.20",
       provides: [GreeterCapability],
       register(ctx) {
         events.push("register");
@@ -571,6 +985,7 @@ describe("engine lifecycle", () => {
     const flaky = definePlugin({
       id: "flaky",
       version: "0.1.0",
+      engineRange: "^0.1.20",
       provides: [GreeterCapability],
       register(ctx) {
         ctx.provide(GreeterCapability, { greet: () => "hello" });

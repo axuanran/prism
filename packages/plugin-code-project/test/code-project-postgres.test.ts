@@ -10,10 +10,7 @@ import {
   storagePostgresPlugin,
   type PostgresMigrationJournal,
 } from "@prismengine/plugin-storage-postgres";
-import {
-  createScratchDatabase,
-  probePostgres,
-} from "@prismengine/testing";
+import { createScratchDatabase, probePostgres } from "@prismengine/testing";
 
 const probe = await probePostgres();
 const describePostgres = probe.url === undefined ? describe.skip : describe;
@@ -27,7 +24,10 @@ describePostgres("Code Project PostgreSQL recovery", () => {
     const boot = async () => {
       const journal = createPostgresMigrationJournal({ connectionString: scratch.url });
       const engine = createEngine({
-        plugins: [storagePostgresPlugin({ connectionString: scratch.url }), codeProjectPlugin],
+        plugins: [
+          storagePostgresPlugin({ connectionString: scratch.url }),
+          codeProjectPlugin,
+        ],
         migrationJournal: journal,
       });
       await engine.start();
@@ -59,22 +59,28 @@ describePostgres("Code Project PostgreSQL recovery", () => {
       projects = host.engine.capability(CodeProjectCapabilityToken);
       const restoredDraft = await projects.draft(context, created.project.id);
       expect(restoredDraft.draftVersion).toBe(firstEdit.draftVersion);
-      expect(restoredDraft.files.find((file) => file.path === "src/shared/value.ts")?.content)
-        .toBe("export const value = 1.1;\n");
+      expect(
+        restoredDraft.files.find((file) => file.path === "src/shared/value.ts")?.content,
+      ).toBe("export const value = 1.1;\n");
       const source1 = await projects.publishDraft(
         context,
         created.project.id,
         restoredDraft.draftVersion,
       );
       const afterFirst = await projects.draft(context, created.project.id);
-      const secondEdit = await projects.saveDraft(context, created.project.id, afterFirst.draftVersion, [
-        ...afterFirst.files.filter((file) => file.path !== "src/shared/value.ts"),
-        {
-          path: "src/shared/value.ts",
-          mediaType: "text/typescript",
-          content: "export const value = 1.2;\n",
-        },
-      ]);
+      const secondEdit = await projects.saveDraft(
+        context,
+        created.project.id,
+        afterFirst.draftVersion,
+        [
+          ...afterFirst.files.filter((file) => file.path !== "src/shared/value.ts"),
+          {
+            path: "src/shared/value.ts",
+            mediaType: "text/typescript",
+            content: "export const value = 1.2;\n",
+          },
+        ],
+      );
       const source2 = await projects.publishDraft(
         context,
         created.project.id,

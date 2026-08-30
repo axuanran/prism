@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import * as monaco from 'monaco-editor/esm/vs/editor/editor.api';
-import 'monaco-editor/esm/vs/language/json/monaco.contribution';
-import 'monaco-editor/esm/vs/language/typescript/monaco.contribution';
-import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker';
-import JsonWorker from 'monaco-editor/esm/vs/language/json/json.worker?worker';
-import TsWorker from 'monaco-editor/esm/vs/language/typescript/ts.worker?worker';
+import { onBeforeUnmount, onMounted, ref, watch } from "vue";
+import * as monaco from "monaco-editor/esm/vs/editor/editor.api";
+import "monaco-editor/esm/vs/language/json/monaco.contribution";
+import "monaco-editor/esm/vs/language/typescript/monaco.contribution";
+import EditorWorker from "monaco-editor/esm/vs/editor/editor.worker?worker";
+import JsonWorker from "monaco-editor/esm/vs/language/json/json.worker?worker";
+import TsWorker from "monaco-editor/esm/vs/language/typescript/ts.worker?worker";
 
 const props = defineProps<{
   modelValue: string;
@@ -13,7 +13,7 @@ const props = defineProps<{
   projectId: string;
   readonly?: boolean;
 }>();
-const emit = defineEmits<{ 'update:modelValue': [value: string] }>();
+const emit = defineEmits<{ "update:modelValue": [value: string] }>();
 const host = ref<HTMLElement | null>(null);
 let editor: monaco.editor.IStandaloneCodeEditor | undefined;
 let model: monaco.editor.ITextModel | undefined;
@@ -27,8 +27,8 @@ const workerScope = self as unknown as {
 };
 workerScope.MonacoEnvironment ??= {
   getWorker(_moduleId, label) {
-    if (label === 'json') return new JsonWorker();
-    if (label === 'typescript' || label === 'javascript') return new TsWorker();
+    if (label === "json") return new JsonWorker();
+    if (label === "typescript" || label === "javascript") return new TsWorker();
     return new EditorWorker();
   },
 };
@@ -65,26 +65,28 @@ declare module "@prismengine/project-sdk" {
 `;
 monaco.languages.typescript.typescriptDefaults.addExtraLib(
   PROJECT_SDK_TYPES,
-  'prism-project-sdk.d.ts',
+  "prism-project-sdk.d.ts",
 );
 
 async function loadProfileSdkTypes(): Promise<void> {
-  const response = await fetch('/api/project-runtime-profile/sdk-types');
+  const response = await fetch("/api/project-runtime-profile/sdk-types");
   if (response.status === 404) return;
   if (!response.ok) throw new Error(`Profile SDK Types request failed: ${response.status}`);
-  const profile = await response.json() as {
+  const profile = (await response.json()) as {
     readonly identity: { readonly sdkTypesFingerprint: string };
     readonly content: string;
   };
   const digest = await crypto.subtle.digest(
-    'SHA-256',
+    "SHA-256",
     new TextEncoder().encode(profile.content),
   );
   const fingerprint = [...new Uint8Array(digest)]
-    .map((value) => value.toString(16).padStart(2, '0'))
-    .join('');
+    .map((value) => value.toString(16).padStart(2, "0"))
+    .join("");
   if (fingerprint !== profile.identity.sdkTypesFingerprint) {
-    throw new Error('PROJECT_SDK_TYPES_MISMATCH: Monaco SDK Types do not match Runtime Profile.');
+    throw new Error(
+      "PROJECT_SDK_TYPES_MISMATCH: Monaco SDK Types do not match Runtime Profile.",
+    );
   }
   profileSdkTypesLib?.dispose();
   profileSdkTypesLib = monaco.languages.typescript.typescriptDefaults.addExtraLib(
@@ -94,19 +96,21 @@ async function loadProfileSdkTypes(): Promise<void> {
 }
 
 function language(path: string): string {
-  const extension = path.slice(path.lastIndexOf('.') + 1).toLowerCase();
-  return {
-    ts: 'typescript',
-    tsx: 'typescript',
-    js: 'javascript',
-    jsx: 'javascript',
-    json: 'json',
-    css: 'css',
-    md: 'markdown',
-    sql: 'sql',
-    yaml: 'yaml',
-    yml: 'yaml',
-  }[extension] ?? 'plaintext';
+  const extension = path.slice(path.lastIndexOf(".") + 1).toLowerCase();
+  return (
+    {
+      ts: "typescript",
+      tsx: "typescript",
+      js: "javascript",
+      jsx: "javascript",
+      json: "json",
+      css: "css",
+      md: "markdown",
+      sql: "sql",
+      yaml: "yaml",
+      yml: "yaml",
+    }[extension] ?? "plaintext"
+  );
 }
 
 function replaceModel(): void {
@@ -128,22 +132,28 @@ onMounted(async () => {
     readOnly: props.readonly ?? false,
     scrollBeyondLastLine: false,
     tabSize: 2,
-    theme: 'vs',
+    theme: "vs",
   });
   replaceModel();
   editor.onDidChangeModelContent(() => {
-    if (!suppress) emit('update:modelValue', editor?.getValue() ?? '');
+    if (!suppress) emit("update:modelValue", editor?.getValue() ?? "");
   });
 });
 
 watch(() => props.path, replaceModel);
-watch(() => props.readonly, (value) => editor?.updateOptions({ readOnly: value ?? false }));
-watch(() => props.modelValue, (value) => {
-  if (!model || model.getValue() === value) return;
-  suppress = true;
-  model.setValue(value);
-  suppress = false;
-});
+watch(
+  () => props.readonly,
+  (value) => editor?.updateOptions({ readOnly: value ?? false }),
+);
+watch(
+  () => props.modelValue,
+  (value) => {
+    if (!model || model.getValue() === value) return;
+    suppress = true;
+    model.setValue(value);
+    suppress = false;
+  },
+);
 
 onBeforeUnmount(() => {
   editor?.dispose();
@@ -155,5 +165,9 @@ onBeforeUnmount(() => {
 <template><div ref="host" class="monaco-host"></div></template>
 
 <style scoped>
-.monaco-host { width: 100%; height: 100%; min-height: 420px; }
+.monaco-host {
+  width: 100%;
+  height: 100%;
+  min-height: 420px;
+}
 </style>

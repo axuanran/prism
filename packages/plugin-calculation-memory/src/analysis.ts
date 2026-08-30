@@ -47,24 +47,27 @@ export function createAnalysisSession(extensions: ExtensionRegistry): AnalysisSe
   const used = new Set<string>();
 
   const typeService: TypeAnalysisService = {
-    inferUnary: (request) => composeTypeAnalysis(
-      registry.type,
-      (extension) => extension.inferUnary?.(request),
-      used,
-      "unary expression",
-    ),
-    inferBinary: (request) => composeTypeAnalysis(
-      registry.type,
-      (extension) => extension.inferBinary?.(request),
-      used,
-      "binary expression",
-    ),
-    inferFunction: (request) => composeTypeAnalysis(
-      registry.type,
-      (extension) => extension.inferFunction?.(request),
-      used,
-      `function "${request.name}"`,
-    ),
+    inferUnary: (request) =>
+      composeTypeAnalysis(
+        registry.type,
+        (extension) => extension.inferUnary?.(request),
+        used,
+        "unary expression",
+      ),
+    inferBinary: (request) =>
+      composeTypeAnalysis(
+        registry.type,
+        (extension) => extension.inferBinary?.(request),
+        used,
+        "binary expression",
+      ),
+    inferFunction: (request) =>
+      composeTypeAnalysis(
+        registry.type,
+        (extension) => extension.inferFunction?.(request),
+        used,
+        `function "${request.name}"`,
+      ),
   };
 
   return {
@@ -89,18 +92,27 @@ export function createAnalysisSession(extensions: ExtensionRegistry): AnalysisSe
           ),
         };
       }
-      const handled = candidates.filter((candidate): candidate is {
-        readonly extension: PlanAnalysisExtension;
-        readonly result: Extract<AnalysisResult<PlanNodeAnalysisValue>, { readonly kind: "handled" }>;
-      } => candidate.result.kind === "handled");
+      const handled = candidates.filter(
+        (
+          candidate,
+        ): candidate is {
+          readonly extension: PlanAnalysisExtension;
+          readonly result: Extract<
+            AnalysisResult<PlanNodeAnalysisValue>,
+            { readonly kind: "handled" }
+          >;
+        } => candidate.result.kind === "handled",
+      );
       if (handled.length > 1) {
         return {
           node,
-          diagnostics: [analysisConflict(
-            "plan node",
-            handled.map((candidate) => candidate.extension.id),
-            node.origin.sourceNodeId,
-          )],
+          diagnostics: [
+            analysisConflict(
+              "plan node",
+              handled.map((candidate) => candidate.extension.id),
+              node.origin.sourceNodeId,
+            ),
+          ],
         };
       }
       const selected = handled[0];
@@ -126,20 +138,19 @@ export function createAnalysisSession(extensions: ExtensionRegistry): AnalysisSe
                 ],
               }),
         },
-        diagnostics: [
-          ...selected.result.diagnostics,
-          ...normalizedConstraints.diagnostics,
-        ],
+        diagnostics: [...selected.result.diagnostics, ...normalizedConstraints.diagnostics],
       };
     },
   };
 }
 
 function collectAnalyzers(extensions: ExtensionRegistry): AnalyzerRegistry {
-  const type = extensions.values(TypeAnalysisExtensionPoint)
+  const type = extensions
+    .values(TypeAnalysisExtensionPoint)
     .slice()
     .sort((left, right) => left.id.localeCompare(right.id));
-  const plan = extensions.values(PlanAnalysisExtensionPoint)
+  const plan = extensions
+    .values(PlanAnalysisExtensionPoint)
     .slice()
     .sort((left, right) => left.id.localeCompare(right.id));
   const diagnostics: Diagnostic[] = [];
@@ -152,11 +163,13 @@ function collectAnalyzers(extensions: ExtensionRegistry): AnalyzerRegistry {
     for (const analyzer of analyzers) {
       const existing = identities.get(analyzer.id);
       if (existing !== undefined) {
-        diagnostics.push(diagnostic(
-          CalculationDiagnosticCode.ANALYZER_ID_DUPLICATE,
-          `Analyzer id "${analyzer.id}" is contributed more than once.`,
-          { details: { analyzerId: analyzer.id, kind } },
-        ));
+        diagnostics.push(
+          diagnostic(
+            CalculationDiagnosticCode.ANALYZER_ID_DUPLICATE,
+            `Analyzer id "${analyzer.id}" is contributed more than once.`,
+            { details: { analyzerId: analyzer.id, kind } },
+          ),
+        );
         continue;
       }
       identities.set(analyzer.id, {
@@ -190,14 +203,23 @@ function composeTypeAnalysis(
       ),
     };
   }
-  const handled = candidates.filter((candidate): candidate is {
-    readonly extension: TypeAnalysisExtension;
-    readonly result: Extract<AnalysisResult<ValueType>, { readonly kind: "handled" }>;
-  } => candidate.result.kind === "handled");
+  const handled = candidates.filter(
+    (
+      candidate,
+    ): candidate is {
+      readonly extension: TypeAnalysisExtension;
+      readonly result: Extract<AnalysisResult<ValueType>, { readonly kind: "handled" }>;
+    } => candidate.result.kind === "handled",
+  );
   if (handled.length > 1) {
     return {
       kind: "invalid",
-      diagnostics: [analysisConflict(subject, handled.map((candidate) => candidate.extension.id))],
+      diagnostics: [
+        analysisConflict(
+          subject,
+          handled.map((candidate) => candidate.extension.id),
+        ),
+      ],
     };
   }
   const selected = handled[0];
@@ -213,36 +235,41 @@ function requiredAnalyzerDiagnostics(
 ): readonly Diagnostic[] {
   const diagnostics: Diagnostic[] = [];
   const seen = new Set<string>();
-  for (const requirement of [...requirements].sort((left, right) => left.id.localeCompare(right.id))) {
+  for (const requirement of [...requirements].sort((left, right) =>
+    left.id.localeCompare(right.id),
+  )) {
     if (seen.has(requirement.id)) {
-      diagnostics.push(diagnostic(
-        CalculationDiagnosticCode.ANALYZER_ID_DUPLICATE,
-        `Required analyzer "${requirement.id}" is declared more than once.`,
-        { details: { analyzerId: requirement.id } },
-      ));
+      diagnostics.push(
+        diagnostic(
+          CalculationDiagnosticCode.ANALYZER_ID_DUPLICATE,
+          `Required analyzer "${requirement.id}" is declared more than once.`,
+          { details: { analyzerId: requirement.id } },
+        ),
+      );
       continue;
     }
     seen.add(requirement.id);
     const identity = registry.identities.get(requirement.id);
-    const expectedPoint = requirement.kind === "type"
-      ? TypeAnalysisExtensionPoint
-      : PlanAnalysisExtensionPoint;
+    const expectedPoint =
+      requirement.kind === "type" ? TypeAnalysisExtensionPoint : PlanAnalysisExtensionPoint;
     if (
       identity === undefined ||
       identity.extensionPoint !== expectedPoint.id ||
       identity.contractVersion !== requirement.contractVersion
     ) {
-      diagnostics.push(diagnostic(
-        CalculationDiagnosticCode.REQUIRED_ANALYZER_MISSING,
-        `Required ${requirement.kind} analyzer "${requirement.id}" is not installed for contract ${requirement.contractVersion}.`,
-        {
-          details: {
-            analyzerId: requirement.id,
-            kind: requirement.kind,
-            contractVersion: requirement.contractVersion,
+      diagnostics.push(
+        diagnostic(
+          CalculationDiagnosticCode.REQUIRED_ANALYZER_MISSING,
+          `Required ${requirement.kind} analyzer "${requirement.id}" is not installed for contract ${requirement.contractVersion}.`,
+          {
+            details: {
+              analyzerId: requirement.id,
+              kind: requirement.kind,
+              contractVersion: requirement.contractVersion,
+            },
           },
-        },
-      ));
+        ),
+      );
     } else {
       // Required analyzers enter plan identity even when this particular plan
       // has no applicable node: their presence was an authored safety rule.
@@ -287,11 +314,13 @@ function normalizeConstraints(
       constraint.contract.trim() === "" ||
       constraint.contractVersion.trim() === ""
     ) {
-      diagnostics.push(diagnostic(
-        CalculationDiagnosticCode.ANALYSIS_CONSTRAINT_INVALID,
-        `Invalid or duplicate analysis constraint "${constraint.contract}".`,
-        { nodeId, details: { contract: constraint.contract } },
-      ));
+      diagnostics.push(
+        diagnostic(
+          CalculationDiagnosticCode.ANALYSIS_CONSTRAINT_INVALID,
+          `Invalid or duplicate analysis constraint "${constraint.contract}".`,
+          { nodeId, details: { contract: constraint.contract } },
+        ),
+      );
       continue;
     }
     try {
@@ -300,11 +329,13 @@ function normalizeConstraints(
         `/nodes/${nodeId}/constraints/${constraint.contract}/spec`,
       );
     } catch {
-      diagnostics.push(diagnostic(
-        CalculationDiagnosticCode.ANALYSIS_CONSTRAINT_INVALID,
-        `Analysis constraint "${constraint.contract}" must contain JsonValue.`,
-        { nodeId, details: { contract: constraint.contract } },
-      ));
+      diagnostics.push(
+        diagnostic(
+          CalculationDiagnosticCode.ANALYSIS_CONSTRAINT_INVALID,
+          `Analysis constraint "${constraint.contract}" must contain JsonValue.`,
+          { nodeId, details: { contract: constraint.contract } },
+        ),
+      );
     }
   }
   return {
@@ -316,12 +347,9 @@ export function analysisIdentities(
   session: AnalysisSession,
 ): Readonly<Record<string, AnalysisExtensionIdentity>> {
   return Object.fromEntries(
-    [...session.used]
-      .sort()
-      .flatMap((id) => {
-
-        const identity = session.registry.identities.get(id);
-        return identity === undefined ? [] : [[id, identity] as const];
-      }),
+    [...session.used].sort().flatMap((id) => {
+      const identity = session.registry.identities.get(id);
+      return identity === undefined ? [] : [[id, identity] as const];
+    }),
   );
 }

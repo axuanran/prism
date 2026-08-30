@@ -26,6 +26,7 @@
     "@prismengine/plugin-organization-basic": "workspace:0.1.20",
     "@prismengine/plugin-material-registry": "workspace:0.1.20",
     "@prismengine/plugin-sdk": "workspace:0.1.20",
+    "@prismengine/plugin-secret-local": "workspace:0.1.20",
     "@prismengine/plugin-storage-memory": "workspace:0.1.20",
     "@prismengine/plugin-storage-postgres": "workspace:0.1.20",
     "@prismengine/plugin-type-quantity": "workspace:0.1.20"

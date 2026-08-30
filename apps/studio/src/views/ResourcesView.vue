@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, toRaw, watch } from 'vue';
-import { ApiError, api } from '../api/client';
+import { computed, onMounted, ref, toRaw, watch } from "vue";
+import { ApiError, api } from "../api/client";
+import { resolveApproval } from "../api/governance";
 import type {
   Diagnostic,
   JsonSchema,
@@ -9,11 +10,11 @@ import type {
   Resource,
   ResourceStatus,
   ResourceTypeDescriptor,
-} from '../api/types';
-import ConfigForm from '../components/config/ConfigForm.vue';
-import { createDefaultValue, validateValue } from '../components/config/schema';
-import type { ReferenceLoader } from '../components/config/types';
-import EngineDataBoundary from '../components/EngineDataBoundary.vue';
+} from "../api/types";
+import ConfigForm from "../components/config/ConfigForm.vue";
+import { createDefaultValue, validateValue } from "../components/config/schema";
+import type { ReferenceLoader } from "../components/config/types";
+import EngineDataBoundary from "../components/EngineDataBoundary.vue";
 
 const resourceTypes = ref<readonly ResourceTypeDescriptor[]>([]);
 const resources = ref<readonly Resource[]>([]);
@@ -24,7 +25,7 @@ const loading = ref(true);
 const loadingResources = ref(false);
 const error = ref<string | null>(null);
 const editorOpen = ref(false);
-const editorName = ref('');
+const editorName = ref("");
 const editorSpec = ref<unknown>({});
 const editorResource = ref<Resource | null>(null);
 const editorDiagnostics = ref<readonly Diagnostic[]>([]);
@@ -32,15 +33,26 @@ const formValid = ref(true);
 const saving = ref(false);
 const actionError = ref<string | null>(null);
 const validationMessage = ref<string | null>(null);
-const statusFilter = ref<ResourceStatus | ''>('');
+const statusFilter = ref<ResourceStatus | "">("");
 
-const selectedType = computed(() => resourceTypes.value.find((item) => item.kind === selectedKind.value));
-const visibleResources = computed(() => resources.value.filter((resource) =>
-  !statusFilter.value || resource.status === statusFilter.value));
-const editorReadonly = computed(() => editorResource.value?.status === 'published' || editorResource.value?.status === 'archived');
+const selectedType = computed(() =>
+  resourceTypes.value.find((item) => item.kind === selectedKind.value),
+);
+const visibleResources = computed(() =>
+  resources.value.filter(
+    (resource) => !statusFilter.value || resource.status === statusFilter.value,
+  ),
+);
+const editorReadonly = computed(
+  () =>
+    editorResource.value?.status === "published" ||
+    editorResource.value?.status === "archived",
+);
 const editorPresentation = computed<PresentationSpec | undefined>(() => {
   const base = selectedType.value?.presentation;
-  const fields: Record<string, NonNullable<PresentationSpec['fields']>[string]> = { ...(base?.fields ?? {}) };
+  const fields: Record<string, NonNullable<PresentationSpec["fields"]>[string]> = {
+    ...(base?.fields ?? {}),
+  };
   for (const path of technicalIdPaths(selectedType.value?.schema)) {
     fields[path] = { ...fields[path], hidden: true };
   }
@@ -48,26 +60,34 @@ const editorPresentation = computed<PresentationSpec | undefined>(() => {
 });
 
 const referenceLoader: ReferenceLoader = async () => {
-  const candidates = await api.listResources({ status: 'published' });
-  return candidates.map((resource) => ({ value: resource.id, label: resource.name, description: `已发布版本 ${resource.revision}` }));
+  const candidates = await api.listResources({ status: "published" });
+  return candidates.map((resource) => ({
+    value: resource.id,
+    label: resource.name,
+    description: `已发布版本 ${resource.revision}`,
+  }));
 };
 
-function technicalIdPaths(schema: JsonSchema | undefined, parent = ''): readonly string[] {
+function technicalIdPaths(schema: JsonSchema | undefined, parent = ""): readonly string[] {
   if (!schema?.properties) return [];
   return Object.entries(schema.properties).flatMap(([key, child]) => {
     const path = parent ? `${parent}.${key}` : key;
-    const own = key === 'id' || key.endsWith('Id') ? [path] : [];
+    const own = key === "id" || key.endsWith("Id") ? [path] : [];
     if (child.items) return [...own, ...technicalIdPaths(child.items, `${path}[]`)];
     return [...own, ...technicalIdPaths(child, path)];
   });
 }
 
 function statusLabel(status: ResourceStatus): string {
-  return { draft: '草稿', published: '已发布', archived: '已归档' }[status];
+  return { draft: "草稿", published: "已发布", archived: "已归档" }[status];
 }
 
 function statusDescription(status: ResourceStatus): string {
-  return status === 'published' ? '此版本已锁定，不可修改' : status === 'draft' ? '可继续编辑和验证' : '仅供历史查询';
+  return status === "published"
+    ? "此版本已锁定，不可修改"
+    : status === "draft"
+      ? "可继续编辑和验证"
+      : "仅供历史查询";
 }
 
 function retry(): void {
@@ -82,7 +102,7 @@ async function loadTypes(): Promise<void> {
     if (!selectedKind.value) selectedKind.value = resourceTypes.value[0]?.kind ?? null;
     await loadResources();
   } catch (cause: unknown) {
-    error.value = cause instanceof Error ? cause.message : '配置资源加载失败。';
+    error.value = cause instanceof Error ? cause.message : "配置资源加载失败。";
   } finally {
     loading.value = false;
   }
@@ -98,7 +118,7 @@ async function loadResources(): Promise<void> {
   try {
     resources.value = await api.listResources({ kind: selectedKind.value });
   } catch (cause: unknown) {
-    actionError.value = cause instanceof Error ? cause.message : '资源列表加载失败。';
+    actionError.value = cause instanceof Error ? cause.message : "资源列表加载失败。";
   } finally {
     loadingResources.value = false;
   }
@@ -117,12 +137,15 @@ function generatedBusinessKey(): string {
 }
 
 function initializeHiddenIds(schema: JsonSchema, value: unknown): unknown {
-  if (typeof value !== 'object' || value === null) return value;
-  if (Array.isArray(value)) return value.map((item) => initializeHiddenIds(schema.items ?? {}, item));
+  if (typeof value !== "object" || value === null) return value;
+  if (Array.isArray(value))
+    return value.map((item) => initializeHiddenIds(schema.items ?? {}, item));
   const result = { ...(value as Record<string, unknown>) };
   for (const [key, child] of Object.entries(schema.properties ?? {})) {
-    if ((key === 'id' || key.endsWith('Id')) && !result[key]) result[key] = generatedBusinessKey();
-    else if (result[key] !== undefined) result[key] = initializeHiddenIds(child, result[key]);
+    if ((key === "id" || key.endsWith("Id")) && !result[key])
+      result[key] = generatedBusinessKey();
+    else if (result[key] !== undefined)
+      result[key] = initializeHiddenIds(child, result[key]);
   }
   return result;
 }
@@ -130,8 +153,11 @@ function initializeHiddenIds(schema: JsonSchema, value: unknown): unknown {
 function openCreate(): void {
   const descriptor = selectedType.value;
   if (!descriptor) return;
-  editorName.value = '';
-  editorSpec.value = initializeHiddenIds(descriptor.schema, createDefaultValue(descriptor.schema));
+  editorName.value = "";
+  editorSpec.value = initializeHiddenIds(
+    descriptor.schema,
+    createDefaultValue(descriptor.schema),
+  );
   editorResource.value = null;
   editorDiagnostics.value = [];
   actionError.value = null;
@@ -151,7 +177,7 @@ async function openResource(resource: Resource): Promise<void> {
   try {
     revisions.value = await api.listResourceRevisions(resource.kind, resource.id);
   } catch (cause: unknown) {
-    actionError.value = cause instanceof Error ? cause.message : '版本记录加载失败。';
+    actionError.value = cause instanceof Error ? cause.message : "版本记录加载失败。";
   }
 }
 
@@ -160,12 +186,20 @@ function updateValidity(valid: boolean): void {
 }
 
 function looksLikePipeline(value: unknown): value is PipelineSpec {
-  return typeof value === 'object' && value !== null
-    && 'inputs' in value && Array.isArray(value.inputs)
-    && 'nodes' in value && Array.isArray(value.nodes)
-    && 'edges' in value && Array.isArray(value.edges)
-    && 'outputs' in value && Array.isArray(value.outputs)
-    && 'id' in value && typeof value.id === 'string';
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "inputs" in value &&
+    Array.isArray(value.inputs) &&
+    "nodes" in value &&
+    Array.isArray(value.nodes) &&
+    "edges" in value &&
+    Array.isArray(value.edges) &&
+    "outputs" in value &&
+    Array.isArray(value.outputs) &&
+    "id" in value &&
+    typeof value.id === "string"
+  );
 }
 
 async function validateResource(): Promise<boolean> {
@@ -177,14 +211,16 @@ async function validateResource(): Promise<boolean> {
       const pipelineResult = await api.validatePipeline(editorSpec.value);
       diagnostics.push(...pipelineResult.diagnostics);
     } catch (cause: unknown) {
-      actionError.value = cause instanceof Error ? cause.message : '流水线验证失败。';
+      actionError.value = cause instanceof Error ? cause.message : "流水线验证失败。";
       return false;
     }
   }
   editorDiagnostics.value = diagnostics;
-  const valid = !diagnostics.some((item) => item.severity === 'error');
+  const valid = !diagnostics.some((item) => item.severity === "error");
   formValid.value = valid;
-  validationMessage.value = valid ? '验证通过，可以保存或发布。' : `发现 ${diagnostics.length} 项需要修正的内容。`;
+  validationMessage.value = valid
+    ? "验证通过，可以保存或发布。"
+    : `发现 ${diagnostics.length} 项需要修正的内容。`;
   return valid;
 }
 
@@ -192,7 +228,7 @@ async function saveDraft(): Promise<Resource | null> {
   const descriptor = selectedType.value;
   if (!descriptor || editorReadonly.value) return null;
   if (!editorName.value.trim()) {
-    actionError.value = '请填写配置名称。';
+    actionError.value = "请填写配置名称。";
     return null;
   }
   if (!(await validateResource()) || !formValid.value) return null;
@@ -212,7 +248,7 @@ async function saveDraft(): Promise<Resource | null> {
     return saved;
   } catch (cause: unknown) {
     if (cause instanceof ApiError) editorDiagnostics.value = cause.diagnostics;
-    actionError.value = cause instanceof Error ? cause.message : '草稿保存失败。';
+    actionError.value = cause instanceof Error ? cause.message : "草稿保存失败。";
     return null;
   } finally {
     saving.value = false;
@@ -220,13 +256,36 @@ async function saveDraft(): Promise<Resource | null> {
 }
 
 async function publish(): Promise<void> {
-  let draft = editorResource.value?.status === 'draft' ? editorResource.value : null;
+  let draft = editorResource.value?.status === "draft" ? editorResource.value : null;
   if (!draft) draft = await saveDraft();
   if (!draft || !(await validateResource())) return;
+  const changeReason = window.prompt("请输入发布配置版本的变更原因。")?.trim();
+  if (!changeReason) return;
   saving.value = true;
   actionError.value = null;
   try {
-    const published = await api.publishResource(draft.kind, draft.id, draft.revision);
+    const approval = await resolveApproval(
+      {
+        permission: "resource.publish",
+        method: "POST",
+        path: "/api/resources/:kind/:id/publish",
+        params: { kind: draft.kind, id: draft.id },
+        body: { revision: draft.revision },
+        changeReason,
+      },
+      changeReason,
+    );
+    if (approval.status === "requested") {
+      validationMessage.value = `审批请求已创建：${approval.approval.id}。批准后由第三位发布者重试。`;
+      return;
+    }
+    const published = await api.publishResource(
+      draft.kind,
+      draft.id,
+      draft.revision,
+      changeReason,
+      approval.approvalId,
+    );
     editorResource.value = published;
     selectedResource.value = published;
     await loadResources();
@@ -234,7 +293,7 @@ async function publish(): Promise<void> {
     validationMessage.value = `版本 ${published.revision} 已发布并锁定。`;
   } catch (cause: unknown) {
     if (cause instanceof ApiError) editorDiagnostics.value = cause.diagnostics;
-    actionError.value = cause instanceof Error ? cause.message : '发布失败。';
+    actionError.value = cause instanceof Error ? cause.message : "发布失败。";
   } finally {
     saving.value = false;
   }
@@ -251,7 +310,7 @@ async function clonePublished(): Promise<void> {
     await openResource(draft);
     validationMessage.value = `已从发布版本 ${resource.revision} 复制为草稿版本 ${draft.revision}。`;
   } catch (cause: unknown) {
-    actionError.value = cause instanceof Error ? cause.message : '复制草稿失败。';
+    actionError.value = cause instanceof Error ? cause.message : "复制草稿失败。";
   } finally {
     saving.value = false;
   }
@@ -260,23 +319,45 @@ async function clonePublished(): Promise<void> {
 async function archive(): Promise<void> {
   const resource = editorResource.value;
   if (!resource) return;
+  const changeReason = window.prompt("请输入归档配置的变更原因。")?.trim();
+  if (!changeReason) return;
   saving.value = true;
   actionError.value = null;
   try {
-    await api.archiveResource(resource.kind, resource.id);
+    const approval = await resolveApproval(
+      {
+        permission: "resource.archive",
+        method: "POST",
+        path: "/api/resources/:kind/:id/archive",
+        params: { kind: resource.kind, id: resource.id },
+        body: null,
+        changeReason,
+      },
+      changeReason,
+    );
+    if (approval.status === "requested") {
+      validationMessage.value = `归档审批已创建：${approval.approval.id}。批准后由第三位操作者重试。`;
+      return;
+    }
+    await api.archiveResource(
+      resource.kind,
+      resource.id,
+      changeReason,
+      approval.approvalId,
+    );
     editorOpen.value = false;
     selectedResource.value = null;
     revisions.value = [];
     await loadResources();
   } catch (cause: unknown) {
-    actionError.value = cause instanceof Error ? cause.message : '归档失败。';
+    actionError.value = cause instanceof Error ? cause.message : "归档失败。";
   } finally {
     saving.value = false;
   }
 }
 
 watch(selectedKind, () => {
-  statusFilter.value = '';
+  statusFilter.value = "";
 });
 
 onMounted(() => void loadTypes());
@@ -288,9 +369,18 @@ onMounted(() => void loadTypes());
       <div class="page-intro__copy">
         <p class="page-intro__label">Resources</p>
         <h2>配置资源</h2>
-        <p class="page-intro__description">创建、验证和发布版本化业务配置。已发布版本保持不可变。</p>
+        <p class="page-intro__description">
+          创建、验证和发布版本化业务配置。已发布版本保持不可变。
+        </p>
       </div>
-      <button class="button button--primary" type="button" :disabled="!selectedType" @click="openCreate">新建{{ selectedType?.title ?? '配置' }}</button>
+      <button
+        class="button button--primary"
+        type="button"
+        :disabled="!selectedType"
+        @click="openCreate"
+      >
+        新建{{ selectedType?.title ?? "配置" }}
+      </button>
     </div>
 
     <EngineDataBoundary :loading="loading" :error="error" @retry="retry">
@@ -304,15 +394,21 @@ onMounted(() => void loadTypes());
             @click="selectType(type.kind)"
           >
             <strong>{{ type.title }}</strong>
-            <span>{{ type.description ?? '可版本化业务配置' }}</span>
+            <span>{{ type.description ?? "可版本化业务配置" }}</span>
           </button>
           <p v-if="resourceTypes.length === 0">当前没有开放的业务配置。</p>
         </aside>
 
         <section class="resource-browser panel" aria-labelledby="resource-browser-title">
           <header class="resource-browser__header">
-            <div><h3 id="resource-browser-title">{{ selectedType?.title ?? '配置' }}</h3><p>{{ loadingResources ? '正在同步…' : `共 ${visibleResources.length} 项` }}</p></div>
-            <label>状态
+            <div>
+              <h3 id="resource-browser-title">{{ selectedType?.title ?? "配置" }}</h3>
+              <p>
+                {{ loadingResources ? "正在同步…" : `共 ${visibleResources.length} 项` }}
+              </p>
+            </div>
+            <label
+              >状态
               <select v-model="statusFilter">
                 <option value="">全部</option>
                 <option value="draft">草稿</option>
@@ -321,37 +417,77 @@ onMounted(() => void loadTypes());
               </select>
             </label>
           </header>
-          <p v-if="actionError && !editorOpen" class="form-alert" role="alert">{{ actionError }}</p>
+          <p v-if="actionError && !editorOpen" class="form-alert" role="alert">
+            {{ actionError }}
+          </p>
           <ul v-if="visibleResources.length > 0" class="resource-items">
-            <li v-for="resource in visibleResources" :key="`${resource.id}:${resource.revision}`">
+            <li
+              v-for="resource in visibleResources"
+              :key="`${resource.id}:${resource.revision}`"
+            >
               <button type="button" @click="openResource(resource)">
-                <div><strong>{{ resource.name }}</strong><span>版本 {{ resource.revision }} · 更新于 {{ new Date(resource.updatedAt).toLocaleDateString('zh-CN') }}</span></div>
-                <div><span class="resource-status" :class="`resource-status--${resource.status}`">{{ statusLabel(resource.status) }}</span><small>{{ statusDescription(resource.status) }}</small></div>
+                <div>
+                  <strong>{{ resource.name }}</strong
+                  ><span
+                    >版本 {{ resource.revision }} · 更新于
+                    {{ new Date(resource.updatedAt).toLocaleDateString("zh-CN") }}</span
+                  >
+                </div>
+                <div>
+                  <span
+                    class="resource-status"
+                    :class="`resource-status--${resource.status}`"
+                    >{{ statusLabel(resource.status) }}</span
+                  ><small>{{ statusDescription(resource.status) }}</small>
+                </div>
               </button>
             </li>
           </ul>
           <div v-else-if="!loadingResources" class="business-empty">
-            <strong>尚无{{ selectedType?.title ?? '配置' }}</strong>
+            <strong>尚无{{ selectedType?.title ?? "配置" }}</strong>
             <p>创建第一份草稿，验证后即可发布使用。</p>
-            <button class="button button--secondary" type="button" @click="openCreate">创建草稿</button>
+            <button class="button button--secondary" type="button" @click="openCreate">
+              创建草稿
+            </button>
           </div>
         </section>
       </div>
 
-      <section v-if="editorOpen && selectedType" class="resource-editor panel" aria-labelledby="resource-editor-title">
+      <section
+        v-if="editorOpen && selectedType"
+        class="resource-editor panel"
+        aria-labelledby="resource-editor-title"
+      >
         <header class="resource-editor__header">
           <div>
-            <p>{{ editorResource ? `版本 ${editorResource.revision}` : '新草稿' }}</p>
-            <h3 id="resource-editor-title">{{ editorResource?.name ?? `新建${selectedType.title}` }}</h3>
-            <span v-if="editorReadonly" class="immutable-note">已发布或归档版本只读。如需调整，请复制为新草稿。</span>
+            <p>{{ editorResource ? `版本 ${editorResource.revision}` : "新草稿" }}</p>
+            <h3 id="resource-editor-title">
+              {{ editorResource?.name ?? `新建${selectedType.title}` }}
+            </h3>
+            <span v-if="editorReadonly" class="immutable-note"
+              >已发布或归档版本只读。如需调整，请复制为新草稿。</span
+            >
           </div>
-          <button class="icon-button" type="button" aria-label="关闭编辑器" @click="editorOpen = false">×</button>
+          <button
+            class="icon-button"
+            type="button"
+            aria-label="关闭编辑器"
+            @click="editorOpen = false"
+          >
+            ×
+          </button>
         </header>
 
         <div class="resource-editor__body">
           <div class="resource-editor__form">
-            <label class="name-field">配置名称
-              <input v-model="editorName" type="text" :readonly="editorReadonly" placeholder="填写业务名称" />
+            <label class="name-field"
+              >配置名称
+              <input
+                v-model="editorName"
+                type="text"
+                :readonly="editorReadonly"
+                placeholder="填写业务名称"
+              />
             </label>
             <ConfigForm
               v-model="editorSpec"
@@ -362,7 +498,9 @@ onMounted(() => void loadTypes());
               :reference-loader="referenceLoader"
               @validity="updateValidity"
             />
-            <p v-if="validationMessage" class="validation-message" role="status">{{ validationMessage }}</p>
+            <p v-if="validationMessage" class="validation-message" role="status">
+              {{ validationMessage }}
+            </p>
             <p v-if="actionError" class="form-alert" role="alert">{{ actionError }}</p>
           </div>
 
@@ -370,11 +508,18 @@ onMounted(() => void loadTypes());
             <h4 id="revision-list-title">版本记录</h4>
             <p>发布版本锁定，运行记录可始终追溯。</p>
             <ol>
-              <li v-for="revision in [...revisions].sort((a, b) => b.revision - a.revision)" :key="revision.revision">
+              <li
+                v-for="revision in [...revisions].sort((a, b) => b.revision - a.revision)"
+                :key="revision.revision"
+              >
                 <button type="button" @click="openResource(revision)">
                   <span>版本 {{ revision.revision }}</span>
                   <strong>{{ statusLabel(revision.status) }}</strong>
-                  <small>{{ revision.status === 'published' ? '不可修改' : new Date(revision.updatedAt).toLocaleDateString('zh-CN') }}</small>
+                  <small>{{
+                    revision.status === "published"
+                      ? "不可修改"
+                      : new Date(revision.updatedAt).toLocaleDateString("zh-CN")
+                  }}</small>
                 </button>
               </li>
             </ol>
@@ -382,13 +527,50 @@ onMounted(() => void loadTypes());
         </div>
 
         <footer class="resource-editor__actions">
-          <button v-if="editorResource" class="button button--danger" type="button" :disabled="saving" @click="archive">归档</button>
+          <button
+            v-if="editorResource"
+            class="button button--danger"
+            type="button"
+            :disabled="saving"
+            @click="archive"
+          >
+            归档
+          </button>
           <div>
-            <button v-if="editorReadonly" class="button button--secondary" type="button" :disabled="saving" @click="clonePublished">复制为草稿</button>
+            <button
+              v-if="editorReadonly"
+              class="button button--secondary"
+              type="button"
+              :disabled="saving"
+              @click="clonePublished"
+            >
+              复制为草稿
+            </button>
             <template v-else>
-              <button class="button button--secondary" type="button" :disabled="saving" @click="validateResource">验证</button>
-              <button class="button button--secondary" type="button" :disabled="saving" @click="saveDraft">{{ saving ? '保存中…' : '保存草稿' }}</button>
-              <button class="button button--primary" type="button" :disabled="saving" @click="publish">发布</button>
+              <button
+                class="button button--secondary"
+                type="button"
+                :disabled="saving"
+                @click="validateResource"
+              >
+                验证
+              </button>
+              <button
+                class="button button--secondary"
+                type="button"
+                :disabled="saving"
+                @click="saveDraft"
+              >
+                {{ saving ? "保存中…" : "保存草稿" }}
+              </button>
+              <button
+                class="button button--primary"
+                type="button"
+                :disabled="saving"
+                @click="publish"
+              >
+                发布
+              </button>
             </template>
           </div>
         </footer>

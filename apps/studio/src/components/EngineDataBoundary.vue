@@ -22,7 +22,9 @@ const emit = defineEmits<{
       <strong>引擎状态暂不可用</strong>
       <p>{{ error }}</p>
     </div>
-    <button class="button button--secondary" type="button" @click="emit('retry')">重新加载</button>
+    <button class="button button--secondary" type="button" @click="emit('retry')">
+      重新加载
+    </button>
   </div>
   <slot v-else />
 </template>

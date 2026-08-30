@@ -10,6 +10,12 @@ import type {
   ProjectReleaseRef,
   ProjectRuntimeProfileIdentity,
 } from "@prismengine/contracts-project";
+import {
+  appendRuntimeLog,
+  sanitizeRuntimeError,
+  type RuntimeProtocolLog,
+  validateRuntimeOutput,
+} from "./runtime-limits.js";
 
 interface InitMessage {
   readonly type: "init";
@@ -43,9 +49,15 @@ interface MaterialMessage {
   readonly configuration: JsonValue;
 }
 
-interface CancelMessage { readonly type: "cancel"; readonly requestId: string }
-interface DisposeMessage { readonly type: "dispose" }
-type RuntimeMessage = InitMessage | InvokeMessage | MaterialMessage | CancelMessage | DisposeMessage;
+interface CancelMessage {
+  readonly type: "cancel";
+  readonly requestId: string;
+}
+interface DisposeMessage {
+  readonly type: "dispose";
+}
+type RuntimeMessage =
+  InitMessage | InvokeMessage | MaterialMessage | CancelMessage | DisposeMessage;
 
 let actions: Readonly<Record<string, ProjectAction>> = {};
 const materials = new Map<string, ProjectCodeMaterial>();
@@ -55,7 +67,9 @@ let runtimeEngine: Engine | undefined;
 let release: ProjectReleaseRef | undefined;
 let initialized = false;
 
-process.on("message", (message: RuntimeMessage) => { void handle(message); });
+process.on("message", (message: RuntimeMessage) => {
+  void handle(message);
+});
 
 async function handle(message: RuntimeMessage): Promise<void> {
   if (message.type === "dispose") {
@@ -71,12 +85,17 @@ async function handle(message: RuntimeMessage): Promise<void> {
     try {
       let additionalPlugins: readonly AnyPluginDefinition[] = [];
       if (message.profileModule !== undefined) {
-        const profile = await import(pathToFileURL(message.profileModule).href) as {
+        const profile = (await import(pathToFileURL(message.profileModule).href)) as {
           readonly runtimeProfileIdentity?: ProjectRuntimeProfileIdentity;
           readonly createRuntimePlugins?: () => readonly AnyPluginDefinition[];
         };
-        if (profile.runtimeProfileIdentity?.profileFingerprint !== message.runtimeProfile.profileFingerprint) {
-          throw new Error("PROJECT_RUNTIME_PROFILE_MISMATCH: Runtime Profile module identity does not match release.");
+        if (
+          profile.runtimeProfileIdentity?.profileFingerprint !==
+          message.runtimeProfile.profileFingerprint
+        ) {
+          throw new Error(
+            "PROJECT_RUNTIME_PROFILE_MISMATCH: Runtime Profile module identity does not match release.",
+          );
         }
         additionalPlugins = profile.createRuntimePlugins?.() ?? [];
       }
@@ -95,7 +114,9 @@ async function handle(message: RuntimeMessage): Promise<void> {
         const module = await import(pathToFileURL(item.artifactPath).href);
         const execute: unknown = module[item.manifest.exportName];
         if (typeof execute !== "function") {
-          throw new Error(`Material ${item.manifest.id}@${item.manifest.version} export is missing.`);
+          throw new Error(
+            `Material ${item.manifest.id}@${item.manifest.version} export is missing.`,
+          );
         }
         materials.set(
           `${item.manifest.id}@${item.manifest.version}`,
@@ -122,7 +143,7 @@ async function handle(message: RuntimeMessage): Promise<void> {
       runtimeEngine = undefined;
       process.send?.({
         type: "ready-failed",
-        error: error instanceof Error ? error.message : String(error),
+        error: sanitizeRuntimeError(error instanceof Error ? error.message : error),
       });
     }
     return;
@@ -137,11 +158,17 @@ async function handle(message: RuntimeMessage): Promise<void> {
     });
     return;
   }
-  const logs: Array<{ level: "info" | "warn" | "error"; message: string }> = [];
+  const logs: RuntimeProtocolLog[] = [];
   const logger = {
-    info(value: unknown) { logs.push({ level: "info", message: String(value) }); },
-    warn(value: unknown) { logs.push({ level: "warn", message: String(value) }); },
-    error(value: unknown) { logs.push({ level: "error", message: String(value) }); },
+    info(value: unknown) {
+      appendRuntimeLog(logs, "info", value);
+    },
+    warn(value: unknown) {
+      appendRuntimeLog(logs, "warn", value);
+    },
+    error(value: unknown) {
+      appendRuntimeLog(logs, "error", value);
+    },
   };
   const engine = runtimeEngine;
   const controller = new AbortController();
@@ -150,14 +177,16 @@ async function handle(message: RuntimeMessage): Promise<void> {
     if (message.type === "execute-material") {
       const material = materials.get(`${message.materialId}@${message.materialVersion}`);
       if (material === undefined) {
-        throw new Error(`Material ${message.materialId}@${message.materialVersion} is not loaded.`);
+        throw new Error(
+          `Material ${message.materialId}@${message.materialVersion} is not loaded.`,
+        );
       }
       const output = await material(message.input, message.configuration, {
         engine,
         signal: controller.signal,
         logger,
       });
-      process.send?.({ type: "action-success", requestId: message.requestId, output, logs });
+      sendRuntimeOutput(message.requestId, output, logs);
       return;
     }
     const action = actions[message.actionId];
@@ -166,7 +195,7 @@ async function handle(message: RuntimeMessage): Promise<void> {
         type: "action-failure",
         requestId: message.requestId,
         code: "PROJECT_ACTION_NOT_FOUND",
-        error: `Action ${message.actionId} is not exported.`,
+        error: sanitizeRuntimeError(`Action ${message.actionId} is not exported.`),
         logs,
       });
       return;
@@ -181,7 +210,8 @@ async function handle(message: RuntimeMessage): Promise<void> {
       materials: {
         async execute(id, version, input, configuration = null) {
           const material = materials.get(`${id}@${version}`);
-          if (material === undefined) throw new Error(`Material ${id}@${version} is not loaded.`);
+          if (material === undefined)
+            throw new Error(`Material ${id}@${version} is not loaded.`);
           return material(input, configuration, {
             engine,
             signal: controller.signal,
@@ -190,16 +220,44 @@ async function handle(message: RuntimeMessage): Promise<void> {
         },
       },
     });
-    process.send?.({ type: "action-success", requestId: message.requestId, output, logs });
+    sendRuntimeOutput(message.requestId, output, logs);
   } catch (error) {
     process.send?.({
       type: "action-failure",
       requestId: message.requestId,
-      code: controller.signal.aborted ? "PROJECT_ACTION_CANCELLED" : "PROJECT_ACTION_FAILED",
-      error: error instanceof Error ? error.stack ?? error.message : String(error),
+      code: controller.signal.aborted
+        ? "PROJECT_ACTION_CANCELLED"
+        : "PROJECT_ACTION_FAILED",
+      error: sanitizeRuntimeError(
+        error instanceof Error ? (error.stack ?? error.message) : error,
+      ),
       logs,
     });
   } finally {
     controllers.delete(message.requestId);
   }
+}
+
+function sendRuntimeOutput(
+  requestId: string,
+  output: unknown,
+  logs: readonly RuntimeProtocolLog[],
+): void {
+  const validation = validateRuntimeOutput(output);
+  process.send?.(
+    validation.valid
+      ? {
+          type: "action-success",
+          requestId,
+          output: validation.output,
+          logs,
+        }
+      : {
+          type: "action-failure",
+          requestId,
+          code: validation.code,
+          error: validation.error,
+          logs,
+        },
+  );
 }

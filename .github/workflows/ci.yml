@@ -79,3 +79,30 @@ jobs:
 
       - name: Lint
         run: pnpm lint
+
+      - name: Build Studio
+        run: pnpm --dir apps/studio build
+
+      - name: Install Chromium for Studio E2E
+        run: pnpm --dir apps/studio exec playwright install --with-deps chromium
+
+      - name: Run Studio governance E2E
+        run: pnpm --dir apps/studio test:e2e
+
+      - name: Verify production image roots
+        run: |
+          pnpm --filter @prismengine/worker-image deploy --prod "$RUNNER_TEMP/prism-worker"
+          test -f "$RUNNER_TEMP/prism-worker/node_modules/@prismengine/plugin-worker-container/dist/bridge.js"
+          test -f "$RUNNER_TEMP/prism-worker/node_modules/@prismengine/plugin-project-build/dist/builder-worker.js"
+          test -f "$RUNNER_TEMP/prism-worker/node_modules/@prismengine/plugin-project-runtime/dist/runtime-worker.js"
+          pnpm --filter @prismengine/host deploy --prod "$RUNNER_TEMP/prism-host"
+          test -f "$RUNNER_TEMP/prism-host/dist/index.js"
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+
+      - name: Validate Kubernetes production chart
+        run: |
+          helm lint deploy/helm/prism --values deploy/helm/prism/ci-values.yaml
+          helm template prism deploy/helm/prism \
+            --values deploy/helm/prism/ci-values.yaml >/dev/null

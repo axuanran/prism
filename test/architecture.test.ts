@@ -114,7 +114,8 @@ describe("package architecture", () => {
       expect(
         forbiddenImports(
           contractsDataSource,
-          (name) => name === "@prismengine/kernel" || name.startsWith("@prismengine/kernel/"),
+          (name) =>
+            name === "@prismengine/kernel" || name.startsWith("@prismengine/kernel/"),
         ),
       ).toEqual([]);
     },
@@ -150,19 +151,21 @@ describe("package architecture", () => {
   });
 
   test("Build, Artifact, and Runtime providers remain independently composable", () => {
-    const build = JSON.parse(readFileSync(
-      join(root, "packages/plugin-project-build/package.json"),
-      "utf8",
-    )) as PackageManifest;
-    const runtime = JSON.parse(readFileSync(
-      join(root, "packages/plugin-project-runtime/package.json"),
-      "utf8",
-    )) as PackageManifest;
+    const build = JSON.parse(
+      readFileSync(join(root, "packages/plugin-project-build/package.json"), "utf8"),
+    ) as PackageManifest;
+    const runtime = JSON.parse(
+      readFileSync(join(root, "packages/plugin-project-runtime/package.json"), "utf8"),
+    ) as PackageManifest;
     expect(build.dependencies).toHaveProperty("@prismengine/contracts-artifact");
-    expect(build.dependencies).not.toHaveProperty("@prismengine/plugin-artifact-store-local");
+    expect(build.dependencies).not.toHaveProperty(
+      "@prismengine/plugin-artifact-store-local",
+    );
     expect(runtime.dependencies).toHaveProperty("@prismengine/contracts-artifact");
     expect(runtime.dependencies).not.toHaveProperty("@prismengine/plugin-project-build");
-    expect(runtime.dependencies).not.toHaveProperty("@prismengine/plugin-artifact-store-local");
+    expect(runtime.dependencies).not.toHaveProperty(
+      "@prismengine/plugin-artifact-store-local",
+    );
     expect(runtime.dependencies).not.toHaveProperty("vite");
     expect(runtime.dependencies).not.toHaveProperty("vitest");
     expect(runtime.dependencies).not.toHaveProperty("esbuild");
@@ -201,7 +204,9 @@ describe("package architecture", () => {
       const isRoot = path === join(root, "package.json");
       const problems: string[] = [];
       if (manifest.license !== "Apache-2.0") {
-        problems.push(`${relative(root, path)} -> license ${manifest.license ?? "missing"}`);
+        problems.push(
+          `${relative(root, path)} -> license ${manifest.license ?? "missing"}`,
+        );
       }
       const expectedRepository = "https://github.com/axuanran/prism";
       if (
@@ -218,8 +223,7 @@ describe("package architecture", () => {
       }
       if (
         !isRoot &&
-        manifest.repository?.directory !==
-          relative(root, packageRoot).split(sep).join("/")
+        manifest.repository?.directory !== relative(root, packageRoot).split(sep).join("/")
       ) {
         problems.push(`${relative(root, path)} -> invalid repository directory`);
       }
@@ -233,7 +237,8 @@ describe("package architecture", () => {
           } else {
             const actual = readFileSync(packagedPath, "utf8");
             const expected = file === "LICENSE" ? expectedLicense : expectedNotice;
-            if (actual !== expected) problems.push(`${relative(root, path)} -> stale ${file}`);
+            if (actual !== expected)
+              problems.push(`${relative(root, path)} -> stale ${file}`);
           }
         }
       }

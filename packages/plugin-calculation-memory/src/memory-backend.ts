@@ -111,11 +111,12 @@ async function rowsFromMemoryDataset(
   return rows;
 }
 
-async function rowsFor(ref: PlanRef, context: NodeExecutionContext): Promise<readonly Row[]> {
+async function rowsFor(
+  ref: PlanRef,
+  context: NodeExecutionContext,
+): Promise<readonly Row[]> {
   const dataset = datasetFor(ref, context);
-  return dataset === undefined
-    ? []
-    : rowsFromMemoryDataset(dataset, context.call);
+  return dataset === undefined ? [] : rowsFromMemoryDataset(dataset, context.call);
 }
 
 /**
@@ -130,8 +131,14 @@ function datasetFromMemoryRows(
   return datasetFromRows(name, schema, rows);
 }
 
-function reportForNode(context: NodeExecutionContext, node: SemanticPlanNode, item: Diagnostic): void {
-  context.report(item.nodeId === undefined ? { ...item, nodeId: node.origin.sourceNodeId } : item);
+function reportForNode(
+  context: NodeExecutionContext,
+  node: SemanticPlanNode,
+  item: Diagnostic,
+): void {
+  context.report(
+    item.nodeId === undefined ? { ...item, nodeId: node.origin.sourceNodeId } : item,
+  );
 }
 
 function runtimeDiagnostic(
@@ -139,12 +146,20 @@ function runtimeDiagnostic(
   node: SemanticPlanNode,
   code: string,
   message: string,
-  extra: { readonly path?: string; readonly details?: Readonly<Record<string, unknown>>; readonly severity?: "warning" | "error" } = {},
+  extra: {
+    readonly path?: string;
+    readonly details?: Readonly<Record<string, unknown>>;
+    readonly severity?: "warning" | "error";
+  } = {},
 ): void {
   context.report(diagnostic(code, message, { nodeId: node.origin.sourceNodeId, ...extra }));
 }
 
-function expressionReport(context: NodeExecutionContext, node: SemanticPlanNode, path: string): (item: Diagnostic) => void {
+function expressionReport(
+  context: NodeExecutionContext,
+  node: SemanticPlanNode,
+  path: string,
+): (item: Diagnostic) => void {
   return (item) => reportForNode(context, node, { ...item, path: item.path ?? path });
 }
 
@@ -156,7 +171,10 @@ function joinKey(row: Row, fields: readonly string[]): string {
   return valueKey(fields.map((field) => row[field]));
 }
 
-function actualCardinality(leftCounts: ReadonlyMap<string, number>, rightCounts: ReadonlyMap<string, number>): JoinCardinality {
+function actualCardinality(
+  leftCounts: ReadonlyMap<string, number>,
+  rightCounts: ReadonlyMap<string, number>,
+): JoinCardinality {
   let repeatedLeft = false;
   let repeatedRight = false;
   for (const [key, count] of leftCounts) {
@@ -172,15 +190,19 @@ function actualCardinality(leftCounts: ReadonlyMap<string, number>, rightCounts:
 
 function cardinalityAllowed(expected: JoinCardinality, actual: JoinCardinality): boolean {
   if (expected === "many-to-many") return true;
-  if (expected === "many-to-one") return actual === "many-to-one" || actual === "one-to-one";
-  if (expected === "one-to-many") return actual === "one-to-many" || actual === "one-to-one";
+  if (expected === "many-to-one")
+    return actual === "many-to-one" || actual === "one-to-one";
+  if (expected === "one-to-many")
+    return actual === "one-to-many" || actual === "one-to-one";
   return actual === "one-to-one";
 }
 
 function mergeJoinRow(left: Row, right: Row, leftType: TableType, node: JoinPlanNode): Row {
   const result: Record<string, RowValue> = { ...left };
   const names = new Set(leftType.columns.map((column) => column.name));
-  const sameKeys = new Set(node.keys.filter((key) => key.left === key.right).map((key) => key.right));
+  const sameKeys = new Set(
+    node.keys.filter((key) => key.left === key.right).map((key) => key.right),
+  );
   const prefix = node.rightPrefix ?? "right_";
   for (const [name, value] of Object.entries(right)) {
     if (sameKeys.has(name)) continue;
@@ -189,10 +211,17 @@ function mergeJoinRow(left: Row, right: Row, leftType: TableType, node: JoinPlan
   return result;
 }
 
-function unmatchedJoinRow(left: Row, rightType: TableType, leftType: TableType, node: JoinPlanNode): Row {
+function unmatchedJoinRow(
+  left: Row,
+  rightType: TableType,
+  leftType: TableType,
+  node: JoinPlanNode,
+): Row {
   const result: Record<string, RowValue> = { ...left };
   const names = new Set(leftType.columns.map((column) => column.name));
-  const sameKeys = new Set(node.keys.filter((key) => key.left === key.right).map((key) => key.right));
+  const sameKeys = new Set(
+    node.keys.filter((key) => key.left === key.right).map((key) => key.right),
+  );
   const prefix = node.rightPrefix ?? "right_";
   for (const column of rightType.columns) {
     if (sameKeys.has(column.name)) continue;
@@ -214,7 +243,11 @@ function decimalRounding(mode: RoundingMode): Decimal.Rounding {
   return modes[mode];
 }
 
-function addAggregate(state: AggregateState, aggregate: AggregatePlanNode["aggregations"][number], value: RowValue | undefined): void {
+function addAggregate(
+  state: AggregateState,
+  aggregate: AggregatePlanNode["aggregations"][number],
+  value: RowValue | undefined,
+): void {
   if (aggregate.fn === "count") {
     state.values.set(aggregate.name, Number(state.values.get(aggregate.name) ?? 0) + 1);
     return;
@@ -224,14 +257,20 @@ function addAggregate(state: AggregateState, aggregate: AggregatePlanNode["aggre
   state.counts.set(aggregate.name, (state.counts.get(aggregate.name) ?? 0) + 1);
   const current = state.values.get(aggregate.name);
   if (aggregate.fn === "sum" || aggregate.fn === "avg") {
-    state.values.set(aggregate.name, current instanceof Decimal ? current.plus(decimal) : decimal);
+    state.values.set(
+      aggregate.name,
+      current instanceof Decimal ? current.plus(decimal) : decimal,
+    );
     return;
   }
   if (!(current instanceof Decimal)) {
     state.values.set(aggregate.name, decimal);
     return;
   }
-  state.values.set(aggregate.name, aggregate.fn === "min" ? Decimal.min(current, decimal) : Decimal.max(current, decimal));
+  state.values.set(
+    aggregate.name,
+    aggregate.fn === "min" ? Decimal.min(current, decimal) : Decimal.max(current, decimal),
+  );
 }
 
 function allocationSortKey(row: Row, sortBy: readonly string[]): string {
@@ -251,22 +290,41 @@ function decimalFromExpression(value: RowValue | undefined): Decimal | null {
   return null;
 }
 
-function distributeRemainder(rows: IndexedAllocationRow[], remainder: Decimal, node: AllocatePlanNode, context: NodeExecutionContext): void {
+function distributeRemainder(
+  rows: IndexedAllocationRow[],
+  remainder: Decimal,
+  node: AllocatePlanNode,
+  context: NodeExecutionContext,
+): void {
   if (remainder.isZero()) return;
   const unit = new D(1).dividedBy(new D(10).pow(node.policy.scale));
   const units = BigInt(remainder.times(new D(10).pow(node.policy.scale)).toFixed(0));
   const remainderPolicy = node.policy.remainder;
   if (remainderPolicy.kind === "reject") {
-    runtimeDiagnostic(context, node, CalculationDiagnosticCode.ALLOCATION_CONSERVATION_VIOLATION, "Allocation produced a remainder that policy rejects.", { details: { remainder: remainder.toFixed() } });
+    runtimeDiagnostic(
+      context,
+      node,
+      CalculationDiagnosticCode.ALLOCATION_CONSERVATION_VIOLATION,
+      "Allocation produced a remainder that policy rejects.",
+      { details: { remainder: remainder.toFixed() } },
+    );
     return;
   }
   if (remainderPolicy.kind === "to-row") {
-    const selected = rows.find((row) =>
-      row.stableKey === remainderPolicy.rowKey
-      || (node.sortBy.length === 1 && String(row.row[node.sortBy[0] ?? ""]) === remainderPolicy.rowKey),
+    const selected = rows.find(
+      (row) =>
+        row.stableKey === remainderPolicy.rowKey ||
+        (node.sortBy.length === 1 &&
+          String(row.row[node.sortBy[0] ?? ""]) === remainderPolicy.rowKey),
     );
     if (selected === undefined) {
-      runtimeDiagnostic(context, node, CalculationDiagnosticCode.ALLOCATION_CONSERVATION_VIOLATION, "Allocation remainder row was not found.", { details: { rowKey: remainderPolicy.rowKey } });
+      runtimeDiagnostic(
+        context,
+        node,
+        CalculationDiagnosticCode.ALLOCATION_CONSERVATION_VIOLATION,
+        "Allocation remainder row was not found.",
+        { details: { rowKey: remainderPolicy.rowKey } },
+      );
       return;
     }
     selected.part = selected.part.plus(unit.times(units.toString()));
@@ -274,64 +332,92 @@ function distributeRemainder(rows: IndexedAllocationRow[], remainder: Decimal, n
   }
   const direction = units < 0n ? -1 : 1;
   const ordered = [...rows].sort((left, right) => {
-    const residual = direction > 0
-      ? right.residual.comparedTo(left.residual)
-      : left.residual.comparedTo(right.residual);
-    return residual !== 0 ? residual : left.stableKey.localeCompare(right.stableKey) || left.index - right.index;
+    const residual =
+      direction > 0
+        ? right.residual.comparedTo(left.residual)
+        : left.residual.comparedTo(right.residual);
+    return residual !== 0
+      ? residual
+      : left.stableKey.localeCompare(right.stableKey) || left.index - right.index;
   });
   if (ordered.length === 0) return;
   let remaining = units < 0n ? -units : units;
   let position = 0;
   while (remaining > 0n) {
     const selected = ordered[position % ordered.length];
-    if (selected !== undefined) selected.part = selected.part.plus(direction > 0 ? unit : unit.negated());
+    if (selected !== undefined)
+      selected.part = selected.part.plus(direction > 0 ? unit : unit.negated());
     position += 1;
     remaining -= 1n;
   }
 }
 
-function compileInput(node: Extract<SemanticPlanNode, { readonly kind: "input" }>): CompiledMemoryNode {
+function compileInput(
+  node: Extract<SemanticPlanNode, { readonly kind: "input" }>,
+): CompiledMemoryNode {
   return {
     node,
     async execute(context) {
       const source = context.bindings.datasets[node.dataset];
       if (source !== undefined) return source;
-      runtimeDiagnostic(context, node, CalculationDiagnosticCode.PIPELINE_PORT_UNCONNECTED, `Input dataset "${node.dataset}" was not supplied.`);
+      runtimeDiagnostic(
+        context,
+        node,
+        CalculationDiagnosticCode.PIPELINE_PORT_UNCONNECTED,
+        `Input dataset "${node.dataset}" was not supplied.`,
+      );
       return datasetFromMemoryRows(`${node.id}.out`, node.outputType, []);
     },
   };
 }
 
-function compileFilter(node: Extract<SemanticPlanNode, { readonly kind: "filter" }>): CompiledMemoryNode {
+function compileFilter(
+  node: Extract<SemanticPlanNode, { readonly kind: "filter" }>,
+): CompiledMemoryNode {
   const predicate = compileExpressionEvaluator(node.predicate);
   return {
     node,
     async execute(context) {
       const rows = await rowsFor(node.source, context);
-      const output = rows.filter((row, index) => Boolean(predicate(
-        row,
-        context.bindings.parameters,
-        expressionReport(context, node, `/rows/${index}`),
-        `/rows/${index}`,
-      )));
+      const output = rows.filter((row, index) =>
+        Boolean(
+          predicate(
+            row,
+            context.bindings.parameters,
+            expressionReport(context, node, `/rows/${index}`),
+            `/rows/${index}`,
+          ),
+        ),
+      );
       return datasetFromMemoryRows(`${node.id}.out`, node.outputType, output);
     },
   };
 }
 
-function compileProject(node: Extract<SemanticPlanNode, { readonly kind: "project" }>): CompiledMemoryNode {
+function compileProject(
+  node: Extract<SemanticPlanNode, { readonly kind: "project" }>,
+): CompiledMemoryNode {
   return {
     node,
     async execute(context) {
       const rows = await rowsFor(node.source, context);
-      const output = rows.map((row) => Object.fromEntries(node.columns.map((column) => [column.name, row[column.from] ?? null])));
+      const output = rows.map((row) =>
+        Object.fromEntries(
+          node.columns.map((column) => [column.name, row[column.from] ?? null]),
+        ),
+      );
       return datasetFromMemoryRows(`${node.id}.out`, node.outputType, output);
     },
   };
 }
 
-function compileFormula(node: Extract<SemanticPlanNode, { readonly kind: "formula" }>): CompiledMemoryNode {
-  const formulas = node.columns.map((column) => ({ ...column, evaluate: compileExpressionEvaluator(column.expression) }));
+function compileFormula(
+  node: Extract<SemanticPlanNode, { readonly kind: "formula" }>,
+): CompiledMemoryNode {
+  const formulas = node.columns.map((column) => ({
+    ...column,
+    evaluate: compileExpressionEvaluator(column.expression),
+  }));
   return {
     node,
     async execute(context) {
@@ -340,7 +426,12 @@ function compileFormula(node: Extract<SemanticPlanNode, { readonly kind: "formul
         const result: Record<string, RowValue> = { ...row };
         for (const formula of formulas) {
           const path = `/rows/${index}/${formula.name}`;
-          result[formula.name] = formula.evaluate(result, context.bindings.parameters, expressionReport(context, node, path), path);
+          result[formula.name] = formula.evaluate(
+            result,
+            context.bindings.parameters,
+            expressionReport(context, node, path),
+            path,
+          );
         }
         return result;
       });
@@ -349,13 +440,20 @@ function compileFormula(node: Extract<SemanticPlanNode, { readonly kind: "formul
   };
 }
 
-function compileJoin(node: JoinPlanNode, sourceTypes: ReadonlyMap<string, TableType>): CompiledMemoryNode {
+function compileJoin(
+  node: JoinPlanNode,
+  sourceTypes: ReadonlyMap<string, TableType>,
+): CompiledMemoryNode {
   const leftType = sourceTypes.get(node.left.node);
   const rightType = sourceTypes.get(node.right.node);
   return {
     node,
     async execute(context) {
-      if (leftType === undefined || rightType === undefined) throw PrismError.of(CalculationDiagnosticCode.PIPELINE_SCHEMA_MISMATCH, "Join source types are unavailable.");
+      if (leftType === undefined || rightType === undefined)
+        throw PrismError.of(
+          CalculationDiagnosticCode.PIPELINE_SCHEMA_MISMATCH,
+          "Join source types are unavailable.",
+        );
       const leftRows = await rowsFor(node.left, context);
       const rightRows = await rowsFor(node.right, context);
       const leftFields = node.keys.map((key) => key.left);
@@ -375,12 +473,28 @@ function compileJoin(node: JoinPlanNode, sourceTypes: ReadonlyMap<string, TableT
         leftCounts.set(key, (leftCounts.get(key) ?? 0) + 1);
       }
       const actual = actualCardinality(leftCounts, rightCounts);
-      const unmatchedLeft = leftRows.filter((row) => !rightIndex.has(joinKey(row, leftFields))).length;
+      const unmatchedLeft = leftRows.filter(
+        (row) => !rightIndex.has(joinKey(row, leftFields)),
+      ).length;
       const matchedRightKeys = new Set(leftRows.map((row) => joinKey(row, leftFields)));
-      const unmatchedRight = rightRows.filter((row) => !matchedRightKeys.has(joinKey(row, rightFields))).length;
-      context.trace({ kind: "join", expected: node.expectedCardinality, actual, unmatchedLeft, unmatchedRight });
+      const unmatchedRight = rightRows.filter(
+        (row) => !matchedRightKeys.has(joinKey(row, rightFields)),
+      ).length;
+      context.trace({
+        kind: "join",
+        expected: node.expectedCardinality,
+        actual,
+        unmatchedLeft,
+        unmatchedRight,
+      });
       if (!cardinalityAllowed(node.expectedCardinality, actual)) {
-        runtimeDiagnostic(context, node, CalculationDiagnosticCode.JOIN_CARDINALITY_VIOLATION, `Join cardinality is ${actual}, exceeding declared ${node.expectedCardinality}.`, { details: { expected: node.expectedCardinality, actual } });
+        runtimeDiagnostic(
+          context,
+          node,
+          CalculationDiagnosticCode.JOIN_CARDINALITY_VIOLATION,
+          `Join cardinality is ${actual}, exceeding declared ${node.expectedCardinality}.`,
+          { details: { expected: node.expectedCardinality, actual } },
+        );
         return datasetFromMemoryRows(`${node.id}.out`, node.outputType, []);
       }
       const output: Row[] = [];
@@ -400,7 +514,10 @@ function compileJoin(node: JoinPlanNode, sourceTypes: ReadonlyMap<string, TableT
 function compileLookup(node: LookupPlanNode): CompiledMemoryNode {
   const defaults = node.outputs.map((output) => ({
     output,
-    evaluate: output.defaultValue === undefined ? undefined : compileExpressionEvaluator(output.defaultValue),
+    evaluate:
+      output.defaultValue === undefined
+        ? undefined
+        : compileExpressionEvaluator(output.defaultValue),
   }));
   return {
     node,
@@ -426,13 +543,26 @@ function compileLookup(node: LookupPlanNode): CompiledMemoryNode {
         const matches = index.get(joinKey(row, leftFields)) ?? [];
         if (matches.length === 0) {
           missing += 1;
-          if (node.missingPolicy === "error") runtimeDiagnostic(context, node, CalculationDiagnosticCode.LOOKUP_MISSING, "Lookup key has no match.", { path: `/rows/${rowIndex}/${leftFields[0] ?? ""}` });
+          if (node.missingPolicy === "error")
+            runtimeDiagnostic(
+              context,
+              node,
+              CalculationDiagnosticCode.LOOKUP_MISSING,
+              "Lookup key has no match.",
+              { path: `/rows/${rowIndex}/${leftFields[0] ?? ""}` },
+            );
           const result: Record<string, RowValue> = { ...row };
           for (const item of defaults) {
             const path = `/rows/${rowIndex}/${item.output.name}`;
-            result[item.output.name] = node.missingPolicy === "default" && item.evaluate !== undefined
-              ? item.evaluate(row, context.bindings.parameters, expressionReport(context, node, path), path)
-              : null;
+            result[item.output.name] =
+              node.missingPolicy === "default" && item.evaluate !== undefined
+                ? item.evaluate(
+                    row,
+                    context.bindings.parameters,
+                    expressionReport(context, node, path),
+                    path,
+                  )
+                : null;
           }
           output.push(result);
           continue;
@@ -440,14 +570,31 @@ function compileLookup(node: LookupPlanNode): CompiledMemoryNode {
         if (matches.length > 1) {
           ambiguous += 1;
           if (node.multiplePolicy === "error") {
-            runtimeDiagnostic(context, node, CalculationDiagnosticCode.LOOKUP_AMBIGUOUS, "Lookup key has multiple matches.", { path: `/rows/${rowIndex}/${leftFields[0] ?? ""}`, details: { matches: matches.length } });
-            output.push({ ...row, ...Object.fromEntries(node.outputs.map((item) => [item.name, null])) });
+            runtimeDiagnostic(
+              context,
+              node,
+              CalculationDiagnosticCode.LOOKUP_AMBIGUOUS,
+              "Lookup key has multiple matches.",
+              {
+                path: `/rows/${rowIndex}/${leftFields[0] ?? ""}`,
+                details: { matches: matches.length },
+              },
+            );
+            output.push({
+              ...row,
+              ...Object.fromEntries(node.outputs.map((item) => [item.name, null])),
+            });
             continue;
           }
         }
         matched += 1;
         const selected = matches[0];
-        output.push({ ...row, ...Object.fromEntries(node.outputs.map((item) => [item.name, selected?.[item.from] ?? null])) });
+        output.push({
+          ...row,
+          ...Object.fromEntries(
+            node.outputs.map((item) => [item.name, selected?.[item.from] ?? null]),
+          ),
+        });
       }
       context.trace({ kind: "lookup", matched, missing, ambiguous });
       return datasetFromMemoryRows(`${node.id}.out`, node.outputType, output);
@@ -459,9 +606,15 @@ function compileDecision(node: DecisionPlanNode): CompiledMemoryNode {
   const rules = node.rules.map((rule) => ({
     id: rule.id,
     when: compileExpressionEvaluator(rule.when),
-    outputs: Object.entries(rule.outputs).map(([name, expression]) => ({ name, evaluate: compileExpressionEvaluator(expression) })),
+    outputs: Object.entries(rule.outputs).map(([name, expression]) => ({
+      name,
+      evaluate: compileExpressionEvaluator(expression),
+    })),
   }));
-  const defaults = Object.entries(node.defaults ?? {}).map(([name, expression]) => ({ name, evaluate: compileExpressionEvaluator(expression) }));
+  const defaults = Object.entries(node.defaults ?? {}).map(([name, expression]) => ({
+    name,
+    evaluate: compileExpressionEvaluator(expression),
+  }));
   return {
     node,
     async execute(context) {
@@ -475,20 +628,41 @@ function compileDecision(node: DecisionPlanNode): CompiledMemoryNode {
         const rowPath = `/rows/${rowIndex}`;
         let selected: (typeof rules)[number] | undefined;
         for (const rule of rules) {
-          if (Boolean(rule.when(row, context.bindings.parameters, expressionReport(context, node, rowPath), rowPath))) {
+          if (
+            Boolean(
+              rule.when(
+                row,
+                context.bindings.parameters,
+                expressionReport(context, node, rowPath),
+                rowPath,
+              ),
+            )
+          ) {
             selected = rule;
             break;
           }
         }
         if (selected === undefined) {
           unmatched += 1;
-          if (node.onNoMatch === "error") runtimeDiagnostic(context, node, CalculationDiagnosticCode.DECISION_NO_MATCH, "No decision rule matched the row.", { path: rowPath });
+          if (node.onNoMatch === "error")
+            runtimeDiagnostic(
+              context,
+              node,
+              CalculationDiagnosticCode.DECISION_NO_MATCH,
+              "No decision rule matched the row.",
+              { path: rowPath },
+            );
           if (node.onNoMatch === "drop") continue;
           const result: Record<string, RowValue> = { ...row };
           if (node.onNoMatch === "default") {
             for (const assignment of defaults) {
               const path = `${rowPath}/${assignment.name}`;
-              result[assignment.name] = assignment.evaluate(row, context.bindings.parameters, expressionReport(context, node, path), path);
+              result[assignment.name] = assignment.evaluate(
+                row,
+                context.bindings.parameters,
+                expressionReport(context, node, path),
+                path,
+              );
             }
           } else {
             for (const declared of node.outputs) result[declared.name] = null;
@@ -500,7 +674,12 @@ function compileDecision(node: DecisionPlanNode): CompiledMemoryNode {
         const result: Record<string, RowValue> = { ...row };
         for (const assignment of selected.outputs) {
           const path = `${rowPath}/${assignment.name}`;
-          result[assignment.name] = assignment.evaluate(row, context.bindings.parameters, expressionReport(context, node, path), path);
+          result[assignment.name] = assignment.evaluate(
+            row,
+            context.bindings.parameters,
+            expressionReport(context, node, path),
+            path,
+          );
         }
         output.push(result);
       }
@@ -521,21 +700,34 @@ function compileAggregate(node: AggregatePlanNode): CompiledMemoryNode {
         let state = groups.get(key);
         if (state === undefined) {
           state = {
-            groupValues: Object.fromEntries(node.groupBy.map((name) => [name, row[name] ?? null])),
+            groupValues: Object.fromEntries(
+              node.groupBy.map((name) => [name, row[name] ?? null]),
+            ),
             values: new Map(),
             counts: new Map(),
           };
           groups.set(key, state);
         }
-        for (const aggregate of node.aggregations) addAggregate(state, aggregate, aggregate.column === undefined ? null : row[aggregate.column]);
+        for (const aggregate of node.aggregations)
+          addAggregate(
+            state,
+            aggregate,
+            aggregate.column === undefined ? null : row[aggregate.column],
+          );
       }
       const output = [...groups.values()].map((state) => {
         const row: Record<string, RowValue> = { ...state.groupValues };
         for (const aggregate of node.aggregations) {
-          const value = state.values.get(aggregate.name) ?? (aggregate.fn === "count" ? 0 : null);
+          const value =
+            state.values.get(aggregate.name) ?? (aggregate.fn === "count" ? 0 : null);
           if (aggregate.fn === "avg" && value instanceof Decimal) {
             const count = state.counts.get(aggregate.name) ?? 0;
-            row[aggregate.name] = value.dividedBy(count).toSignificantDigits(node.division.precision, decimalRounding(node.division.rounding));
+            row[aggregate.name] = value
+              .dividedBy(count)
+              .toSignificantDigits(
+                node.division.precision,
+                decimalRounding(node.division.rounding),
+              );
           } else row[aggregate.name] = value;
         }
         return row;
@@ -546,8 +738,12 @@ function compileAggregate(node: AggregatePlanNode): CompiledMemoryNode {
   };
 }
 
-function allocationAmountEvaluator(node: AllocatePlanNode): ExpressionEvaluator | undefined {
-  return node.amount.kind === "expression" ? compileExpressionEvaluator(node.amount.expression) : undefined;
+function allocationAmountEvaluator(
+  node: AllocatePlanNode,
+): ExpressionEvaluator | undefined {
+  return node.amount.kind === "expression"
+    ? compileExpressionEvaluator(node.amount.expression)
+    : undefined;
 }
 
 function compileAllocate(node: AllocatePlanNode): CompiledMemoryNode {
@@ -577,43 +773,95 @@ function compileAllocate(node: AllocatePlanNode): CompiledMemoryNode {
           amount = decimalFromExpression(partitionRows[0]?.[column]);
           if (amount !== null) {
             const expected = amount;
-            if (partitionRows.some((row) => {
-              const value = decimalFromExpression(row[column]);
-              return value === null || !value.equals(expected);
-            })) amount = null;
+            if (
+              partitionRows.some((row) => {
+                const value = decimalFromExpression(row[column]);
+                return value === null || !value.equals(expected);
+              })
+            )
+              amount = null;
           }
         } else if (amountEvaluator !== undefined) {
           const values = partitionRows.length === 0 ? [{}] : partitionRows;
-          const first = amountEvaluator(values[0] ?? {}, context.bindings.parameters, expressionReport(context, node, "/amount"), "/amount");
+          const first = amountEvaluator(
+            values[0] ?? {},
+            context.bindings.parameters,
+            expressionReport(context, node, "/amount"),
+            "/amount",
+          );
           amount = decimalFromExpression(first);
           if (amount !== null) {
             const expected = amount;
-            if (values.slice(1).some((row) => {
-              const value = decimalFromExpression(amountEvaluator(row, context.bindings.parameters, expressionReport(context, node, "/amount"), "/amount"));
-              return value === null || !value.equals(expected);
-            })) amount = null;
+            if (
+              values.slice(1).some((row) => {
+                const value = decimalFromExpression(
+                  amountEvaluator(
+                    row,
+                    context.bindings.parameters,
+                    expressionReport(context, node, "/amount"),
+                    "/amount",
+                  ),
+                );
+                return value === null || !value.equals(expected);
+              })
+            )
+              amount = null;
           }
         }
         if (amount === null) {
-          runtimeDiagnostic(context, node, CalculationDiagnosticCode.ALLOCATION_CONSERVATION_VIOLATION, "Allocation amount source is missing or inconsistent within a partition.");
+          runtimeDiagnostic(
+            context,
+            node,
+            CalculationDiagnosticCode.ALLOCATION_CONSERVATION_VIOLATION,
+            "Allocation amount source is missing or inconsistent within a partition.",
+          );
           continue;
         }
-        const target = roundDecimal(amount, { scale: node.policy.scale, mode: node.policy.rounding });
+        const target = roundDecimal(amount, {
+          scale: node.policy.scale,
+          mode: node.policy.rounding,
+        });
         inputTotal = inputTotal.plus(target);
         const indexed: IndexedAllocationRow[] = partition.map(({ row, index }) => {
           const path = `/rows/${index}`;
-          const raw = weightEvaluator(row, context.bindings.parameters, expressionReport(context, node, path), path);
-          const weight = Decimal.isDecimal(raw) || typeof raw === "number" ? new D(raw) : new D(0);
-          return { row, index, stableKey: allocationSortKey(row, node.sortBy), weight, part: new D(0), residual: new D(0) };
+          const raw = weightEvaluator(
+            row,
+            context.bindings.parameters,
+            expressionReport(context, node, path),
+            path,
+          );
+          const weight =
+            Decimal.isDecimal(raw) || typeof raw === "number" ? new D(raw) : new D(0);
+          return {
+            row,
+            index,
+            stableKey: allocationSortKey(row, node.sortBy),
+            weight,
+            part: new D(0),
+            residual: new D(0),
+          };
         });
-        if (node.policy.allowNegativeWeights !== true && indexed.some((item) => item.weight.isNegative())) {
-          runtimeDiagnostic(context, node, CalculationDiagnosticCode.ALLOCATION_NEGATIVE_WEIGHT, "Allocation contains a negative weight.");
+        if (
+          node.policy.allowNegativeWeights !== true &&
+          indexed.some((item) => item.weight.isNegative())
+        ) {
+          runtimeDiagnostic(
+            context,
+            node,
+            CalculationDiagnosticCode.ALLOCATION_NEGATIVE_WEIGHT,
+            "Allocation contains a negative weight.",
+          );
           continue;
         }
         let weightTotal = indexed.reduce((sum, item) => sum.plus(item.weight), new D(0));
         if (weightTotal.isZero()) {
           if (node.policy.onZeroWeight === "error") {
-            runtimeDiagnostic(context, node, CalculationDiagnosticCode.ALLOCATION_ZERO_WEIGHT, "Allocation partition has zero total weight.");
+            runtimeDiagnostic(
+              context,
+              node,
+              CalculationDiagnosticCode.ALLOCATION_ZERO_WEIGHT,
+              "Allocation partition has zero total weight.",
+            );
             continue;
           }
           if (node.policy.onZeroWeight === "equal") {
@@ -622,32 +870,63 @@ function compileAllocate(node: AllocatePlanNode): CompiledMemoryNode {
           }
         }
         if (weightTotal.isZero()) {
-          for (const item of indexed) results[item.index] = { ...item.row, [node.output]: new D(0) };
-          if (!target.isZero()) runtimeDiagnostic(context, node, CalculationDiagnosticCode.ALLOCATION_CONSERVATION_VIOLATION, "Zero-weight policy left a non-zero amount unallocated.", { details: { total: target.toFixed() } });
+          for (const item of indexed)
+            results[item.index] = { ...item.row, [node.output]: new D(0) };
+          if (!target.isZero())
+            runtimeDiagnostic(
+              context,
+              node,
+              CalculationDiagnosticCode.ALLOCATION_CONSERVATION_VIOLATION,
+              "Zero-weight policy left a non-zero amount unallocated.",
+              { details: { total: target.toFixed() } },
+            );
           continue;
         }
         for (const item of indexed) {
           const ideal = target.times(item.weight).dividedBy(weightTotal);
-          item.part = node.policy.remainder.kind === "largest-remainder"
-            ? ideal.toDecimalPlaces(node.policy.scale, Decimal.ROUND_DOWN)
-            : roundDecimal(ideal, { scale: node.policy.scale, mode: node.policy.rounding });
+          item.part =
+            node.policy.remainder.kind === "largest-remainder"
+              ? ideal.toDecimalPlaces(node.policy.scale, Decimal.ROUND_DOWN)
+              : roundDecimal(ideal, {
+                  scale: node.policy.scale,
+                  mode: node.policy.rounding,
+                });
           item.residual = ideal.minus(item.part);
         }
         const baseTotal = indexed.reduce((sum, item) => sum.plus(item.part), new D(0));
         distributeRemainder(indexed, target.minus(baseTotal), node, context);
-        const partitionOutput = indexed.reduce((sum, item) => sum.plus(item.part), new D(0));
+        const partitionOutput = indexed.reduce(
+          (sum, item) => sum.plus(item.part),
+          new D(0),
+        );
         outputTotal = outputTotal.plus(partitionOutput);
-        if (!partitionOutput.equals(target)) runtimeDiagnostic(context, node, CalculationDiagnosticCode.ALLOCATION_CONSERVATION_VIOLATION, "Allocation does not conserve the partition total.", { details: { input: target.toFixed(), output: partitionOutput.toFixed() } });
-        for (const item of indexed) results[item.index] = { ...item.row, [node.output]: item.part };
+        if (!partitionOutput.equals(target))
+          runtimeDiagnostic(
+            context,
+            node,
+            CalculationDiagnosticCode.ALLOCATION_CONSERVATION_VIOLATION,
+            "Allocation does not conserve the partition total.",
+            { details: { input: target.toFixed(), output: partitionOutput.toFixed() } },
+          );
+        for (const item of indexed)
+          results[item.index] = { ...item.row, [node.output]: item.part };
       }
-      context.trace({ kind: "allocate", inputTotal: inputTotal.toFixed(), outputTotal: outputTotal.toFixed(), remainder: inputTotal.minus(outputTotal).toFixed() });
+      context.trace({
+        kind: "allocate",
+        inputTotal: inputTotal.toFixed(),
+        outputTotal: outputTotal.toFixed(),
+        remainder: inputTotal.minus(outputTotal).toFixed(),
+      });
       return datasetFromMemoryRows(`${node.id}.out`, node.outputType, results);
     },
   };
 }
 
 function compileValidate(node: ValidatePlanNode): CompiledMemoryNode {
-  const assertions = node.assertions.map((assertion) => ({ ...assertion, evaluate: compileExpressionEvaluator(assertion.expression) }));
+  const assertions = node.assertions.map((assertion) => ({
+    ...assertion,
+    evaluate: compileExpressionEvaluator(assertion.expression),
+  }));
   return {
     node,
     async execute(context) {
@@ -658,9 +937,25 @@ function compileValidate(node: ValidatePlanNode): CompiledMemoryNode {
         if (row === undefined) continue;
         const path = `/rows/${rowIndex}`;
         for (const assertion of assertions) {
-          if (Boolean(assertion.evaluate(row, context.bindings.parameters, expressionReport(context, node, path), path))) continue;
+          if (
+            Boolean(
+              assertion.evaluate(
+                row,
+                context.bindings.parameters,
+                expressionReport(context, node, path),
+                path,
+              ),
+            )
+          )
+            continue;
           failures += 1;
-          runtimeDiagnostic(context, node, CalculationDiagnosticCode.VALIDATION_FAILED, assertion.message, { path, details: { assertionId: assertion.id }, severity: assertion.severity });
+          runtimeDiagnostic(
+            context,
+            node,
+            CalculationDiagnosticCode.VALIDATION_FAILED,
+            assertion.message,
+            { path, details: { assertionId: assertion.id }, severity: assertion.severity },
+          );
         }
       }
       context.trace({ kind: "validate", failures });
@@ -669,32 +964,55 @@ function compileValidate(node: ValidatePlanNode): CompiledMemoryNode {
   };
 }
 
-function compileOutput(node: Extract<SemanticPlanNode, { readonly kind: "output" }>): CompiledMemoryNode {
+function compileOutput(
+  node: Extract<SemanticPlanNode, { readonly kind: "output" }>,
+): CompiledMemoryNode {
   return {
     node,
     async execute(context) {
-      return datasetFor(node.source, context) ?? datasetFromMemoryRows(`${node.id}.out`, node.outputType, []);
+      return (
+        datasetFor(node.source, context) ??
+        datasetFromMemoryRows(`${node.id}.out`, node.outputType, [])
+      );
     },
   };
 }
 
-function compileNode(node: SemanticPlanNode, sourceTypes: ReadonlyMap<string, TableType>): CompiledMemoryNode {
+function compileNode(
+  node: SemanticPlanNode,
+  sourceTypes: ReadonlyMap<string, TableType>,
+): CompiledMemoryNode {
   switch (node.kind) {
-    case "input": return compileInput(node);
-    case "filter": return compileFilter(node);
-    case "project": return compileProject(node);
-    case "formula": return compileFormula(node);
-    case "join": return compileJoin(node, sourceTypes);
-    case "lookup": return compileLookup(node);
-    case "decision": return compileDecision(node);
-    case "aggregate": return compileAggregate(node);
-    case "allocate": return compileAllocate(node);
-    case "validate": return compileValidate(node);
-    case "output": return compileOutput(node);
+    case "input":
+      return compileInput(node);
+    case "filter":
+      return compileFilter(node);
+    case "project":
+      return compileProject(node);
+    case "formula":
+      return compileFormula(node);
+    case "join":
+      return compileJoin(node, sourceTypes);
+    case "lookup":
+      return compileLookup(node);
+    case "decision":
+      return compileDecision(node);
+    case "aggregate":
+      return compileAggregate(node);
+    case "allocate":
+      return compileAllocate(node);
+    case "validate":
+      return compileValidate(node);
+    case "output":
+      return compileOutput(node);
   }
 }
 
-async function fingerprintDataset(name: string, dataset: Dataset, context: CallContext): Promise<DatasetFingerprint> {
+async function fingerprintDataset(
+  name: string,
+  dataset: Dataset,
+  context: CallContext,
+): Promise<DatasetFingerprint> {
   const hash = createHash("sha256");
   hash.update(stableStringify(dataset.schema));
   let rowCount = 0;
@@ -715,7 +1033,8 @@ async function inputSnapshot(
   const datasets: DatasetFingerprint[] = [];
   for (const name of Object.keys(bindings.datasets).sort()) {
     const dataset = bindings.datasets[name];
-    if (dataset !== undefined) datasets.push(await fingerprintDataset(name, dataset, context));
+    if (dataset !== undefined)
+      datasets.push(await fingerprintDataset(name, dataset, context));
   }
 
   // Parameter VALUES belong in the fingerprint. Their declarations are in the
@@ -761,23 +1080,29 @@ function emptySnapshot(context: CallContext): InputSnapshot {
   };
 }
 
-async function inspectDataset(dataset: Dataset | undefined, context: CallContext, sampleLimit: number): Promise<{ readonly count: number; readonly samples: readonly Row[] }> {
+async function inspectDataset(
+  dataset: Dataset | undefined,
+  context: CallContext,
+  sampleLimit: number,
+): Promise<{ readonly count: number; readonly samples: readonly Row[] }> {
   if (dataset === undefined) return { count: 0, samples: [] };
   let count = 0;
   const samples: Row[] = [];
   for await (const batch of dataset.stream(context)) {
     count += batch.numRows;
     if (samples.length < sampleLimit) {
-      samples.push(
-        ...rowsFromMemoryBatch(batch).slice(0, sampleLimit - samples.length),
-      );
+      samples.push(...rowsFromMemoryBatch(batch).slice(0, sampleLimit - samples.length));
     }
   }
   return { count, samples };
 }
 
 function cancellationDiagnostic(timedOut: boolean): Diagnostic {
-  return diagnostic(CalculationDiagnosticCode.EXECUTION_CANCELLED, timedOut ? "Pipeline execution timed out." : "Pipeline execution was cancelled.", { details: { reason: timedOut ? "timeout" : "aborted" } });
+  return diagnostic(
+    CalculationDiagnosticCode.EXECUTION_CANCELLED,
+    timedOut ? "Pipeline execution timed out." : "Pipeline execution was cancelled.",
+    { details: { reason: timedOut ? "timeout" : "aborted" } },
+  );
 }
 
 function parameterMatches(type: ValueType, value: ParameterBindings[string]): boolean {
@@ -800,7 +1125,12 @@ function parameterMatches(type: ValueType, value: ParameterBindings[string]): bo
 
 function memoryExecutable(plan: ExecutablePlan): plan is MemoryExecutablePlan {
   const candidate = plan as Partial<MemoryExecutablePlan>;
-  return plan.backendId === "memory" && candidate.semanticPlan !== undefined && candidate.versions !== undefined && Array.isArray(candidate.nodes);
+  return (
+    plan.backendId === "memory" &&
+    candidate.semanticPlan !== undefined &&
+    candidate.versions !== undefined &&
+    Array.isArray(candidate.nodes)
+  );
 }
 
 export class MemoryBackend implements CalculationBackend {
@@ -823,19 +1153,32 @@ export class MemoryBackend implements CalculationBackend {
     return executable;
   }
 
-  async execute(plan: ExecutablePlan, bindings: PlanBindings, context: BackendExecutionContext): Promise<ExecutionResult> {
+  async execute(
+    plan: ExecutablePlan,
+    bindings: PlanBindings,
+    context: BackendExecutionContext,
+  ): Promise<ExecutionResult> {
     const startedAt = performance.now();
     const diagnostics: Diagnostic[] = [];
     const traces: NodeTrace[] = [];
     const outputs: Record<string, Dataset> = {};
     const traceLevel: TraceLevel = context.options.traceLevel ?? "summary";
     if (!memoryExecutable(plan)) {
-      diagnostics.push(diagnostic(CalculationDiagnosticCode.OPERATION_CONFIG_INVALID, "Executable plan was not compiled by the memory backend."));
+      diagnostics.push(
+        diagnostic(
+          CalculationDiagnosticCode.OPERATION_CONFIG_INVALID,
+          "Executable plan was not compiled by the memory backend.",
+        ),
+      );
       return {
         status: "failed",
         outputs,
         diagnostics,
-        trace: { level: traceLevel, nodes: traces, totalDurationMs: performance.now() - startedAt },
+        trace: {
+          level: traceLevel,
+          nodes: traces,
+          totalDurationMs: performance.now() - startedAt,
+        },
         input: emptySnapshot(context.call),
         versions: {
           engine: "unknown",
@@ -850,7 +1193,10 @@ export class MemoryBackend implements CalculationBackend {
     const timeoutController = new AbortController();
     let timer: NodeJS.Timeout | undefined;
     let timedOut = false;
-    const timeoutMs = context.options.timeoutMs === undefined ? undefined : Math.max(0, context.options.timeoutMs);
+    const timeoutMs =
+      context.options.timeoutMs === undefined
+        ? undefined
+        : Math.max(0, context.options.timeoutMs);
     const deadline = timeoutMs === undefined ? undefined : Date.now() + timeoutMs;
     if (timeoutMs !== undefined) {
       timer = setTimeout(() => {
@@ -860,9 +1206,16 @@ export class MemoryBackend implements CalculationBackend {
     }
     const signals: AbortSignal[] = [timeoutController.signal];
     if (context.call.signal !== undefined) signals.push(context.call.signal);
-    const executionCall: CallContext = { ...context.call, signal: AbortSignal.any(signals) };
+    const executionCall: CallContext = {
+      ...context.call,
+      signal: AbortSignal.any(signals),
+    };
     const checkCancellation = (): void => {
-      if (deadline !== undefined && Date.now() >= deadline && !executionCall.signal?.aborted) {
+      if (
+        deadline !== undefined &&
+        Date.now() >= deadline &&
+        !executionCall.signal?.aborted
+      ) {
         timedOut = true;
         timeoutController.abort();
       }
@@ -877,17 +1230,47 @@ export class MemoryBackend implements CalculationBackend {
       for (const declared of plan.semanticPlan.inputs) {
         const provided = bindings.datasets[declared.name];
         if (provided === undefined) {
-          diagnostics.push(diagnostic(CalculationDiagnosticCode.PIPELINE_PORT_UNCONNECTED, `Required input dataset "${declared.name}" was not supplied.`, { path: `/datasets/${declared.name}` }));
+          diagnostics.push(
+            diagnostic(
+              CalculationDiagnosticCode.PIPELINE_PORT_UNCONNECTED,
+              `Required input dataset "${declared.name}" was not supplied.`,
+              { path: `/datasets/${declared.name}` },
+            ),
+          );
         } else if (stableStringify(provided.schema) !== stableStringify(declared.schema)) {
-          diagnostics.push(diagnostic(CalculationDiagnosticCode.PIPELINE_SCHEMA_MISMATCH, `Input dataset "${declared.name}" does not match its declared schema.`, { path: `/datasets/${declared.name}/schema` }));
+          diagnostics.push(
+            diagnostic(
+              CalculationDiagnosticCode.PIPELINE_SCHEMA_MISMATCH,
+              `Input dataset "${declared.name}" does not match its declared schema.`,
+              { path: `/datasets/${declared.name}/schema` },
+            ),
+          );
         }
       }
       for (const declared of plan.semanticPlan.parameters) {
         const value = bindings.parameters[declared.name];
         if (value === undefined) {
-          diagnostics.push(diagnostic(CalculationDiagnosticCode.PIPELINE_PORT_UNCONNECTED, `Required parameter "${declared.name}" was not supplied.`, { path: `/parameters/${declared.name}`, details: { parameter: declared.name } }));
+          diagnostics.push(
+            diagnostic(
+              CalculationDiagnosticCode.PIPELINE_PORT_UNCONNECTED,
+              `Required parameter "${declared.name}" was not supplied.`,
+              {
+                path: `/parameters/${declared.name}`,
+                details: { parameter: declared.name },
+              },
+            ),
+          );
         } else if (!parameterMatches(declared.type, value)) {
-          diagnostics.push(diagnostic(CalculationDiagnosticCode.PIPELINE_SCHEMA_MISMATCH, `Parameter "${declared.name}" does not match its declared type.`, { path: `/parameters/${declared.name}`, details: { parameter: declared.name, expected: declared.type.kind } }));
+          diagnostics.push(
+            diagnostic(
+              CalculationDiagnosticCode.PIPELINE_SCHEMA_MISMATCH,
+              `Parameter "${declared.name}" does not match its declared type.`,
+              {
+                path: `/parameters/${declared.name}`,
+                details: { parameter: declared.name, expected: declared.type.kind },
+              },
+            ),
+          );
         }
       }
       if (!hasErrors(diagnostics)) {
@@ -897,15 +1280,20 @@ export class MemoryBackend implements CalculationBackend {
           const nodeStartedAt = performance.now();
           const nodeDiagnostics: Diagnostic[] = [];
           let detail: NodeTraceDetail = { kind: "generic" };
-          const inputDatasets = compiledNode.node.kind === "input"
-            ? [bindings.datasets[compiledNode.node.dataset]].filter((dataset): dataset is Dataset => dataset !== undefined)
-            : planNodeSources(compiledNode.node).flatMap((ref) => {
-              const dataset = datasets.get(ref.node);
-              return dataset === undefined ? [] : [dataset];
-            });
+          const inputDatasets =
+            compiledNode.node.kind === "input"
+              ? [bindings.datasets[compiledNode.node.dataset]].filter(
+                  (dataset): dataset is Dataset => dataset !== undefined,
+                )
+              : planNodeSources(compiledNode.node).flatMap((ref) => {
+                  const dataset = datasets.get(ref.node);
+                  return dataset === undefined ? [] : [dataset];
+                });
           let inputRows = 0;
           if (traceLevel === "summary" || traceLevel === "full") {
-            const counts = await Promise.all(inputDatasets.map((dataset) => countRows(dataset, executionCall)));
+            const counts = await Promise.all(
+              inputDatasets.map((dataset) => countRows(dataset, executionCall)),
+            );
             inputRows = counts.reduce((total, count) => total + count, 0);
           }
           const result = await compiledNode.execute({
@@ -913,7 +1301,11 @@ export class MemoryBackend implements CalculationBackend {
             bindings,
             datasets,
             report(item) {
-              nodeDiagnostics.push(item.nodeId === undefined ? { ...item, nodeId: compiledNode.node.origin.sourceNodeId } : item);
+              nodeDiagnostics.push(
+                item.nodeId === undefined
+                  ? { ...item, nodeId: compiledNode.node.origin.sourceNodeId }
+                  : item,
+              );
             },
             trace(value) {
               detail = value;
@@ -922,18 +1314,29 @@ export class MemoryBackend implements CalculationBackend {
           checkCancellation();
           datasets.set(compiledNode.node.id, result);
           diagnostics.push(...nodeDiagnostics);
-          const phase = hasErrors(nodeDiagnostics) ? "error" as const : "ok" as const;
-          const shouldTrace = traceLevel === "summary" || traceLevel === "full" || (traceLevel === "errors" && phase === "error");
+          const phase = hasErrors(nodeDiagnostics) ? ("error" as const) : ("ok" as const);
+          const shouldTrace =
+            traceLevel === "summary" ||
+            traceLevel === "full" ||
+            (traceLevel === "errors" && phase === "error");
           if (shouldTrace) {
             if (traceLevel === "errors") {
-              const counts = await Promise.all(inputDatasets.map((dataset) => countRows(dataset, executionCall)));
+              const counts = await Promise.all(
+                inputDatasets.map((dataset) => countRows(dataset, executionCall)),
+              );
               inputRows = counts.reduce((total, count) => total + count, 0);
             }
-            const inspected = await inspectDataset(result, executionCall, traceLevel === "full" ? FULL_TRACE_SAMPLE_LIMIT : 0);
+            const inspected = await inspectDataset(
+              result,
+              executionCall,
+              traceLevel === "full" ? FULL_TRACE_SAMPLE_LIMIT : 0,
+            );
             traces.push({
               nodeId: compiledNode.node.origin.sourceNodeId,
               operation: compiledNode.node.origin.operation,
-              ...(compiledNode.node.origin.label === undefined ? {} : { label: compiledNode.node.origin.label }),
+              ...(compiledNode.node.origin.label === undefined
+                ? {}
+                : { label: compiledNode.node.origin.label }),
               phase,
               inputRows,
               outputRows: inspected.count,
@@ -953,9 +1356,17 @@ export class MemoryBackend implements CalculationBackend {
         }
       }
     } catch (error) {
-      if (executionCall.signal?.aborted === true) diagnostics.push(cancellationDiagnostic(timedOut));
+      if (executionCall.signal?.aborted === true)
+        diagnostics.push(cancellationDiagnostic(timedOut));
       else if (error instanceof PrismError) diagnostics.push(...error.diagnostics);
-      else diagnostics.push(diagnostic(CalculationDiagnosticCode.OPERATION_CONFIG_INVALID, "Pipeline operation failed unexpectedly.", { details: { error: error instanceof Error ? error.message : String(error) } }));
+      else
+        diagnostics.push(
+          diagnostic(
+            CalculationDiagnosticCode.OPERATION_CONFIG_INVALID,
+            "Pipeline operation failed unexpectedly.",
+            { details: { error: error instanceof Error ? error.message : String(error) } },
+          ),
+        );
     } finally {
       clearTimeout(timer);
     }
@@ -963,7 +1374,11 @@ export class MemoryBackend implements CalculationBackend {
       status: hasErrors(diagnostics) ? "failed" : "success",
       outputs,
       diagnostics,
-      trace: { level: traceLevel, nodes: traces, totalDurationMs: performance.now() - startedAt },
+      trace: {
+        level: traceLevel,
+        nodes: traces,
+        totalDurationMs: performance.now() - startedAt,
+      },
       input: snapshot,
       versions: plan.versions,
       planHash: plan.planHash,

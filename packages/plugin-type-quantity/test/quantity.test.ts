@@ -24,19 +24,19 @@ async function compile(
   installQuantity = true,
 ) {
   const engine = createEngine({
-    plugins: installQuantity
-      ? [calculationPlugin, quantityPlugin]
-      : [calculationPlugin],
+    plugins: installQuantity ? [calculationPlugin, quantityPlugin] : [calculationPlugin],
   });
   await engine.start();
   const spec: PipelineSpec = {
     id: "quantity-test",
     inputs: [{ name: "source", schema: tableType(fields) }],
-    requiredAnalyzers: [{
-      id: "calculation.type.quantity",
-      kind: "type",
-      contractVersion: TypeAnalysisExtensionPoint.version,
-    }],
+    requiredAnalyzers: [
+      {
+        id: "calculation.type.quantity",
+        kind: "type",
+        contractVersion: TypeAnalysisExtensionPoint.version,
+      },
+    ],
     nodes: [
       { id: "input", operation: "calculation.input", config: { name: "source" } },
       {
@@ -60,11 +60,7 @@ async function compile(
 
 const DECIMAL: ValueType = { kind: "decimal", precision: 28, scale: 6 };
 
-function quantityType(
-  engine: Engine,
-  dimension: string,
-  unit?: string,
-): ValueType {
+function quantityType(engine: Engine, dimension: string, unit?: string): ValueType {
   return engine.capability(QuantityCapabilityToken).annotate(DECIMAL, {
     numerator: [{ dimension, unit: unit ?? "", exponent: 1 }],
     denominator: [],
@@ -93,7 +89,9 @@ describe("quantity analysis plugin", () => {
 
     expect(compiled.diagnostics).toEqual([]);
     const formula = compiled.plan.nodes.find((node) => node.kind === "formula");
-    const resultType = formula?.outputType.columns.find((column) => column.name === "result")?.type;
+    const resultType = formula?.outputType.columns.find(
+      (column) => column.name === "result",
+    )?.type;
     const resultQuantity = engine.capability(QuantityCapabilityToken).read(resultType!);
     expect(resultQuantity).toEqual({
       numerator: [{ dimension: "POINT", unit: "", exponent: 1 }],
@@ -144,9 +142,11 @@ describe("quantity analysis plugin", () => {
   });
 
   it("loses the capability when the plugin is not installed", async () => {
-    const { engine, compiled } = await compile("amount + amount", [
-      { name: "amount", type: DECIMAL },
-    ], false);
+    const { engine, compiled } = await compile(
+      "amount + amount",
+      [{ name: "amount", type: DECIMAL }],
+      false,
+    );
     expect(compiled.diagnostics).toContainEqual(
       expect.objectContaining({ code: "REQUIRED_ANALYZER_MISSING" }),
     );

@@ -19,14 +19,14 @@
     "build": "tsc --build"
   },
   "dependencies": {
-    "@prismengine/contracts-data": "workspace:*",
-    "@prismengine/contracts-storage": "workspace:*",
-    "@prismengine/kernel": "workspace:*",
+    "@prismengine/contracts-data": "workspace:0.1.20",
+    "@prismengine/contracts-storage": "workspace:0.1.20",
+    "@prismengine/kernel": "workspace:0.1.20",
     "kysely": "^0.28.8",
     "pg": "^8.16.3"
   },
   "devDependencies": {
-    "@prismengine/testing": "workspace:*",
+    "@prismengine/testing": "workspace:0.1.20",
     "@types/pg": "^8.15.6",
     "vitest": "^2.1.8"
   },

@@ -1,6 +1,7 @@
 import {
   AtomicWriteCapabilityToken,
   StorageCapabilityToken,
+  withResourceValidation,
 } from "@prismengine/contracts-storage";
 import { definePlugin } from "@prismengine/kernel";
 import { openDatabase } from "./database.js";
@@ -20,9 +21,8 @@ export {
   type PostgresMigrationJournal,
 } from "./migration-journal.js";
 export { INITIAL_STORAGE_MIGRATION_ID } from "./migrations.js";
-export {
-  PostgresStorage,
-} from "./postgres-storage.js";
+export { PostgresStorage } from "./postgres-storage.js";
+export { acquirePostgresHostLease, type PostgresHostLease } from "./host-lease.js";
 
 export function storagePostgresPlugin(
   options: PostgresStorageOptions,
@@ -32,6 +32,7 @@ export function storagePostgresPlugin(
   return definePlugin({
     id: "storage.postgres",
     version: "0.1.20",
+    engineRange: "^0.1.20",
     provides: [StorageCapabilityToken, AtomicWriteCapabilityToken],
     migrations: postgresStorageMigrations(handle.db, handle.schema),
     register(context) {
@@ -41,7 +42,10 @@ export function storagePostgresPlugin(
         context.events,
         atomicWriteFault,
       );
-      context.provide(StorageCapabilityToken, storage);
+      context.provide(
+        StorageCapabilityToken,
+        withResourceValidation(storage, context.resources),
+      );
       context.provide(AtomicWriteCapabilityToken, storage);
     },
     async stop() {

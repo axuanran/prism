@@ -1,6 +1,7 @@
 import {
   D,
   DataDiagnosticCode,
+  PrismError,
   decimalCodec,
   systemCallContext,
 } from "@prismengine/contracts-data";
@@ -8,12 +9,15 @@ import type { DecimalString } from "@prismengine/contracts-data";
 import {
   AtomicWriteCapabilityToken,
   StorageCapabilityToken,
+  StorageDiagnosticCode,
 } from "@prismengine/contracts-storage";
-import { createEngine } from "@prismengine/kernel";
+import { InMemoryMigrationJournal, createEngine } from "@prismengine/kernel";
 import type { Engine, Resource } from "@prismengine/kernel";
 import {
+  acquirePostgresHostLease,
   createPostgresMigrationJournal,
   storagePostgresPlugin,
+  PostgresStorage,
 } from "@prismengine/plugin-storage-postgres";
 import type {
   PostgresDatabase,
@@ -39,10 +43,11 @@ if (postgresUrl === undefined) {
 const describeRealPostgres = postgresUrl === undefined ? describe.skip : describe;
 
 interface TestAtomicWriteFaultInjector {
-  hit(point:
-    | { readonly point: "after-operation"; readonly operationIndex: number }
-    | { readonly point: "before-commit" }
-    | { readonly point: "after-commit" }
+  hit(
+    point:
+      | { readonly point: "after-operation"; readonly operationIndex: number }
+      | { readonly point: "before-commit" }
+      | { readonly point: "after-commit" },
   ): void;
 }
 
@@ -76,15 +81,131 @@ function rawDatabase(connectionString: string): Kysely<PostgresDatabase> {
 }
 
 function requirePostgresUrl(): string {
-  if (postgresUrl === undefined) throw new Error("PostgreSQL test registered without a target");
+  if (postgresUrl === undefined)
+    throw new Error("PostgreSQL test registered without a target");
   return postgresUrl;
 }
+
+describe("PostgreSQL provider failure boundary", () => {
+  it("sanitizes storage operation failures and preserves structured Prism errors", async () => {
+    const privateFailure = new Error(
+      "postgres://admin:private-password@private.example/db select * from secret",
+    );
+    privateFailure.name = "Private-Postgres-Error";
+    const storage = new PostgresStorage(
+      {
+        withSchema() {
+          throw privateFailure;
+        },
+      } as unknown as Kysely<PostgresDatabase>,
+      "prism",
+    );
+
+    let failure: unknown;
+    try {
+      await storage.resources.get(context, "test.kind", "resource");
+    } catch (error) {
+      failure = error;
+    }
+    expect((failure as PrismError).diagnostics).toEqual([
+      {
+        code: StorageDiagnosticCode.RESOURCE_VALIDATION_FAILED,
+        severity: "error",
+        message: "PostgreSQL storage could not load a resource.",
+        details: { errorType: "Error" },
+      },
+    ]);
+    expect(JSON.stringify(failure)).not.toMatch(
+      /private-password|private\.example|select \* from secret/u,
+    );
+
+    const structured = PrismError.of("SAFE_POSTGRES_FAILURE", "Safe failure.", {
+      safe: true,
+    });
+    const structuredStorage = new PostgresStorage(
+      {
+        withSchema() {
+          throw structured;
+        },
+      } as unknown as Kysely<PostgresDatabase>,
+      "prism",
+    );
+    await expect(
+      structuredStorage.resources.get(context, "test.kind", "resource"),
+    ).rejects.toBe(structured);
+  });
+
+  it("sanitizes durable journal provider failures", async () => {
+    const journal = createPostgresMigrationJournal({
+      db: {
+        connection() {
+          throw {
+            endpoint: "postgres://admin:private-password@private.example/db",
+          };
+        },
+      } as unknown as Kysely<PostgresDatabase>,
+    });
+
+    let failure: unknown;
+    try {
+      await journal.applied("storage.postgres");
+    } catch (error) {
+      failure = error;
+    }
+    expect((failure as PrismError).diagnostics).toEqual([
+      {
+        code: StorageDiagnosticCode.RESOURCE_VALIDATION_FAILED,
+        severity: "error",
+        message: "PostgreSQL storage could not read migration journal.",
+        details: { errorType: "object" },
+      },
+    ]);
+    expect(JSON.stringify(failure)).not.toMatch(/private-password|private\.example/u);
+  });
+
+  it("sanitizes schema migration failures through Engine startup", async () => {
+    const privateFailure = new Error(
+      "postgres://admin:private-password@private.example/db alter table private_data",
+    );
+    privateFailure.name = "Private-Migration-Error";
+    const database = {
+      get schema() {
+        throw privateFailure;
+      },
+    } as unknown as Kysely<PostgresDatabase>;
+    const engine = createEngine({
+      plugins: [storagePostgresPlugin({ db: database })],
+      migrationJournal: new InMemoryMigrationJournal(),
+    });
+
+    let failure: unknown;
+    try {
+      await engine.start();
+    } catch (error) {
+      failure = error;
+    }
+    expect((failure as PrismError).diagnostics).toEqual([
+      {
+        code: StorageDiagnosticCode.RESOURCE_VALIDATION_FAILED,
+        severity: "error",
+        message: "PostgreSQL storage schema migration failed.",
+        details: { errorType: "Error" },
+      },
+    ]);
+    expect(JSON.stringify({ failure, inspection: engine.inspect() })).not.toMatch(
+      /private-password|private\.example|alter table private_data/u,
+    );
+  });
+});
 
 describeRealPostgres("real PostgreSQL 17 storage", () => {
   describeStorageContract("postgresql", async () => {
     const scratch = await createScratchDatabase(requirePostgresUrl(), "contract");
     let failure:
-      | { readonly point: "after-operation" | "before-commit" | "after-commit"; readonly operationIndex?: number }
+      | {
+          readonly point: "after-operation" | "before-commit" | "after-commit";
+          readonly operationIndex?: number;
+        }
       | undefined;
     const running = await boot(scratch.url, {
       hit(point) {
@@ -160,7 +281,9 @@ describeRealPostgres("real PostgreSQL 17 storage", () => {
           .execute(),
       ).rejects.toThrow(/cannot return to draft/);
 
-      expect(await resources.get(context, draft.kind, draft.id, draft.revision)).toMatchObject({
+      expect(
+        await resources.get(context, draft.kind, draft.id, draft.revision),
+      ).toMatchObject({
         name: "Original",
         spec: { coefficient: "1.25" },
       });
@@ -171,14 +294,113 @@ describeRealPostgres("real PostgreSQL 17 storage", () => {
       await scratch.drop();
     }
   });
+  it("records resource changes transactionally and rejects audit mutation", async () => {
+    const scratch = await createScratchDatabase(requirePostgresUrl(), "audit");
+    const runtime = await boot(scratch.url);
+    const database = rawDatabase(scratch.url);
+    try {
+      const storage = runtime.engine.capability(StorageCapabilityToken);
+      await storage.resources.saveDraft(
+        {
+          ...context,
+          changeReason: "audit integration test",
+          approvalId: "approval-test",
+        },
+        {
+          kind: "audit.contract",
+          id: "audited",
+          name: "Audited",
+          spec: { value: 1 },
+          expectedUpdatedAt: null,
+        },
+      );
+      const records = await storage.audit.list(context, {
+        targetKind: "audit.contract",
+        targetId: "audited",
+      });
+      expect(records).toHaveLength(1);
+      expect(records[0]?.approvalId).toBe("approval-test");
+      await expect(storage.audit.verify(context)).resolves.toEqual({
+        valid: true,
+        checked: 1,
+      });
+      await expect(
+        database
+          .withSchema("prism")
+          .updateTable("audit_journal")
+          .set({ action: "tampered" })
+          .where("id", "=", records[0]!.id)
+          .execute(),
+      ).rejects.toThrow(/append-only/);
+    } finally {
+      await database.destroy();
+      await shutdown(runtime);
+      await scratch.drop();
+    }
+  });
+
+  it("serializes migrations across concurrent PostgreSQL Engines", async () => {
+    const scratch = await createScratchDatabase(
+      requirePostgresUrl(),
+      "migration_concurrent",
+    );
+    const running = await Promise.all([boot(scratch.url), boot(scratch.url)]);
+    const database = rawDatabase(scratch.url);
+    try {
+      const rows = await database
+        .withSchema("prism")
+        .selectFrom("prism_migration")
+        .select(["migration_id"])
+        .where("plugin_id", "=", "storage.postgres")
+        .execute();
+      expect(rows.map((row) => row.migration_id).sort()).toEqual([
+        "0001_storage_schema",
+        "0002_immutable_revision_status",
+        "0003_append_only_audit_journal",
+        "0004_audit_approval_identity",
+      ]);
+    } finally {
+      await Promise.all(running.map(shutdown));
+      await database.destroy();
+      await scratch.drop();
+    }
+  });
+
+  it("allows only one Production Host lease per deployment", async () => {
+    const scratch = await createScratchDatabase(requirePostgresUrl(), "host_lease");
+    const first = await acquirePostgresHostLease({
+      connectionString: scratch.url,
+      deploymentId: "hospital-a",
+    });
+    try {
+      await expect(
+        acquirePostgresHostLease({
+          connectionString: scratch.url,
+          deploymentId: "hospital-a",
+        }),
+      ).rejects.toThrow("HOST_SINGLE_WRITER_UNAVAILABLE");
+    } finally {
+      await first.release();
+    }
+    const second = await acquirePostgresHostLease({
+      connectionString: scratch.url,
+      deploymentId: "hospital-a",
+    });
+    await second.release();
+    await scratch.drop();
+  });
 
   it("persists migration execution and does not rerun it on a second boot", async () => {
     const scratch = await createScratchDatabase(requirePostgresUrl(), "migration");
     const first = await boot(scratch.url);
     try {
-      expect(await first.journal.applied("storage.postgres")).toEqual([
+      expect(
+        (await first.journal.applied("storage.postgres")).map((item) => item.id),
+      ).toEqual([
         "0001_storage_schema",
         "0002_immutable_revision_status",
+        "0003_append_only_audit_journal",
+        "0004_audit_approval_identity",
       ]);
     } finally {
       await shutdown(first);
@@ -186,9 +408,13 @@ describeRealPostgres("real PostgreSQL 17 storage", () => {
 
     const second = await boot(scratch.url);
     try {
-      expect(await second.journal.applied("storage.postgres")).toEqual([
+      expect(
+        (await second.journal.applied("storage.postgres")).map((item) => item.id),
+      ).toEqual([
         "0001_storage_schema",
         "0002_immutable_revision_status",
+        "0003_append_only_audit_journal",
+        "0004_audit_approval_identity",
       ]);
       const database = rawDatabase(scratch.url);
       try {
@@ -252,17 +478,11 @@ describeRealPostgres("real PostgreSQL 17 storage", () => {
 
   it("round-trips 203 decimal properties through JSONB and a reconnect bit-exact", async () => {
     const scratch = await createScratchDatabase(requirePostgresUrl(), "decimal");
-    const fixed = [
-      "12345678901234567890123456.78",
-      "0.01",
-      "-999999999999999999999999.99",
-    ];
+    const fixed = ["12345678901234567890123456.78", "0.01", "-999999999999999999999999.99"];
     const generated = Array.from({ length: 200 }, (_, index) => {
       const sign = index % 3 === 0 ? "-" : "";
       const whole = `${index + 1}${((index + 17) ** 5).toString().padStart(12, "0")}`;
-      const fraction = ((index * 7919 + 104729) % 1_000_000)
-        .toString()
-        .padStart(6, "0");
+      const fraction = ((index * 7919 + 104729) % 1_000_000).toString().padStart(6, "0");
       return `${sign}${whole}.${fraction}`;
     });
     const values = [...fixed, ...generated];
@@ -285,7 +505,9 @@ describeRealPostgres("real PostgreSQL 17 storage", () => {
     try {
       await first.engine
         .capability(StorageCapabilityToken)
-        .collection<{ readonly id: string; readonly value: DecimalString }>("decimal.values")
+        .collection<{ readonly id: string; readonly value: DecimalString }>(
+          "decimal.values",
+        )
         .putMany(context, encoded);
     } finally {
       await shutdown(first);
@@ -295,7 +517,9 @@ describeRealPostgres("real PostgreSQL 17 storage", () => {
     try {
       const collection = second.engine
         .capability(StorageCapabilityToken)
-        .collection<{ readonly id: string; readonly value: DecimalString }>("decimal.values");
+        .collection<{ readonly id: string; readonly value: DecimalString }>(
+          "decimal.values",
+        );
       const loaded = await collection.getMany(
         context,
         encoded.map((item) => item.id),
@@ -304,7 +528,9 @@ describeRealPostgres("real PostgreSQL 17 storage", () => {
       loaded.forEach((item, index) => {
         const expected = encoded[index]!;
         expect(item).toEqual(expected);
-        expect(decimalCodec.decode(item.value).toFixed()).toBe(new D(values[index]!).toFixed());
+        expect(decimalCodec.decode(item.value).toFixed()).toBe(
+          new D(values[index]!).toFixed(),
+        );
       });
       expect(await collection.count(context)).toBe(203);
     } finally {

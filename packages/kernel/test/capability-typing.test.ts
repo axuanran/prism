@@ -43,6 +43,7 @@ describe("capability typing", () => {
     const plugin = definePlugin({
       id: "test.consumer",
       version: "0.1.0",
+      engineRange: "^0.1.20",
       requires: {
         alpha: AlphaCapability,
         beta: { token: BetaCapability, optional: true },
@@ -72,6 +73,7 @@ describe("capability typing", () => {
     definePlugin({
       id: "test.provider",
       version: "0.1.0",
+      engineRange: "^0.1.20",
       provides: [AlphaCapability],
       register(ctx) {
         ctx.provide(AlphaCapability, { alpha: () => "ok" });

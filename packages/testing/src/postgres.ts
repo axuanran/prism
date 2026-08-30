@@ -12,7 +12,8 @@ import { Client } from "pg";
  *   1. PRISM_TEST_DATABASE_URL   CI service container, or any local instance
  *   2. localhost:55432           the conventional local dev instance
  *
- * When neither answers, tests SKIP with a loud reason. They never pass quietly.
+ * When neither answers, local tests SKIP with a loud sanitized reason.
+ * PRISM_REQUIRE_POSTGRES_TESTS=1 instead fails closed for release CI.
  */
 
 export const DEFAULT_TEST_PORT = 55432;
@@ -39,29 +40,46 @@ let cached: PostgresProbe | undefined;
 
 /** Probes once per process; the answer cannot change mid-run. */
 export async function probePostgres(): Promise<PostgresProbe> {
-  if (cached !== undefined) return cached;
+  if (cached !== undefined) return enforceRequiredPostgres(cached);
 
-  const failures: string[] = [];
-  for (const url of candidateUrls()) {
-    const client = new Client({ connectionString: url, connectionTimeoutMillis: 2000 });
+  const urls = candidateUrls();
+  const failureTypes: string[] = [];
+  for (const url of urls) {
+    let client: Client | undefined;
     try {
+      client = new Client({ connectionString: url, connectionTimeoutMillis: 2000 });
       await client.connect();
       await client.query("select 1");
       await client.end();
+      client = undefined;
       cached = { url };
       return cached;
     } catch (error) {
-      failures.push(`${url}: ${error instanceof Error ? error.message : String(error)}`);
-      await client.end().catch(() => undefined);
+      failureTypes.push(postgresProbeErrorType(error));
+      await client?.end().catch(() => undefined);
     }
   }
 
   cached = {
     reason:
-      `No PostgreSQL reachable. Set PRISM_TEST_DATABASE_URL, or run one on port ${DEFAULT_TEST_PORT}. ` +
-      `Tried -> ${failures.join(" | ")}`,
+      `No PostgreSQL reachable. Checked ${String(urls.length)} candidate(s); ` +
+      `error types: ${[...new Set(failureTypes)].sort().join(", ") || "unknown"}.`,
   };
-  return cached;
+  return enforceRequiredPostgres(cached);
+}
+
+function enforceRequiredPostgres(probe: PostgresProbe): PostgresProbe {
+  if (process.env.PRISM_REQUIRE_POSTGRES_TESTS === "1" && "reason" in probe) {
+    throw new Error(
+      "PostgreSQL integration tests are required, but no test database is reachable.",
+    );
+  }
+  return probe;
+}
+
+function postgresProbeErrorType(error: unknown): string {
+  if (!(error instanceof Error)) return typeof error;
+  return /^[A-Za-z][A-Za-z0-9]{0,63}$/u.test(error.name) ? error.name : "Error";
 }
 
 /** Creates a uniquely named database and returns its URL plus a dropper. */

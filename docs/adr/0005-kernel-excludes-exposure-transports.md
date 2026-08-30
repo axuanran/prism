@@ -18,6 +18,7 @@ This is a metadata vocabulary, not a universal policy engine. V0.1 enforces exac
 - A callable capability is unreachable over HTTP until a route is contributed.
 - Business configuration can receive presentation without Vue dependencies.
 - Each adapter must enforce the exposure metadata it projects; no universal exposure-policy engine exists (`packages/kernel/src/registries.ts`).
+- Studio enforces configuration exposure, while storage-plugin composition enforces registered Resource schema and semantic validation for every transport and non-transport caller. Raw providers remain transport-free and available for provider conformance (`packages/contracts-storage/src/validated-storage.ts`).
 
 ## Cost to reverse
 

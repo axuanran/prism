@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed } from 'vue';
-import EngineDataBoundary from '../components/EngineDataBoundary.vue';
-import { useEngineStore } from '../stores/engine';
+import { computed } from "vue";
+import EngineDataBoundary from "../components/EngineDataBoundary.vue";
+import { useEngineStore } from "../stores/engine";
 
 interface DependencyItem {
   consumer: string;
@@ -34,18 +34,27 @@ function retry(): void {
       <div class="page-intro__copy">
         <p class="page-intro__label">Capability Inspector</p>
         <h2>插件与能力解析</h2>
-        <p class="page-intro__description">检查插件声明、能力依赖与运行时解析结果。此页面保留完整技术标识。</p>
+        <p class="page-intro__description">
+          检查插件声明、能力依赖与运行时解析结果。此页面保留完整技术标识。
+        </p>
       </div>
       <span class="developer-badge">DEVELOPER</span>
     </div>
 
-    <EngineDataBoundary :loading="engineStore.loading" :error="engineStore.error" @retry="retry">
+    <EngineDataBoundary
+      :loading="engineStore.loading"
+      :error="engineStore.error"
+      @retry="retry"
+    >
       <template v-if="engineStore.inspection">
         <section class="panel" aria-labelledby="plugin-table-title">
           <div class="panel__header">
             <div>
               <h3 id="plugin-table-title">插件清单</h3>
-              <p>{{ engineStore.inspection.plugins.length }} plugins · {{ engineStore.inspection.capabilities.length }} capabilities</p>
+              <p>
+                {{ engineStore.inspection.plugins.length }} plugins ·
+                {{ engineStore.inspection.capabilities.length }} capabilities
+              </p>
             </div>
             <span class="phase-code mono">phase={{ engineStore.inspection.phase }}</span>
           </div>
@@ -67,7 +76,9 @@ function retry(): void {
                   </th>
                   <td>
                     <ul v-if="plugin.provides.length" class="code-list">
-                      <li v-for="capability in plugin.provides" :key="capability"><code>{{ capability }}</code></li>
+                      <li v-for="capability in plugin.provides" :key="capability">
+                        <code>{{ capability }}</code>
+                      </li>
                     </ul>
                     <span v-else class="muted">—</span>
                   </td>
@@ -84,7 +95,9 @@ function retry(): void {
                   <td>
                     <ul v-if="plugin.requires.length" class="resolved-list">
                       <li v-for="requirement in plugin.requires" :key="requirement.key">
-                        <code v-if="requirement.resolvedTo">{{ requirement.resolvedTo }}</code>
+                        <code v-if="requirement.resolvedTo">{{
+                          requirement.resolvedTo
+                        }}</code>
                         <span v-else class="unresolved">unresolved</span>
                       </li>
                     </ul>
@@ -104,7 +117,10 @@ function retry(): void {
             </div>
           </div>
           <ol class="dependency-list">
-            <li v-for="dependency in dependencies" :key="`${dependency.consumer}:${dependency.capabilityId}`">
+            <li
+              v-for="dependency in dependencies"
+              :key="`${dependency.consumer}:${dependency.capabilityId}`"
+            >
               <code>{{ dependency.consumer }}</code>
               <span aria-hidden="true">→</span>
               <code>{{ dependency.capabilityId }}</code>
@@ -260,7 +276,9 @@ code {
 
 .dependency-list li {
   display: grid;
-  grid-template-columns: minmax(10rem, 1fr) auto minmax(10rem, 1fr) auto minmax(10rem, 1fr) auto;
+  grid-template-columns:
+    minmax(10rem, 1fr) auto minmax(10rem, 1fr) auto minmax(10rem, 1fr)
+    auto;
   align-items: center;
   gap: var(--space-3);
   padding: var(--space-4) var(--space-6);

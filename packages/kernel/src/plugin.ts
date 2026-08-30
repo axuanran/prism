@@ -1,9 +1,16 @@
 import type { AnyCapabilityToken, RequirementMap } from "./capability.js";
 import type { PluginContext, PluginRegisterContext } from "./context.js";
+import { assertPluginDefinition } from "./identity.js";
 
 export interface Migration {
   /** Unique within the plugin; recorded so it runs at most once. */
   readonly id: string;
+  /** Immutable checksum of the migration implementation/DDL. */
+  readonly checksum: string;
+  readonly risk: "low" | "medium" | "high";
+  readonly requiresBackup: boolean;
+  readonly externalEffects: readonly string[];
+  preflight?(context: MigrationContext): Promise<void>;
   up(context: MigrationContext): Promise<void>;
 }
 
@@ -15,6 +22,8 @@ export interface PluginDefinition<TRequires extends RequirementMap = Requirement
   readonly id: string;
   readonly version: string;
   readonly description?: string;
+  /** Semver range of compatible Prism Engine versions. */
+  readonly engineRange?: string;
 
   /** Declared capability dependencies. The only legal way to reach another plugin. */
   readonly requires?: TRequires;
@@ -45,6 +54,7 @@ export interface PluginDefinition<TRequires extends RequirementMap = Requirement
 export function definePlugin<const TRequires extends RequirementMap>(
   definition: PluginDefinition<TRequires>,
 ): PluginDefinition<TRequires> {
+  assertPluginDefinition(definition);
   return definition;
 }
 

@@ -1,0 +1,51 @@
+hostImage:
+  repository: ghcr.io/example/prism/host
+  digest: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+workerImage:
+  repository: ghcr.io/example/prism/worker
+  digest: sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+deployment:
+  id: ci-hospital
+  environment: ci
+postgres:
+  secretName: prism-postgres
+  urlKey: database-url
+  schema: prism
+oidc:
+  issuer: https://identity.example
+  audience: prism
+  jwksUri: https://identity.example/.well-known/jwks.json
+s3:
+  region: region-1
+  artifactBucket: prism-artifacts
+  auditBucket: prism-audit
+vault:
+  address: https://vault.example
+  kvMount: secret
+  kubernetesRole: prism
+  kubernetesMount: kubernetes
+worker:
+  dockerRemoteUrl: https://worker-node.example:2376
+  dockerTlsSecretName: prism-docker-tls
+otel:
+  serviceName: prism-engine
+  traceEndpoint: https://otel.example/v1/traces
+  metricEndpoint: https://otel.example/v1/metrics
+  healthUrl: https://otel.example/health
+  headersSecretName: prism-otel
+evidence:
+  secretName: prism-evidence
+  files:
+    - name: production.json
+      sha256: cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+networkPolicy:
+  clientNamespaceLabel: prism-client
+  egress:
+    - cidr: 10.0.0.0/8
+      ports:
+        - port: 443
+          protocol: TCP
+        - port: 5432
+          protocol: TCP
+        - port: 2376
+          protocol: TCP

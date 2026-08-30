@@ -10,4 +10,6 @@ export interface ReferenceRequest {
   readonly query?: string;
 }
 
-export type ReferenceLoader = (request: ReferenceRequest) => Promise<readonly ReferenceOption[]>;
+export type ReferenceLoader = (
+  request: ReferenceRequest,
+) => Promise<readonly ReferenceOption[]>;

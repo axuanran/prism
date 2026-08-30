@@ -6,10 +6,7 @@ import type {
 } from "@prismengine/contracts-data";
 import type { AllocationPolicy } from "./allocation.js";
 import type { Expression } from "./expression.js";
-import type {
-  PlanConstraint,
-  SemanticPlanAnalysisIdentity,
-} from "./analysis.js";
+import type { PlanConstraint, SemanticPlanAnalysisIdentity } from "./analysis.js";
 
 /**
  * SemanticPlan: Prism's own calculation IR.
@@ -114,11 +111,7 @@ export interface FormulaPlanNode extends PlanNodeBase {
 
 export type JoinType = "inner" | "left";
 
-export type JoinCardinality =
-  | "one-to-one"
-  | "many-to-one"
-  | "one-to-many"
-  | "many-to-many";
+export type JoinCardinality = "one-to-one" | "many-to-one" | "one-to-many" | "many-to-many";
 
 export interface JoinKey {
   readonly left: string;

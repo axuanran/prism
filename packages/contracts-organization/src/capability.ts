@@ -37,10 +37,7 @@ export interface OrganizationCapability {
   ): Promise<ReadonlyMap<PersonId, Person>>;
   findPeople(context: CallContext, query: PersonQuery): Promise<readonly Person[]>;
 
-  getUnit(
-    context: CallContext,
-    id: OrganizationUnitId,
-  ): Promise<OrganizationUnit | null>;
+  getUnit(context: CallContext, id: OrganizationUnitId): Promise<OrganizationUnit | null>;
   getPosition(context: CallContext, id: PositionId): Promise<Position | null>;
 
   /**
@@ -52,10 +49,7 @@ export interface OrganizationCapability {
     context: CallContext,
     query?: OrganizationUnitQuery,
   ): Promise<readonly OrganizationUnit[]>;
-  findPositions(
-    context: CallContext,
-    query?: PositionQuery,
-  ): Promise<readonly Position[]>;
+  findPositions(context: CallContext, query?: PositionQuery): Promise<readonly Position[]>;
 
   /** Units below `rootId`, effective at `context.asOf.validAt`. */
   descendantUnits(
@@ -133,10 +127,7 @@ export interface OrganizationAdministration {
     changes: Partial<CreatePersonCommand> & { readonly status?: Person["status"] },
   ): Promise<Person>;
   defineUnit(context: CallContext, command: DefineUnitCommand): Promise<OrganizationUnit>;
-  definePosition(
-    context: CallContext,
-    command: DefinePositionCommand,
-  ): Promise<Position>;
+  definePosition(context: CallContext, command: DefinePositionCommand): Promise<Position>;
   assignPerson(context: CallContext, command: AssignPersonCommand): Promise<Assignment>;
   endAssignment(context: CallContext, id: Assignment["id"], through: string): Promise<void>;
 }
@@ -146,11 +137,12 @@ export const OrganizationCapabilityToken = defineCapability<OrganizationCapabili
   version: "1.0.0",
 });
 
-export const OrganizationAdministrationToken =
-  defineCapability<OrganizationAdministration>({
+export const OrganizationAdministrationToken = defineCapability<OrganizationAdministration>(
+  {
     id: "organization.administration",
     version: "1.0.0",
-  });
+  },
+);
 
 export const OrganizationEventType = {
   PersonCreated: "organization.person.created",

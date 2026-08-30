@@ -88,12 +88,7 @@ export interface DraftMaterialCatalogItem {
   readonly buildStatus: "NOT_BUILT";
 }
 
-export type ProjectBuildStatus =
-  | "QUEUED"
-  | "RUNNING"
-  | "SUCCESS"
-  | "FAILED"
-  | "CANCELLED";
+export type ProjectBuildStatus = "QUEUED" | "RUNNING" | "SUCCESS" | "FAILED" | "CANCELLED";
 
 export interface ProjectBuildRequest {
   readonly id: string;
@@ -145,10 +140,7 @@ export interface ProjectVisualResourceRef {
 }
 export type VisualExecutionModel = "ROW_MAP" | "FILTER" | "FLAT_MAP" | "AGGREGATE";
 export type VisualCardinality =
-  | "ONE_TO_ONE"
-  | "ONE_TO_ZERO_OR_ONE"
-  | "ONE_TO_MANY"
-  | "MANY_TO_ONE";
+  "ONE_TO_ONE" | "ONE_TO_ZERO_OR_ONE" | "ONE_TO_MANY" | "MANY_TO_ONE";
 export type VisualGrainEffect = "PRESERVE" | "FILTER_ONLY" | "DECLARE_OUTPUT";
 
 export interface VisualOperatorContract {
@@ -225,6 +217,11 @@ export interface VisualPropertyField {
   readonly required: boolean;
   readonly enumValues?: readonly JsonValue[];
 }
+export interface VisualMaterialCatalogItem {
+  readonly manifest: DeclaredCodeMaterialManifest;
+  readonly exactRef: ExactProjectMaterialRef;
+  readonly visualPropertyFields: readonly VisualPropertyField[];
+}
 
 export interface ProjectBuildArtifactSet {
   readonly id: string;
@@ -253,10 +250,10 @@ export interface ProjectBuildArtifactSet {
   readonly testResult: ProjectTestResult;
   readonly diagnostics: readonly Diagnostic[];
   readonly buildReproducibility: "DETERMINISTIC" | "BEST_EFFORT";
-  readonly runtimeReproducibility: "UNKNOWN" | "DETERMINISTIC" | "BEST_EFFORT" | "NON_DETERMINISTIC";
+  readonly runtimeReproducibility:
+    "UNKNOWN" | "DETERMINISTIC" | "BEST_EFFORT" | "NON_DETERMINISTIC";
   readonly artifactSetFingerprint: string;
 }
-
 
 export type ProjectArtifactDescriptor = ArtifactRef;
 
@@ -285,7 +282,8 @@ export interface ProjectReleaseDefinition extends ProjectReleaseManifest {
   readonly materialArtifacts: readonly ProjectArtifactDescriptor[];
   readonly diagnostics: readonly Diagnostic[];
   readonly buildReproducibility: "DETERMINISTIC" | "BEST_EFFORT";
-  readonly runtimeReproducibility: "UNKNOWN" | "DETERMINISTIC" | "BEST_EFFORT" | "NON_DETERMINISTIC";
+  readonly runtimeReproducibility:
+    "UNKNOWN" | "DETERMINISTIC" | "BEST_EFFORT" | "NON_DETERMINISTIC";
 }
 
 export interface ProjectBuildCapability {
@@ -294,10 +292,7 @@ export interface ProjectBuildCapability {
     projectId: string,
     sourceRevision: number,
   ): Promise<ProjectBuildRequest>;
-  getBuild(
-    context: CallContext,
-    buildId: string,
-  ): Promise<ProjectBuildRequest | null>;
+  getBuild(context: CallContext, buildId: string): Promise<ProjectBuildRequest | null>;
   listBuilds(
     context: CallContext,
     projectId: string,
@@ -306,6 +301,10 @@ export interface ProjectBuildCapability {
     context: CallContext,
     buildId: string,
   ): Promise<ProjectBuildArtifactSet | null>;
+  visualMaterialCatalog(
+    context: CallContext,
+    buildId: string,
+  ): Promise<readonly VisualMaterialCatalogItem[]>;
   composeRelease(
     context: CallContext,
     projectId: string,
@@ -324,10 +323,7 @@ export interface ProjectBuildCapability {
     context: CallContext,
     projectId: string,
   ): Promise<readonly Resource<ProjectReleaseDefinition>[]>;
-  buildLog(
-    context: CallContext,
-    buildId: string,
-  ): Promise<readonly string[]>;
+  buildLog(context: CallContext, buildId: string): Promise<readonly string[]>;
   validateVisualPipeline(
     context: CallContext,
     buildId: string,
@@ -422,7 +418,6 @@ export interface ProjectServerModule {
   readonly actions: Readonly<Record<string, ProjectAction>>;
 }
 
-
 export interface ActiveProjectRelease {
   readonly id: string;
   readonly projectId: string;
@@ -443,11 +438,7 @@ export interface ProjectReleaseActivation {
 }
 
 export type ProjectRuntimeInstanceStatus =
-  | "STARTING"
-  | "READY"
-  | "DRAINING"
-  | "FAILED"
-  | "STOPPED";
+  "STARTING" | "READY" | "DRAINING" | "FAILED" | "STOPPED";
 
 export interface ProjectRuntimeInstance {
   readonly id: string;
@@ -579,15 +570,14 @@ export interface MaterialRegistryCapability {
   get(id: string, version?: string): MaterialManifest | null;
 }
 
-export const MaterialRegistryCapabilityToken =
-  defineCapability<MaterialRegistryCapability>({
+export const MaterialRegistryCapabilityToken = defineCapability<MaterialRegistryCapability>(
+  {
     id: "project.material-registry",
     version: "1.0.0",
-  });
+  },
+);
 
-export function validateMaterialManifest(
-  manifest: MaterialManifest,
-): ValidationResult {
+export function validateMaterialManifest(manifest: MaterialManifest): ValidationResult {
   const diagnostics: Diagnostic[] = [];
   for (const [field, value] of [
     ["id", manifest.id],
@@ -596,19 +586,21 @@ export function validateMaterialManifest(
     ["category", manifest.category],
   ] as const) {
     if (value.trim() === "") {
-      diagnostics.push(diagnostic(
-        "MATERIAL_FIELD_REQUIRED",
-        `Material ${field} is required.`,
-        { path: `/${field}` },
-      ));
+      diagnostics.push(
+        diagnostic("MATERIAL_FIELD_REQUIRED", `Material ${field} is required.`, {
+          path: `/${field}`,
+        }),
+      );
     }
   }
   if (!/^\d+\.\d+\.\d+$/.test(manifest.version)) {
-    diagnostics.push(diagnostic(
-      "MATERIAL_VERSION_INVALID",
-      "Material version must be an exact semantic version.",
-      { path: "/version" },
-    ));
+    diagnostics.push(
+      diagnostic(
+        "MATERIAL_VERSION_INVALID",
+        "Material version must be an exact semantic version.",
+        { path: "/version" },
+      ),
+    );
   }
   if (manifest.visualOperator !== undefined) {
     const visual = manifest.visualOperator;
@@ -618,11 +610,13 @@ export function validateMaterialManifest(
       visual.grainEffect !== "PRESERVE" ||
       !visual.supportedBackends.includes("calculation.memory")
     ) {
-      diagnostics.push(diagnostic(
-        "MATERIAL_VISUAL_OPERATOR_UNSUPPORTED",
-        "Visual Operator V1 requires ROW_MAP, ONE_TO_ONE, PRESERVE, and calculation.memory.",
-        { path: "/visualOperator" },
-      ));
+      diagnostics.push(
+        diagnostic(
+          "MATERIAL_VISUAL_OPERATOR_UNSUPPORTED",
+          "Visual Operator V1 requires ROW_MAP, ONE_TO_ONE, PRESERVE, and calculation.memory.",
+          { path: "/visualOperator" },
+        ),
+      );
     }
   }
   return { valid: diagnostics.length === 0, diagnostics };
@@ -637,14 +631,19 @@ export function visualPropertyFields(
     path: string,
     required: boolean,
   ): VisualPropertyField[] => {
-    if (typeof schemaValue !== "object" || schemaValue === null || Array.isArray(schemaValue)) return [];
+    if (
+      typeof schemaValue !== "object" ||
+      schemaValue === null ||
+      Array.isArray(schemaValue)
+    )
+      return [];
     const schema = schemaValue as Record<string, JsonValue>;
-    const editor = typeof editorValue === "object" && editorValue !== null && !Array.isArray(editorValue)
-      ? editorValue as Record<string, JsonValue>
-      : {};
-    const label = typeof editor.label === "string"
-      ? editor.label
-      : path.split("/").at(-1) ?? "";
+    const editor =
+      typeof editorValue === "object" && editorValue !== null && !Array.isArray(editorValue)
+        ? (editorValue as Record<string, JsonValue>)
+        : {};
+    const label =
+      typeof editor.label === "string" ? editor.label : (path.split("/").at(-1) ?? "");
     const format = typeof schema.format === "string" ? schema.format : undefined;
     const knownFormats: Partial<Record<VisualPropertyControl, true>> = {
       "decimal-string": true,
@@ -655,70 +654,82 @@ export function visualPropertyFields(
     const control: VisualPropertyControl | null = Array.isArray(schema.enum)
       ? "enum"
       : format !== undefined && knownFormats[format as VisualPropertyControl] === true
-      ? format as VisualPropertyControl
-      : schema.type === "string" || schema.type === "boolean" || schema.type === "integer" ||
-          schema.type === "array" || schema.type === "object"
-      ? schema.type
-      : null;
+        ? (format as VisualPropertyControl)
+        : schema.type === "string" ||
+            schema.type === "boolean" ||
+            schema.type === "integer" ||
+            schema.type === "array" ||
+            schema.type === "object"
+          ? schema.type
+          : null;
     if (control === "object") {
-      const properties = typeof schema.properties === "object" &&
+      const properties =
+        typeof schema.properties === "object" &&
         schema.properties !== null &&
         !Array.isArray(schema.properties)
-        ? schema.properties as Record<string, JsonValue>
-        : {};
+          ? (schema.properties as Record<string, JsonValue>)
+          : {};
       const requiredNames = new Set(
         Array.isArray(schema.required)
           ? schema.required.filter((item): item is string => typeof item === "string")
           : [],
       );
-      const editorProperties = typeof editor.properties === "object" &&
+      const editorProperties =
+        typeof editor.properties === "object" &&
         editor.properties !== null &&
         !Array.isArray(editor.properties)
-        ? editor.properties as Record<string, JsonValue>
-        : {};
+          ? (editor.properties as Record<string, JsonValue>)
+          : {};
       return Object.entries(properties).flatMap(([name, child]) =>
-        walk(child, editorProperties[name], `${path}/${name}`, requiredNames.has(name)));
+        walk(child, editorProperties[name], `${path}/${name}`, requiredNames.has(name)),
+      );
     }
     if (control === null) return [];
-    return [{
-      path,
-      label,
-      control,
-      required,
-      ...(Array.isArray(schema.enum) ? { enumValues: schema.enum } : {}),
-    }];
+    return [
+      {
+        path,
+        label,
+        control,
+        required,
+        ...(Array.isArray(schema.enum) ? { enumValues: schema.enum } : {}),
+      },
+    ];
   };
   return walk(configurationSchema, editorSchema, "", true);
 }
 
-export function validateVisualPipelineSpec(
-  pipeline: VisualPipelineSpec,
-): ValidationResult {
+export function validateVisualPipelineSpec(pipeline: VisualPipelineSpec): ValidationResult {
   const diagnostics: Diagnostic[] = [];
   const inputs = new Set(pipeline.inputs.map((input) => input.name));
   const nodes = new Map<string, VisualPipelineNode>();
   pipeline.nodes.forEach((node, index) => {
     if (nodes.has(node.nodeId)) {
-      diagnostics.push(diagnostic(
-        "VISUAL_PIPELINE_DUPLICATE_NODE",
-        "Visual Pipeline nodeId must be unique.",
-        { path: `/nodes/${index}/nodeId` },
-      ));
+      diagnostics.push(
+        diagnostic(
+          "VISUAL_PIPELINE_DUPLICATE_NODE",
+          "Visual Pipeline nodeId must be unique.",
+          { path: `/nodes/${index}/nodeId` },
+        ),
+      );
     }
     nodes.set(node.nodeId, node);
     const exact = node.material;
-    if ([
-      exact.buildFingerprint,
-      exact.sourceFingerprint,
-      exact.dependencyLockHash,
-      exact.artifactHash,
-      exact.manifestFingerprint,
-    ].some((value) => !/^[0-9a-f]{64}$/.test(value))) {
-      diagnostics.push(diagnostic(
-        "VISUAL_PIPELINE_MATERIAL_REF_INVALID",
-        "Visual Pipeline Material references must use exact SHA-256 identities.",
-        { path: `/nodes/${index}/material` },
-      ));
+    if (
+      [
+        exact.buildFingerprint,
+        exact.sourceFingerprint,
+        exact.dependencyLockHash,
+        exact.artifactHash,
+        exact.manifestFingerprint,
+      ].some((value) => !/^[0-9a-f]{64}$/.test(value))
+    ) {
+      diagnostics.push(
+        diagnostic(
+          "VISUAL_PIPELINE_MATERIAL_REF_INVALID",
+          "Visual Pipeline Material references must use exact SHA-256 identities.",
+          { path: `/nodes/${index}/material` },
+        ),
+      );
     }
   });
   const dependencies = new Map<string, Set<string>>();
@@ -727,20 +738,24 @@ export function validateVisualPipelineSpec(
     for (const binding of Object.values(node.inputBindings)) {
       if (binding.kind === "PIPELINE_INPUT") {
         if (!inputs.has(binding.input)) {
-          diagnostics.push(diagnostic(
-            "VISUAL_PIPELINE_INPUT_UNAVAILABLE",
-            "Visual Pipeline binding references an unknown input.",
-            { path: `/nodes/${index}/inputBindings` },
-          ));
+          diagnostics.push(
+            diagnostic(
+              "VISUAL_PIPELINE_INPUT_UNAVAILABLE",
+              "Visual Pipeline binding references an unknown input.",
+              { path: `/nodes/${index}/inputBindings` },
+            ),
+          );
         }
       } else {
         refs.add(binding.nodeId);
         if (!nodes.has(binding.nodeId)) {
-          diagnostics.push(diagnostic(
-            "VISUAL_PIPELINE_NODE_UNAVAILABLE",
-            "Visual Pipeline binding references an unknown node.",
-            { path: `/nodes/${index}/inputBindings` },
-          ));
+          diagnostics.push(
+            diagnostic(
+              "VISUAL_PIPELINE_NODE_UNAVAILABLE",
+              "Visual Pipeline binding references an unknown node.",
+              { path: `/nodes/${index}/inputBindings` },
+            ),
+          );
         }
       }
     }
@@ -760,15 +775,14 @@ export function validateVisualPipelineSpec(
     return false;
   };
   if ([...nodes.keys()].some(visit)) {
-    diagnostics.push(diagnostic(
-      "VISUAL_PIPELINE_CYCLE",
-      "Visual Pipeline graph must be acyclic.",
-      { path: "/nodes" },
-    ));
+    diagnostics.push(
+      diagnostic("VISUAL_PIPELINE_CYCLE", "Visual Pipeline graph must be acyclic.", {
+        path: "/nodes",
+      }),
+    );
   }
   return { valid: diagnostics.length === 0, diagnostics };
 }
-
 
 export function validateProjectReleaseManifest(
   release: ProjectReleaseManifest,
@@ -778,26 +792,31 @@ export function validateProjectReleaseManifest(
   release.materials.forEach((material, index) => {
     const identity = `${material.materialId}\u0000${material.materialVersion}`;
     if (identities.has(identity)) {
-      diagnostics.push(diagnostic(
-        "PROJECT_RELEASE_DUPLICATE_MATERIAL",
-        "Project Release contains a duplicate Material identity.",
-        { path: `/materials/${index}` },
-      ));
+      diagnostics.push(
+        diagnostic(
+          "PROJECT_RELEASE_DUPLICATE_MATERIAL",
+          "Project Release contains a duplicate Material identity.",
+          { path: `/materials/${index}` },
+        ),
+      );
     }
     identities.add(identity);
-    const fingerprints = material.source.authoringMode === "VISUAL"
-      ? [material.source.resource.fingerprint]
-      : [
-          material.source.module.sourceFingerprint,
-          material.source.module.artifactHash,
-          material.source.module.dependencyLockHash,
-        ];
+    const fingerprints =
+      material.source.authoringMode === "VISUAL"
+        ? [material.source.resource.fingerprint]
+        : [
+            material.source.module.sourceFingerprint,
+            material.source.module.artifactHash,
+            material.source.module.dependencyLockHash,
+          ];
     if (fingerprints.some((value) => !/^[0-9a-f]{64}$/.test(value))) {
-      diagnostics.push(diagnostic(
-        "PROJECT_RELEASE_FINGERPRINT_INVALID",
-        "Project Material references must use SHA-256 fingerprints.",
-        { path: `/materials/${index}/source` },
-      ));
+      diagnostics.push(
+        diagnostic(
+          "PROJECT_RELEASE_FINGERPRINT_INVALID",
+          "Project Material references must use SHA-256 fingerprints.",
+          { path: `/materials/${index}/source` },
+        ),
+      );
     }
   });
   return { valid: diagnostics.length === 0, diagnostics };

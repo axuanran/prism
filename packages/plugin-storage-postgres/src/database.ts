@@ -35,7 +35,24 @@ export interface DocumentTable {
 export interface PrismMigrationTable {
   readonly plugin_id: string;
   readonly migration_id: string;
+  readonly checksum: string | null;
   readonly applied_at: ColumnType<Date, Date, never>;
+}
+export interface AuditJournalTable {
+  readonly sequence: ColumnType<string, string, never>;
+  readonly id: string;
+  readonly recorded_at: ColumnType<Date, Date, never>;
+  readonly principal_id: string;
+  readonly action: string;
+  readonly target_kind: string;
+  readonly target_id: string;
+  readonly before_fingerprint: string | null;
+  readonly after_fingerprint: string | null;
+  readonly reason: string | null;
+  readonly correlation_id: string;
+  readonly approval_id: string | null;
+  readonly previous_hash: string | null;
+  readonly entry_hash: string;
 }
 
 export interface PostgresDatabase {
@@ -43,6 +60,7 @@ export interface PostgresDatabase {
   readonly resource_revision: ResourceRevisionTable;
   readonly document: DocumentTable;
   readonly prism_migration: PrismMigrationTable;
+  readonly audit_journal: AuditJournalTable;
 }
 
 export interface PostgresConnectionOptions {

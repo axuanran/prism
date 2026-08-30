@@ -1,3 +1,5 @@
+import { assertKernelId, assertKernelVersion } from "./identity.js";
+
 /**
  * Capability tokens.
  *
@@ -29,14 +31,15 @@ export interface CapabilityToken<TService> {
 export type AnyCapabilityToken = CapabilityToken<any>;
 
 /** The service type a token carries. */
-export type CapabilityService<T> =
-  T extends CapabilityToken<infer S> ? S : never;
+export type CapabilityService<T> = T extends CapabilityToken<infer S> ? S : never;
 
 export function defineCapability<TService>(spec: {
   id: string;
   version: string;
 }): CapabilityToken<TService> {
-  return { id: spec.id, version: spec.version };
+  assertKernelId(spec.id, "capability.id");
+  assertKernelVersion(spec.version, "capability.version");
+  return Object.freeze({ id: spec.id, version: spec.version });
 }
 
 export interface CapabilityRequirement<TService = unknown> {
@@ -48,8 +51,7 @@ export interface CapabilityRequirement<TService = unknown> {
 
 /** A requirement may be written as the bare token when defaults suffice. */
 export type RequirementSpec<TService = unknown> =
-  | CapabilityToken<TService>
-  | CapabilityRequirement<TService>;
+  CapabilityToken<TService> | CapabilityRequirement<TService>;
 
 // A heterogeneous map of differently-typed requirements. The phantom carrier
 // is invariant, so unknown/never would reject every concrete token; precision
@@ -63,9 +65,7 @@ export type RequirementMap = Readonly<Record<string, RequirementSpec<any>>>;
  * handle an absent provider.
  */
 export type ResolvedDependencies<TRequires extends RequirementMap> = {
-  readonly [K in keyof TRequires]: TRequires[K] extends CapabilityRequirement<
-    infer S
-  >
+  readonly [K in keyof TRequires]: TRequires[K] extends CapabilityRequirement<infer S>
     ? TRequires[K] extends { readonly optional: true }
       ? S | undefined
       : S
@@ -74,9 +74,9 @@ export type ResolvedDependencies<TRequires extends RequirementMap> = {
       : never;
 };
 
-export function normalizeRequirement<TService>(
-  spec: RequirementSpec<TService>,
-): Required<Omit<CapabilityRequirement<TService>, "range">> & {
+export function normalizeRequirement<TService>(spec: RequirementSpec<TService>): Required<
+  Omit<CapabilityRequirement<TService>, "range">
+> & {
   readonly range: string;
 } {
   const requirement: CapabilityRequirement<TService> =

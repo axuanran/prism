@@ -19,14 +19,14 @@
     "build": "tsc --build"
   },
   "dependencies": {
-    "@prismengine/contracts-calculation": "workspace:*",
-    "@prismengine/contracts-data": "workspace:*",
-    "@prismengine/kernel": "workspace:*"
+    "@prismengine/contracts-calculation": "workspace:0.1.20",
+    "@prismengine/contracts-data": "workspace:0.1.20",
+    "@prismengine/kernel": "workspace:0.1.20"
   },
   "license": "Apache-2.0",
   "devDependencies": {
-    "@prismengine/plugin-calculation-memory": "workspace:*",
-    "@prismengine/testing": "workspace:*"
+    "@prismengine/plugin-calculation-memory": "workspace:0.1.20",
+    "@prismengine/testing": "workspace:0.1.20"
   },
   "repository": {
     "type": "git",

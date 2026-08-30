@@ -89,26 +89,22 @@ export interface PlanNodeAnalysisValue {
 export interface PlanAnalysisExtension {
   readonly id: string;
   readonly semanticVersion: string;
-  analyzeNode(
-    request: PlanNodeAnalysisRequest,
-  ): AnalysisResult<PlanNodeAnalysisValue>;
+  analyzeNode(request: PlanNodeAnalysisRequest): AnalysisResult<PlanNodeAnalysisValue>;
 }
 
 /**
  * Contract versions belong to the extension points, not analyzers or npm
  * packages. Step 0A deliberately requires exact version equality.
  */
-export const TypeAnalysisExtensionPoint =
-  defineExtensionPoint<TypeAnalysisExtension>({
-    id: "calculation.type-analysis",
-    version: "1.0.0",
-  });
+export const TypeAnalysisExtensionPoint = defineExtensionPoint<TypeAnalysisExtension>({
+  id: "calculation.type-analysis",
+  version: "1.0.0",
+});
 
-export const PlanAnalysisExtensionPoint =
-  defineExtensionPoint<PlanAnalysisExtension>({
-    id: "calculation.plan-analysis",
-    version: "1.0.0",
-  });
+export const PlanAnalysisExtensionPoint = defineExtensionPoint<PlanAnalysisExtension>({
+  id: "calculation.plan-analysis",
+  version: "1.0.0",
+});
 
 export type AnalyzerKind = "type" | "plan";
 

@@ -19,9 +19,9 @@
     "build": "tsc --build"
   },
   "dependencies": {
-    "@prismengine/contracts-calculation": "workspace:*",
-    "@prismengine/contracts-data": "workspace:*",
-    "@prismengine/kernel": "workspace:*",
+    "@prismengine/contracts-calculation": "workspace:0.1.20",
+    "@prismengine/contracts-data": "workspace:0.1.20",
+    "@prismengine/kernel": "workspace:0.1.20",
     "@sinclair/typebox": "^0.34.41"
   },
   "license": "Apache-2.0",

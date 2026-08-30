@@ -114,7 +114,9 @@ function assertJsonValueAtDepth(value: unknown, path: string, depth: number): vo
   }
 
   if (Array.isArray(value)) {
-    value.forEach((item, index) => assertJsonValueAtDepth(item, `${path}/${index}`, depth + 1));
+    value.forEach((item, index) =>
+      assertJsonValueAtDepth(item, `${path}/${index}`, depth + 1),
+    );
     return;
   }
 

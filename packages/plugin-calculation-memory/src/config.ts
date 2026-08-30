@@ -1,7 +1,4 @@
-import type {
-  AllocationPolicy,
-  ExpressionSpec,
-} from "@prismengine/contracts-calculation";
+import type { AllocationPolicy, ExpressionSpec } from "@prismengine/contracts-calculation";
 import type { RoundingMode } from "@prismengine/contracts-data";
 import { Type } from "@sinclair/typebox";
 
@@ -26,7 +23,8 @@ export interface JoinConfig {
   readonly kind: "inner" | "left";
   readonly leftKey: string;
   readonly rightKey: string;
-  readonly expectedCardinality: "one-to-one" | "many-to-one" | "one-to-many" | "many-to-many";
+  readonly expectedCardinality:
+    "one-to-one" | "many-to-one" | "one-to-many" | "many-to-many";
   readonly rightPrefix?: string;
 }
 
@@ -73,9 +71,7 @@ export interface AggregateConfig {
 }
 
 export type AllocationAmountSource =
-  | { readonly field: string }
-  | { readonly parameter: string }
-  | { readonly value: string };
+  { readonly field: string } | { readonly parameter: string } | { readonly value: string };
 
 export interface AllocateConfig {
   readonly amount: AllocationAmountSource;
@@ -179,16 +175,15 @@ export const LookupConfigSchema = Type.Object(
       },
       { additionalProperties: false },
     ),
-    missingPolicy: Type.Optional(Type.Union([
-      Type.Literal("error"),
-      Type.Literal("null"),
-      Type.Literal("default"),
-    ], { default: "error" })),
+    missingPolicy: Type.Optional(
+      Type.Union([Type.Literal("error"), Type.Literal("null"), Type.Literal("default")], {
+        default: "error",
+      }),
+    ),
     defaultValue: Type.Optional(ScalarConfigValueSchema),
-    multiplePolicy: Type.Optional(Type.Union([
-      Type.Literal("error"),
-      Type.Literal("first"),
-    ], { default: "error" })),
+    multiplePolicy: Type.Optional(
+      Type.Union([Type.Literal("error"), Type.Literal("first")], { default: "error" }),
+    ),
   },
   { additionalProperties: false },
 );
@@ -206,11 +201,11 @@ export const DecisionConfigSchema = Type.Object(
       ),
       { minItems: 1 },
     ),
-    unmatchedPolicy: Type.Optional(Type.Union([
-      Type.Literal("keep"),
-      Type.Literal("drop"),
-      Type.Literal("error"),
-    ], { default: "keep" })),
+    unmatchedPolicy: Type.Optional(
+      Type.Union([Type.Literal("keep"), Type.Literal("drop"), Type.Literal("error")], {
+        default: "keep",
+      }),
+    ),
   },
   { additionalProperties: false },
 );
@@ -235,13 +230,15 @@ export const AggregateConfigSchema = Type.Object(
       ),
       { minItems: 1 },
     ),
-    division: Type.Optional(Type.Object(
-      {
-        precision: Type.Integer({ minimum: 1, maximum: 34 }),
-        rounding: RoundingModeSchema,
-      },
-      { additionalProperties: false },
-    )),
+    division: Type.Optional(
+      Type.Object(
+        {
+          precision: Type.Integer({ minimum: 1, maximum: 34 }),
+          rounding: RoundingModeSchema,
+        },
+        { additionalProperties: false },
+      ),
+    ),
   },
   { additionalProperties: false },
 );
@@ -273,9 +270,18 @@ const AllocationPolicySchema = Type.Object(
 export const AllocateConfigSchema = Type.Object(
   {
     amount: Type.Union([
-      Type.Object({ field: Type.String({ minLength: 1 }) }, { additionalProperties: false }),
-      Type.Object({ parameter: Type.String({ minLength: 1 }) }, { additionalProperties: false }),
-      Type.Object({ value: Type.String({ pattern: "^-?[0-9]+(?:\\.[0-9]+)?$" }) }, { additionalProperties: false }),
+      Type.Object(
+        { field: Type.String({ minLength: 1 }) },
+        { additionalProperties: false },
+      ),
+      Type.Object(
+        { parameter: Type.String({ minLength: 1 }) },
+        { additionalProperties: false },
+      ),
+      Type.Object(
+        { value: Type.String({ pattern: "^-?[0-9]+(?:\\.[0-9]+)?$" }) },
+        { additionalProperties: false },
+      ),
     ]),
     weight: ExpressionSchema,
     partitionBy: Type.Array(Type.String({ minLength: 1 })),
@@ -308,60 +314,79 @@ export const OutputConfigSchema = Type.Object({}, { additionalProperties: false 
 export const PipelineResourceSchema = Type.Object(
   {
     id: Type.String({ minLength: 1 }),
-    inputs: Type.Array(Type.Object(
-      {
-        name: Type.String({ minLength: 1 }),
-        schema: Type.Unknown(),
-        description: Type.Optional(Type.String()),
-      },
-      { additionalProperties: false },
-    )),
-    parameters: Type.Optional(Type.Array(Type.Object(
-      {
-        name: Type.String({ minLength: 1 }),
-        type: Type.Unknown(),
-        description: Type.Optional(Type.String()),
-      },
-      { additionalProperties: false },
-    ))),
-    nodes: Type.Array(Type.Object(
-      {
-        id: Type.String({ minLength: 1 }),
-        operation: Type.String({ minLength: 1 }),
-        config: Type.Unknown(),
-        label: Type.Optional(Type.String()),
-        position: Type.Optional(Type.Object({ x: Type.Number(), y: Type.Number() }, { additionalProperties: false })),
-      },
-      { additionalProperties: false },
-    )),
-    edges: Type.Array(Type.Object(
-      {
-        fromNode: Type.String({ minLength: 1 }),
-        fromPort: Type.String({ minLength: 1 }),
-        toNode: Type.String({ minLength: 1 }),
-        toPort: Type.String({ minLength: 1 }),
-      },
-      { additionalProperties: false },
-    )),
-    outputs: Type.Array(Type.Object(
-      {
-        name: Type.String({ minLength: 1 }),
-        fromNode: Type.String({ minLength: 1 }),
-        fromPort: Type.String({ minLength: 1 }),
-        description: Type.Optional(Type.String()),
-      },
-      { additionalProperties: false },
-    )),
+    inputs: Type.Array(
+      Type.Object(
+        {
+          name: Type.String({ minLength: 1 }),
+          schema: Type.Unknown(),
+          description: Type.Optional(Type.String()),
+        },
+        { additionalProperties: false },
+      ),
+    ),
+    parameters: Type.Optional(
+      Type.Array(
+        Type.Object(
+          {
+            name: Type.String({ minLength: 1 }),
+            type: Type.Unknown(),
+            description: Type.Optional(Type.String()),
+          },
+          { additionalProperties: false },
+        ),
+      ),
+    ),
+    nodes: Type.Array(
+      Type.Object(
+        {
+          id: Type.String({ minLength: 1 }),
+          operation: Type.String({ minLength: 1 }),
+          config: Type.Unknown(),
+          label: Type.Optional(Type.String()),
+          position: Type.Optional(
+            Type.Object(
+              { x: Type.Number(), y: Type.Number() },
+              { additionalProperties: false },
+            ),
+          ),
+        },
+        { additionalProperties: false },
+      ),
+    ),
+    edges: Type.Array(
+      Type.Object(
+        {
+          fromNode: Type.String({ minLength: 1 }),
+          fromPort: Type.String({ minLength: 1 }),
+          toNode: Type.String({ minLength: 1 }),
+          toPort: Type.String({ minLength: 1 }),
+        },
+        { additionalProperties: false },
+      ),
+    ),
+    outputs: Type.Array(
+      Type.Object(
+        {
+          name: Type.String({ minLength: 1 }),
+          fromNode: Type.String({ minLength: 1 }),
+          fromPort: Type.String({ minLength: 1 }),
+          description: Type.Optional(Type.String()),
+        },
+        { additionalProperties: false },
+      ),
+    ),
   },
   { additionalProperties: false },
 );
 
 export const LookupTableResourceSchema = Type.Object(
   {
-    columns: Type.Array(Type.Object(
-      { name: Type.String({ minLength: 1 }), type: Type.Unknown() },
-      { additionalProperties: false },
-    )),
+    columns: Type.Array(
+      Type.Object(
+        { name: Type.String({ minLength: 1 }), type: Type.Unknown() },
+        { additionalProperties: false },
+      ),
+    ),
     rows: Type.Array(Type.Record(Type.String(), ScalarConfigValueSchema)),
   },
   { additionalProperties: false },

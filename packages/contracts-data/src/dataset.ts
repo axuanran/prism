@@ -1,9 +1,5 @@
 import type * as arrow from "apache-arrow";
-import {
-  arrowBatchFromRows,
-  rowValueFromArrow,
-  toArrowSchema,
-} from "./arrow.js";
+import { arrowBatchFromRows, rowValueFromArrow, toArrowSchema } from "./arrow.js";
 import type { CallContext } from "./call-context.js";
 import { PrismError } from "./diagnostics.js";
 import type { Row, TableType } from "./value-type.js";
@@ -26,9 +22,10 @@ export class DataBatch {
   }
 
   getColumn(column: string | number): arrow.Vector | undefined {
-    const vector = typeof column === "number"
-      ? this.recordBatch.getChildAt(column)
-      : this.recordBatch.getChild(column);
+    const vector =
+      typeof column === "number"
+        ? this.recordBatch.getChildAt(column)
+        : this.recordBatch.getChild(column);
     return vector ?? undefined;
   }
 }
@@ -61,10 +58,7 @@ export function datasetFromRows(
   const batches: DataBatch[] = [];
   for (let offset = 0; offset < rows.length; offset += batchSize) {
     const batchRows = rows.slice(offset, offset + batchSize);
-    batches.push(new DataBatch(
-      schema,
-      arrowBatchFromRows(schema, batchRows, arrowSchema),
-    ));
+    batches.push(new DataBatch(schema, arrowBatchFromRows(schema, batchRows, arrowSchema)));
   }
 
   return {
@@ -124,10 +118,7 @@ export async function collectRows(
 }
 
 /** Counts physical batch rows without constructing a single row object. */
-export async function countRows(
-  dataset: Dataset,
-  context: CallContext,
-): Promise<number> {
+export async function countRows(dataset: Dataset, context: CallContext): Promise<number> {
   let total = 0;
   for await (const batch of dataset.stream(context)) total += batch.numRows;
   return total;

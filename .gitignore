@@ -6,3 +6,6 @@ coverage/
 .env*
 .vite/
 .DS_Store
+release/npm/
+test-results/
+playwright-report/

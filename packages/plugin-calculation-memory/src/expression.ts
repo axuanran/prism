@@ -38,7 +38,8 @@ const BOOLEAN_TYPE: ValueType = Object.freeze({ kind: "boolean" });
 const STRING_TYPE: ValueType = Object.freeze({ kind: "string" });
 const NULL_TYPE: ValueType = Object.freeze({ kind: "null", nullable: true });
 
-type TokenKind = "number" | "string" | "identifier" | "operator" | "(" | ")" | "," | "." | "eof";
+type TokenKind =
+  "number" | "string" | "identifier" | "operator" | "(" | ")" | "," | "." | "eof";
 
 interface Token {
   readonly kind: TokenKind;
@@ -70,11 +71,15 @@ class Lexer {
     if (/\d/u.test(first) || (first === "." && /\d/u.test(this.source[start + 1] ?? ""))) {
       return this.number();
     }
-    if (first === "\"" || first === "'") return this.string(first);
+    if (first === '"' || first === "'") return this.string(first);
     if (/[A-Za-z_$]/u.test(first)) {
       this.position += 1;
       while (/[A-Za-z0-9_$]/u.test(this.source[this.position] ?? "")) this.position += 1;
-      return { kind: "identifier", text: this.source.slice(start, this.position), position: start };
+      return {
+        kind: "identifier",
+        text: this.source.slice(start, this.position),
+        position: start,
+      };
     }
 
     const pair = this.source.slice(start, start + 2);
@@ -112,9 +117,14 @@ class Lexer {
       if (["+", "-"].includes(this.source[this.position] ?? "")) this.position += 1;
       const digits = this.position;
       while (/\d/u.test(this.source[this.position] ?? "")) this.position += 1;
-      if (digits === this.position) throw new ExpressionSyntaxError("Invalid numeric exponent.", exponent);
+      if (digits === this.position)
+        throw new ExpressionSyntaxError("Invalid numeric exponent.", exponent);
     }
-    return { kind: "number", text: this.source.slice(start, this.position), position: start };
+    return {
+      kind: "number",
+      text: this.source.slice(start, this.position),
+      position: start,
+    };
   }
 
   private string(quote: string): Token {
@@ -137,7 +147,7 @@ class Lexer {
         r: "\r",
         t: "\t",
         "\\": "\\",
-        "\"": "\"",
+        '"': '"',
         "'": "'",
       };
       value += escapes[escaped] ?? escaped;
@@ -174,7 +184,10 @@ class Parser {
     if (this.at("eof")) throw new ExpressionSyntaxError("Expression is empty.", 0);
     const expression = this.parseExpression(0);
     if (!this.at("eof")) {
-      throw new ExpressionSyntaxError(`Unexpected token "${this.current.text}".`, this.current.position);
+      throw new ExpressionSyntaxError(
+        `Unexpected token "${this.current.text}".`,
+        this.current.position,
+      );
     }
     return expression;
   }
@@ -184,7 +197,8 @@ class Parser {
     while (this.current.kind === "operator") {
       const precedence = PRECEDENCE[this.current.text];
       if (precedence === undefined || precedence < minimumPrecedence) break;
-      const operator = this.current.text as "+" | "-" | "*" | "/" | "==" | "!=" | ">" | ">=" | "<" | "<=" | "&&" | "||";
+      const operator = this.current.text as
+        "+" | "-" | "*" | "/" | "==" | "!=" | ">" | ">=" | "<" | "<=" | "&&" | "||";
       this.advance();
       const right = this.parseExpression(precedence + 1);
       left = { kind: "binary", operator, left, right };
@@ -193,7 +207,10 @@ class Parser {
   }
 
   private parsePrefix(): Expression {
-    if (this.current.kind === "operator" && (this.current.text === "-" || this.current.text === "!")) {
+    if (
+      this.current.kind === "operator" &&
+      (this.current.text === "-" || this.current.text === "!")
+    ) {
       const operator = this.current.text;
       this.advance();
       return { kind: "unary", operator, operand: this.parseExpression(7) };
@@ -215,7 +232,10 @@ class Parser {
       return { kind: "literal", value };
     }
     if (this.current.kind !== "identifier") {
-      throw new ExpressionSyntaxError(`Expected an expression, found "${this.current.text}".`, this.current.position);
+      throw new ExpressionSyntaxError(
+        `Expected an expression, found "${this.current.text}".`,
+        this.current.position,
+      );
     }
 
     const identifier = this.current.text;
@@ -230,7 +250,10 @@ class Parser {
     while (this.at(".")) {
       this.advance();
       if (this.current.kind !== "identifier") {
-        throw new ExpressionSyntaxError("Expected a field name after '.'.", this.current.position);
+        throw new ExpressionSyntaxError(
+          "Expected a field name after '.'.",
+          this.current.position,
+        );
       }
       path.push(this.current.text);
       this.advance();
@@ -254,7 +277,10 @@ class Parser {
 
   private expect(kind: TokenKind): void {
     if (this.current.kind !== kind) {
-      throw new ExpressionSyntaxError(`Expected "${kind}", found "${this.current.text}".`, this.current.position);
+      throw new ExpressionSyntaxError(
+        `Expected "${kind}", found "${this.current.text}".`,
+        this.current.position,
+      );
     }
     this.advance();
   }
@@ -269,12 +295,43 @@ class Parser {
 }
 
 export const FUNCTION_SIGNATURES: readonly FunctionSignature[] = Object.freeze([
-  { name: "round", parameters: [{ name: "x", type: DECIMAL_TYPE }, { name: "scale", type: DECIMAL_TYPE }], returns: DECIMAL_TYPE, description: "Rounds a decimal; scale defaults to 2." },
+  {
+    name: "round",
+    parameters: [
+      { name: "x", type: DECIMAL_TYPE },
+      { name: "scale", type: DECIMAL_TYPE },
+    ],
+    returns: DECIMAL_TYPE,
+    description: "Rounds a decimal; scale defaults to 2.",
+  },
   { name: "abs", parameters: [{ name: "x", type: DECIMAL_TYPE }], returns: DECIMAL_TYPE },
-  { name: "min", parameters: [{ name: "value", type: DECIMAL_TYPE }], returns: DECIMAL_TYPE, variadic: true },
-  { name: "max", parameters: [{ name: "value", type: DECIMAL_TYPE }], returns: DECIMAL_TYPE, variadic: true },
-  { name: "coalesce", parameters: [{ name: "value", type: DECIMAL_TYPE }], returns: DECIMAL_TYPE, variadic: true },
-  { name: "if", parameters: [{ name: "condition", type: BOOLEAN_TYPE }, { name: "whenTrue", type: DECIMAL_TYPE }, { name: "whenFalse", type: DECIMAL_TYPE }], returns: DECIMAL_TYPE },
+  {
+    name: "min",
+    parameters: [{ name: "value", type: DECIMAL_TYPE }],
+    returns: DECIMAL_TYPE,
+    variadic: true,
+  },
+  {
+    name: "max",
+    parameters: [{ name: "value", type: DECIMAL_TYPE }],
+    returns: DECIMAL_TYPE,
+    variadic: true,
+  },
+  {
+    name: "coalesce",
+    parameters: [{ name: "value", type: DECIMAL_TYPE }],
+    returns: DECIMAL_TYPE,
+    variadic: true,
+  },
+  {
+    name: "if",
+    parameters: [
+      { name: "condition", type: BOOLEAN_TYPE },
+      { name: "whenTrue", type: DECIMAL_TYPE },
+      { name: "whenFalse", type: DECIMAL_TYPE },
+    ],
+    returns: DECIMAL_TYPE,
+  },
 ]);
 
 function isNumeric(type: ValueType): boolean {
@@ -308,7 +365,9 @@ interface TypeState {
 }
 
 function typeError(state: TypeState, message: string): void {
-  state.diagnostics.push(diagnostic(CalculationDiagnosticCode.EXPRESSION_TYPE_ERROR, message));
+  state.diagnostics.push(
+    diagnostic(CalculationDiagnosticCode.EXPRESSION_TYPE_ERROR, message),
+  );
 }
 
 function extensionType(
@@ -329,24 +388,50 @@ function inferExpression(expression: Expression, state: TypeState): ValueType {
       if (typeof expression.value === "number") return DECIMAL_TYPE;
       return STRING_TYPE;
     case "parameter":
-      state.diagnostics.push(diagnostic(CalculationDiagnosticCode.EXPRESSION_UNKNOWN_FIELD, `Unknown parameter "${expression.name}".`, { details: { parameter: expression.name } }));
+      state.diagnostics.push(
+        diagnostic(
+          CalculationDiagnosticCode.EXPRESSION_UNKNOWN_FIELD,
+          `Unknown parameter "${expression.name}".`,
+          { details: { parameter: expression.name } },
+        ),
+      );
       return NULL_TYPE;
     case "field": {
       state.references.push([...expression.path]);
       const root = state.scope[expression.path[0] ?? ""];
       if (root === undefined) {
-        state.diagnostics.push(diagnostic(CalculationDiagnosticCode.EXPRESSION_UNKNOWN_FIELD, `Unknown field "${expression.path.join(".")}".`, { details: { field: expression.path.join(".") } }));
+        state.diagnostics.push(
+          diagnostic(
+            CalculationDiagnosticCode.EXPRESSION_UNKNOWN_FIELD,
+            `Unknown field "${expression.path.join(".")}".`,
+            { details: { field: expression.path.join(".") } },
+          ),
+        );
         return NULL_TYPE;
       }
       let type: ValueType = root;
       for (const segment of expression.path.slice(1)) {
         if (type.kind !== "object") {
-          state.diagnostics.push(diagnostic(CalculationDiagnosticCode.EXPRESSION_UNKNOWN_FIELD, `Field "${expression.path.join(".")}" does not exist.`, { details: { field: expression.path.join(".") } }));
+          state.diagnostics.push(
+            diagnostic(
+              CalculationDiagnosticCode.EXPRESSION_UNKNOWN_FIELD,
+              `Field "${expression.path.join(".")}" does not exist.`,
+              { details: { field: expression.path.join(".") } },
+            ),
+          );
           return NULL_TYPE;
         }
-        const nested: ValueType | undefined = type.fields.find((field) => field.name === segment)?.type;
+        const nested: ValueType | undefined = type.fields.find(
+          (field) => field.name === segment,
+        )?.type;
         if (nested === undefined) {
-          state.diagnostics.push(diagnostic(CalculationDiagnosticCode.EXPRESSION_UNKNOWN_FIELD, `Field "${expression.path.join(".")}" does not exist.`, { details: { field: expression.path.join(".") } }));
+          state.diagnostics.push(
+            diagnostic(
+              CalculationDiagnosticCode.EXPRESSION_UNKNOWN_FIELD,
+              `Field "${expression.path.join(".")}" does not exist.`,
+              { details: { field: expression.path.join(".") } },
+            ),
+          );
           return NULL_TYPE;
         }
         type = nested;
@@ -364,7 +449,8 @@ function inferExpression(expression: Expression, state: TypeState): ValueType {
         if (!isNumeric(operand)) typeError(state, "Unary '-' requires a numeric operand.");
         return DECIMAL_TYPE;
       }
-      if (operand.kind !== "boolean") typeError(state, "Unary '!' requires a boolean operand.");
+      if (operand.kind !== "boolean")
+        typeError(state, "Unary '!' requires a boolean operand.");
       return BOOLEAN_TYPE;
     }
     case "binary": {
@@ -380,20 +466,35 @@ function inferExpression(expression: Expression, state: TypeState): ValueType {
       );
       if (extended !== undefined) return extended;
       if (["+", "-", "*", "/"].includes(expression.operator)) {
-        if (!isNumeric(left) || !isNumeric(right)) typeError(state, `Operator '${expression.operator}' requires numeric operands.`);
+        if (!isNumeric(left) || !isNumeric(right))
+          typeError(state, `Operator '${expression.operator}' requires numeric operands.`);
         return DECIMAL_TYPE;
       }
       if (["&&", "||"].includes(expression.operator)) {
-        if (left.kind !== "boolean" || right.kind !== "boolean") typeError(state, `Operator '${expression.operator}' requires boolean operands.`);
+        if (left.kind !== "boolean" || right.kind !== "boolean")
+          typeError(state, `Operator '${expression.operator}' requires boolean operands.`);
         return BOOLEAN_TYPE;
       }
       const equality = expression.operator === "==" || expression.operator === "!=";
-      const ordered = (isNumeric(left) && isNumeric(right))
-        || (left.kind === right.kind && ["string", "date", "datetime"].includes(left.kind));
-      if (equality && (!compatible(left, right) || ["object", "table"].includes(left.kind) || ["object", "table"].includes(right.kind))) {
-        typeError(state, `Operator '${expression.operator}' received incompatible operand types '${left.kind}' and '${right.kind}'.`);
+      const ordered =
+        (isNumeric(left) && isNumeric(right)) ||
+        (left.kind === right.kind && ["string", "date", "datetime"].includes(left.kind));
+      if (
+        equality &&
+        (!compatible(left, right) ||
+          ["object", "table"].includes(left.kind) ||
+          ["object", "table"].includes(right.kind))
+      ) {
+        typeError(
+          state,
+          `Operator '${expression.operator}' received incompatible operand types '${left.kind}' and '${right.kind}'.`,
+        );
       }
-      if (!equality && !ordered) typeError(state, `Operator '${expression.operator}' requires compatible ordered operands.`);
+      if (!equality && !ordered)
+        typeError(
+          state,
+          `Operator '${expression.operator}' requires compatible ordered operands.`,
+        );
       return BOOLEAN_TYPE;
     }
     case "conditional": {
@@ -401,7 +502,8 @@ function inferExpression(expression: Expression, state: TypeState): ValueType {
       const whenTrue = inferExpression(expression.whenTrue, state);
       const whenFalse = inferExpression(expression.whenFalse, state);
       if (test.kind !== "boolean") typeError(state, "Conditional test must be boolean.");
-      if (!compatible(whenTrue, whenFalse)) typeError(state, "Conditional branches must have compatible types.");
+      if (!compatible(whenTrue, whenFalse))
+        typeError(state, "Conditional branches must have compatible types.");
       return commonType(whenTrue, whenFalse);
     }
     case "call":
@@ -409,7 +511,11 @@ function inferExpression(expression: Expression, state: TypeState): ValueType {
   }
 }
 
-function inferCall(callee: string, args: readonly Expression[], state: TypeState): ValueType {
+function inferCall(
+  callee: string,
+  args: readonly Expression[],
+  state: TypeState,
+): ValueType {
   const types = args.map((argument) => inferExpression(argument, state));
   const extended = extensionType(
     state.analysis.inferFunction({ name: callee, arguments: types }),
@@ -418,23 +524,34 @@ function inferCall(callee: string, args: readonly Expression[], state: TypeState
   if (extended !== undefined) return extended;
   const known = FUNCTION_SIGNATURES.some((signature) => signature.name === callee);
   if (!known) {
-    state.diagnostics.push(diagnostic(CalculationDiagnosticCode.EXPRESSION_UNKNOWN_FUNCTION, `Unknown function "${callee}".`, { details: { function: callee } }));
+    state.diagnostics.push(
+      diagnostic(
+        CalculationDiagnosticCode.EXPRESSION_UNKNOWN_FUNCTION,
+        `Unknown function "${callee}".`,
+        { details: { function: callee } },
+      ),
+    );
     return NULL_TYPE;
   }
   if (callee === "round") {
-    if (types.length < 1 || types.length > 2) typeError(state, "round requires one or two arguments.");
-    if (types[0] !== undefined && !isNumeric(types[0])) typeError(state, "round requires a numeric first argument.");
-    if (types[1] !== undefined && !isNumeric(types[1])) typeError(state, "round scale must be numeric.");
+    if (types.length < 1 || types.length > 2)
+      typeError(state, "round requires one or two arguments.");
+    if (types[0] !== undefined && !isNumeric(types[0]))
+      typeError(state, "round requires a numeric first argument.");
+    if (types[1] !== undefined && !isNumeric(types[1]))
+      typeError(state, "round scale must be numeric.");
     return DECIMAL_TYPE;
   }
   if (callee === "abs") {
     if (types.length !== 1) typeError(state, "abs requires exactly one argument.");
-    if (types[0] !== undefined && !isNumeric(types[0])) typeError(state, "abs requires a numeric argument.");
+    if (types[0] !== undefined && !isNumeric(types[0]))
+      typeError(state, "abs requires a numeric argument.");
     return DECIMAL_TYPE;
   }
   if (callee === "min" || callee === "max") {
     if (types.length === 0) typeError(state, `${callee} requires at least one argument.`);
-    if (types.some((type) => !isNumeric(type))) typeError(state, `${callee} requires numeric arguments.`);
+    if (types.some((type) => !isNumeric(type)))
+      typeError(state, `${callee} requires numeric arguments.`);
     return DECIMAL_TYPE;
   }
   if (callee === "coalesce") {
@@ -443,20 +560,25 @@ function inferCall(callee: string, args: readonly Expression[], state: TypeState
       return NULL_TYPE;
     }
     const first = types[0] ?? NULL_TYPE;
-    if (types.slice(1).some((type) => !compatible(first, type))) typeError(state, "coalesce arguments must have compatible types.");
+    if (types.slice(1).some((type) => !compatible(first, type)))
+      typeError(state, "coalesce arguments must have compatible types.");
     return types.reduce(commonType, NULL_TYPE);
   }
   if (types.length !== 3) typeError(state, "if requires exactly three arguments.");
-  if (types[0] !== undefined && types[0].kind !== "boolean") typeError(state, "if condition must be boolean.");
+  if (types[0] !== undefined && types[0].kind !== "boolean")
+    typeError(state, "if condition must be boolean.");
   const whenTrue = types[1] ?? NULL_TYPE;
   const whenFalse = types[2] ?? NULL_TYPE;
-  if (!compatible(whenTrue, whenFalse)) typeError(state, "if branches must have compatible types.");
+  if (!compatible(whenTrue, whenFalse))
+    typeError(state, "if branches must have compatible types.");
   return commonType(whenTrue, whenFalse);
 }
 
 export type ExpressionValue = RowValue;
 
-export type ExpressionParameterBindings = Readonly<Record<string, string | number | boolean | Decimal>>;
+export type ExpressionParameterBindings = Readonly<
+  Record<string, string | number | boolean | Decimal>
+>;
 
 export type ExpressionEvaluator = (
   row: Row,
@@ -464,7 +586,6 @@ export type ExpressionEvaluator = (
   report: (item: Diagnostic) => void,
   path?: string,
 ) => ExpressionValue;
-
 
 interface EvaluationContext {
   readonly row: Row;
@@ -484,7 +605,13 @@ function decimalValue(value: ExpressionValue): Decimal | null {
 function fieldValue(row: Row, path: readonly string[]): ExpressionValue {
   let value: RowValue | undefined = row[path[0] ?? ""];
   for (const segment of path.slice(1)) {
-    if (value === null || typeof value !== "object" || Decimal.isDecimal(value) || value instanceof Date) return null;
+    if (
+      value === null ||
+      typeof value !== "object" ||
+      Decimal.isDecimal(value) ||
+      value instanceof Date
+    )
+      return null;
     value = value[segment];
   }
   return value ?? null;
@@ -493,10 +620,14 @@ function fieldValue(row: Row, path: readonly string[]): ExpressionValue {
 function compareValues(left: ExpressionValue, right: ExpressionValue): number {
   const leftDecimal = decimalValue(left);
   const rightDecimal = decimalValue(right);
-  if (leftDecimal !== null && rightDecimal !== null) return leftDecimal.comparedTo(rightDecimal);
-  if (left instanceof Date && right instanceof Date) return left.getTime() - right.getTime();
-  if (typeof left === "string" && typeof right === "string") return left.localeCompare(right);
-  if (typeof left === "boolean" && typeof right === "boolean") return Number(left) - Number(right);
+  if (leftDecimal !== null && rightDecimal !== null)
+    return leftDecimal.comparedTo(rightDecimal);
+  if (left instanceof Date && right instanceof Date)
+    return left.getTime() - right.getTime();
+  if (typeof left === "string" && typeof right === "string")
+    return left.localeCompare(right);
+  if (typeof left === "boolean" && typeof right === "boolean")
+    return Number(left) - Number(right);
   if (left === right) return 0;
   if (left === null) return -1;
   if (right === null) return 1;
@@ -517,14 +648,16 @@ function compileEvaluator(expression: Expression): Evaluator {
       return (context) => {
         const value = context.parameters[expression.name];
         if (value !== undefined) return value;
-        context.report(diagnostic(
-          CalculationDiagnosticCode.PIPELINE_PORT_UNCONNECTED,
-          `Required parameter "${expression.name}" was not supplied.`,
-          {
-            ...(context.path === undefined ? {} : { path: context.path }),
-            details: { parameter: expression.name },
-          },
-        ));
+        context.report(
+          diagnostic(
+            CalculationDiagnosticCode.PIPELINE_PORT_UNCONNECTED,
+            `Required parameter "${expression.name}" was not supplied.`,
+            {
+              ...(context.path === undefined ? {} : { path: context.path }),
+              details: { parameter: expression.name },
+            },
+          ),
+        );
         return null;
       };
     case "unary": {
@@ -533,12 +666,16 @@ function compileEvaluator(expression: Expression): Evaluator {
       return (context) => decimalValue(operand(context))?.negated() ?? null;
     }
     case "binary":
-      return compileBinary(expression.operator, compileEvaluator(expression.left), compileEvaluator(expression.right));
+      return compileBinary(
+        expression.operator,
+        compileEvaluator(expression.left),
+        compileEvaluator(expression.right),
+      );
     case "conditional": {
       const test = compileEvaluator(expression.test);
       const whenTrue = compileEvaluator(expression.whenTrue);
       const whenFalse = compileEvaluator(expression.whenFalse);
-      return (context) => Boolean(test(context)) ? whenTrue(context) : whenFalse(context);
+      return (context) => (Boolean(test(context)) ? whenTrue(context) : whenFalse(context));
     }
     case "call":
       return compileCall(expression.callee, expression.args.map(compileEvaluator));
@@ -546,8 +683,10 @@ function compileEvaluator(expression: Expression): Evaluator {
 }
 
 function compileBinary(operator: string, left: Evaluator, right: Evaluator): Evaluator {
-  if (operator === "&&") return (context) => Boolean(left(context)) && Boolean(right(context));
-  if (operator === "||") return (context) => Boolean(left(context)) || Boolean(right(context));
+  if (operator === "&&")
+    return (context) => Boolean(left(context)) && Boolean(right(context));
+  if (operator === "||")
+    return (context) => Boolean(left(context)) || Boolean(right(context));
   if (["==", "!=", ">", ">=", "<", "<="].includes(operator)) {
     return (context) => {
       const comparison = compareValues(left(context), right(context));
@@ -567,7 +706,11 @@ function compileBinary(operator: string, left: Evaluator, right: Evaluator): Eva
     if (operator === "-") return leftValue.minus(rightValue);
     if (operator === "*") return leftValue.times(rightValue);
     if (rightValue.isZero()) {
-      context.report(diagnostic(CalculationDiagnosticCode.DIVISION_BY_ZERO, "Division by zero.", { ...(context.path === undefined ? {} : { path: context.path }) }));
+      context.report(
+        diagnostic(CalculationDiagnosticCode.DIVISION_BY_ZERO, "Division by zero.", {
+          ...(context.path === undefined ? {} : { path: context.path }),
+        }),
+      );
       return null;
     }
     return leftValue.dividedBy(rightValue);
@@ -576,9 +719,10 @@ function compileBinary(operator: string, left: Evaluator, right: Evaluator): Eva
 
 function compileCall(callee: string, args: readonly Evaluator[]): Evaluator {
   if (callee === "if") {
-    return (context) => Boolean(args[0]?.(context))
-      ? (args[1]?.(context) ?? null)
-      : (args[2]?.(context) ?? null);
+    return (context) =>
+      Boolean(args[0]?.(context))
+        ? (args[1]?.(context) ?? null)
+        : (args[2]?.(context) ?? null);
   }
   if (callee === "coalesce") {
     return (context) => {
@@ -595,7 +739,13 @@ function compileCall(callee: string, args: readonly Evaluator[]): Evaluator {
       const scale = decimalValue(args[1]?.(context) ?? new D(2));
       if (value === null || scale === null) return null;
       if (!scale.isInteger() || scale.isNegative() || scale.greaterThan(100)) {
-        context.report(diagnostic(CalculationDiagnosticCode.EXPRESSION_TYPE_ERROR, "round scale must be an integer from 0 through 100.", { ...(context.path === undefined ? {} : { path: context.path }) }));
+        context.report(
+          diagnostic(
+            CalculationDiagnosticCode.EXPRESSION_TYPE_ERROR,
+            "round scale must be an integer from 0 through 100.",
+            { ...(context.path === undefined ? {} : { path: context.path }) },
+          ),
+        );
         return null;
       }
       return value.toDecimalPlaces(scale.toNumber(), Decimal.ROUND_HALF_UP);
@@ -609,7 +759,9 @@ function compileCall(callee: string, args: readonly Evaluator[]): Evaluator {
       const values = args.map((argument) => decimalValue(argument(context)));
       if (values.some((value) => value === null)) return null;
       const decimals = values.filter((value): value is Decimal => value !== null);
-      return decimals.reduce((selected, value) => callee === "min" ? Decimal.min(selected, value) : Decimal.max(selected, value));
+      return decimals.reduce((selected, value) =>
+        callee === "min" ? Decimal.min(selected, value) : Decimal.max(selected, value),
+      );
     };
   }
   return () => null;
@@ -617,12 +769,13 @@ function compileCall(callee: string, args: readonly Evaluator[]): Evaluator {
 
 export function compileExpressionEvaluator(expression: Expression): ExpressionEvaluator {
   const evaluate = compileEvaluator(expression);
-  return (row, parameters, report, path) => evaluate({
-    row,
-    parameters,
-    report,
-    ...(path === undefined ? {} : { path }),
-  });
+  return (row, parameters, report, path) =>
+    evaluate({
+      row,
+      parameters,
+      report,
+      ...(path === undefined ? {} : { path }),
+    });
 }
 
 export function analyzeExpressionInternal(
@@ -634,19 +787,27 @@ export function analyzeExpressionInternal(
   try {
     ast = new Parser(spec.text).parse();
   } catch (error) {
-    const syntax = error instanceof ExpressionSyntaxError ? error : new ExpressionSyntaxError("Expression could not be parsed.", 0);
+    const syntax =
+      error instanceof ExpressionSyntaxError
+        ? error
+        : new ExpressionSyntaxError("Expression could not be parsed.", 0);
     return {
-      diagnostics: [diagnostic(CalculationDiagnosticCode.EXPRESSION_PARSE_ERROR, syntax.message, { details: { position: syntax.position } })],
+      diagnostics: [
+        diagnostic(CalculationDiagnosticCode.EXPRESSION_PARSE_ERROR, syntax.message, {
+          details: { position: syntax.position },
+        }),
+      ],
     };
   }
 
   const state: TypeState = { diagnostics: [], references: [], scope, analysis };
   const type = inferExpression(ast, state);
   if (state.diagnostics.length > 0) return { diagnostics: state.diagnostics };
-  const uniqueReferences = [...new Map(state.references.map((path) => [path.join("."), path] as const)).values()];
+  const uniqueReferences = [
+    ...new Map(state.references.map((path) => [path.join("."), path] as const)).values(),
+  ];
   return { source: spec, ast, type, references: uniqueReferences };
 }
-
 
 export function compilePublicExpression(
   spec: ExpressionSpec,

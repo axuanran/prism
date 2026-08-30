@@ -10,7 +10,11 @@ import type { PortSchema, PipelineSpec } from "./pipeline.js";
 import type { SemanticPlan } from "./semantic-plan.js";
 import type { CalculationInput, ExecutionOptions, ExecutionResult } from "./execution.js";
 import type { OperationDescriptor } from "./operation.js";
-import type { CompiledExpression, ExpressionSpec, FunctionSignature } from "./expression.js";
+import type {
+  CompiledExpression,
+  ExpressionSpec,
+  FunctionSignature,
+} from "./expression.js";
 
 /**
  * The calculation capability: the generic technical capability every vertical
@@ -55,15 +59,9 @@ export interface PlanExplanation {
 
 export interface CalculationCapability {
   /** Static validation: schema, types, ports, cycles. Reads no data. */
-  validatePipeline(
-    context: CallContext,
-    spec: PipelineSpec,
-  ): Promise<ValidationResult>;
+  validatePipeline(context: CallContext, spec: PipelineSpec): Promise<ValidationResult>;
 
-  compilePipeline(
-    context: CallContext,
-    spec: PipelineSpec,
-  ): Promise<CompiledPipeline>;
+  compilePipeline(context: CallContext, spec: PipelineSpec): Promise<CompiledPipeline>;
 
   executePipeline(
     context: CallContext,

@@ -5,7 +5,16 @@
       "path": "./packages/contracts-data"
     },
     {
+      "path": "./packages/contracts-governance"
+    },
+    {
       "path": "./packages/contracts-artifact"
+    },
+    {
+      "path": "./packages/contracts-secret"
+    },
+    {
+      "path": "./packages/contracts-worker"
     },
     {
       "path": "./packages/contracts-project"
@@ -62,13 +71,46 @@
       "path": "./packages/plugin-artifact-store-local"
     },
     {
+      "path": "./packages/plugin-artifact-store-s3"
+    },
+    {
+      "path": "./packages/plugin-audit-export-s3"
+    },
+    {
+      "path": "./packages/plugin-observability-otel"
+    },
+    {
+      "path": "./packages/plugin-governance-approval"
+    },
+    {
+      "path": "./packages/plugin-secret-local"
+    },
+    {
+      "path": "./packages/plugin-secret-vault"
+    },
+    {
+      "path": "./packages/plugin-worker-local"
+    },
+    {
+      "path": "./packages/plugin-worker-container"
+    },
+    {
       "path": "./packages/project-sdk"
     },
     {
       "path": "./packages/plugin-sdk"
     },
     {
+      "path": "./packages/plugin-studio-api"
+    },
+    {
       "path": "./packages/platform"
+    },
+    {
+      "path": "./apps/host"
+    },
+    {
+      "path": "./apps/e2e-host"
     }
   ]
 }

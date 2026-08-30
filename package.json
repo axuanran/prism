@@ -3,9 +3,9 @@
   "version": "0.1.20",
   "private": true,
   "type": "module",
-  "packageManager": "pnpm@11.21.0",
+  "packageManager": "pnpm@11.21.0+sha512.521705bce689924eac72f5a3587122f362689ef6571e55ba80076fd637c11132ecffada26fad4ea79c485bfddbfd3d5a2a5b05805a77e893de71ec8a6cca3bb1",
   "engines": {
-    "node": ">=24"
+    "node": "24.20.0"
   },
   "scripts": {
     "build": "tsc --build",
@@ -15,12 +15,18 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "test": "vitest run",
+    "release:preflight": "node scripts/release-preflight.mjs --mode manifest",
+    "release:verify-packages": "node scripts/release-preflight.mjs --mode packages",
+    "release:prepare-packages": "node scripts/release-preflight.mjs --mode prepare",
+    "production:verify-postgres-restore": "node scripts/verify-postgres-restore.mjs",
+    "test:postgres:embedded": "node scripts/test-postgres-embedded.mjs",
     "test:watch": "vitest"
   },
   "devDependencies": {
     "@types/node": "^24.13.3",
     "@typescript/native": "npm:typescript@7.0.2",
     "eslint": "^9.39.5",
+    "embedded-postgres": "17.10.0-beta.17",
     "pg": "^8.23.0",
     "prettier": "^3.9.6",
     "typescript": "npm:@typescript/typescript6@6.0.2",

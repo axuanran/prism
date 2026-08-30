@@ -17,12 +17,15 @@ export interface Principal {
   readonly id: string;
   readonly displayName?: string;
   readonly roles: readonly string[];
+  /** Host-resolved capabilities. HTTP authorization never trusts browser roles. */
+  readonly permissions?: readonly string[];
 }
 
 export const SYSTEM_PRINCIPAL: Principal = Object.freeze({
   id: "system",
   displayName: "System",
   roles: Object.freeze(["system"]),
+  permissions: Object.freeze(["*"]),
 });
 
 /** Opaque handle to a pinned version of input data. */
@@ -55,6 +58,10 @@ export interface CallContext {
   readonly asOf: TemporalContext;
   /** Ties every log line, event and diagnostic of one request together. */
   readonly correlationId: string;
+  /** Operator-supplied reason for auditable state changes. */
+  readonly changeReason?: string;
+  /** Exact governance approval authorizing this mutation, when required. */
+  readonly approvalId?: string;
   readonly signal?: AbortSignal;
   /** BCP-47 tag used to localize diagnostics at the presentation edge. */
   readonly locale?: string;
@@ -64,9 +71,7 @@ export interface CallContext {
  * Context for engine-internal work (bootstrap, seeding, scheduled runs).
  * Not a shortcut for user-initiated calls: those must carry a real principal.
  */
-export function systemCallContext(
-  overrides: Partial<CallContext> = {},
-): CallContext {
+export function systemCallContext(overrides: Partial<CallContext> = {}): CallContext {
   return {
     principal: SYSTEM_PRINCIPAL,
     asOf: { validAt: new Date().toISOString() },

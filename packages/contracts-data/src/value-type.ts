@@ -137,10 +137,7 @@ export function tableType(columns: readonly FieldType[]): TableType {
   return { kind: "table", columns };
 }
 
-export function findColumn(
-  type: TableType,
-  name: string,
-): FieldType | undefined {
+export function findColumn(type: TableType, name: string): FieldType | undefined {
   return type.columns.find((c) => c.name === name);
 }
 

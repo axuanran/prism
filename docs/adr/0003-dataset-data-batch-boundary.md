@@ -1,6 +1,6 @@
 # ADR 0003: `Dataset` and `DataBatch` are the Arrow batch boundary
 
-**Status:** Accepted and implemented; provider limitation documented below
+**Status:** Accepted and implemented
 
 ## Context
 
@@ -19,7 +19,7 @@ Calculation batch data crosses capability boundaries through a named, schema-bea
 - Columnar code uses `DataBatch.getColumn` without allocating rows.
 - The memory backend currently materializes and reconstructs Arrow datasets at multiple node boundaries; this is a visible V0.1 cost, not a columnar implementation claim (`packages/plugin-calculation-memory/src/memory-backend.ts`).
 - `DecimalType` needs column-level precision and scale because Arrow Decimal128 does (`packages/contracts-data/src/value-type.ts`, `packages/contracts-data/src/arrow.ts`).
-- Organization’s deferred dataset provider re-queries mutable storage on each stream and therefore does not fully meet the stable re-iteration contract (`packages/plugin-organization-basic/src/plugin.ts`).
+- Organization’s deferred Dataset providers materialize once on first stream, share the in-flight materialization across concurrent consumers, and cache both the immutable result and failures (`packages/plugin-organization-basic/src/plugin.ts`).
 
 ## Cost to reverse
 

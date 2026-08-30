@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { Handle, Position } from '@vue-flow/core';
-import type { NodeProps } from '@vue-flow/core';
-import type { PortDefinition } from '../../api/types';
+import { Handle, Position } from "@vue-flow/core";
+import type { NodeProps } from "@vue-flow/core";
+import type { PortDefinition } from "../../api/types";
 
 export interface PipelineNodeData {
   readonly operationId: string;

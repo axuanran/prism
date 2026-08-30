@@ -5,7 +5,12 @@ import {
   PlanAnalysisExtensionPoint,
   type PipelineSpec,
 } from "@prismengine/contracts-calculation";
-import { D, datasetFromRows, systemCallContext, tableType } from "@prismengine/contracts-data";
+import {
+  D,
+  datasetFromRows,
+  systemCallContext,
+  tableType,
+} from "@prismengine/contracts-data";
 import { createEngine } from "@prismengine/kernel";
 import { calculationPlugin } from "@prismengine/plugin-calculation-memory";
 import {
@@ -25,25 +30,30 @@ async function boot() {
 }
 
 function requiredGrain() {
-  return [{
-    id: "dataset.grain",
-    kind: "plan" as const,
-    contractVersion: PlanAnalysisExtensionPoint.version,
-  }];
+  return [
+    {
+      id: "dataset.grain",
+      kind: "plan" as const,
+      contractVersion: PlanAnalysisExtensionPoint.version,
+    },
+  ];
 }
 
 describe("dataset grain analysis plugin", () => {
   it("preserves grain through Formula and derives Aggregate grain from groupBy", async () => {
     const engine = await boot();
     const grain = engine.capability(GrainCapabilityToken);
-    const source = grain.annotate(tableType([
-      { name: "month", type: { kind: "string" } },
-      { name: "entity", type: { kind: "string" } },
-      { name: "amount", type: DECIMAL },
-    ]), {
-      dimensions: ["month", "entity"],
-      uniqueBy: ["month", "entity"],
-    });
+    const source = grain.annotate(
+      tableType([
+        { name: "month", type: { kind: "string" } },
+        { name: "entity", type: { kind: "string" } },
+        { name: "amount", type: DECIMAL },
+      ]),
+      {
+        dimensions: ["month", "entity"],
+        uniqueBy: ["month", "entity"],
+      },
+    );
     const spec: PipelineSpec = {
       id: "grain-aggregate",
       inputs: [{ name: "source", schema: source }],
@@ -100,13 +110,16 @@ describe("dataset grain analysis plugin", () => {
   it("emits a runtime uniqueness constraint and actual duplicate Lookup data still fails", async () => {
     const engine = await boot();
     const grain = engine.capability(GrainCapabilityToken);
-    const inputSchema = grain.annotate(tableType([
-      { name: "entity", type: { kind: "string" } },
-      { name: "code", type: { kind: "string" } },
-    ]), {
-      dimensions: ["entity", "code"],
-      uniqueBy: ["entity", "code"],
-    });
+    const inputSchema = grain.annotate(
+      tableType([
+        { name: "entity", type: { kind: "string" } },
+        { name: "code", type: { kind: "string" } },
+      ]),
+      {
+        dimensions: ["entity", "code"],
+        uniqueBy: ["entity", "code"],
+      },
+    );
     const lookupSchema = tableType([
       { name: "code", type: { kind: "string" } },
       { name: "value", type: DECIMAL },
@@ -173,13 +186,16 @@ describe("dataset grain analysis plugin", () => {
   it("rejects Lookup first-policy because it cannot enforce the Grain constraint", async () => {
     const engine = await boot();
     const grain = engine.capability(GrainCapabilityToken);
-    const inputSchema = grain.annotate(tableType([
-      { name: "entity", type: { kind: "string" } },
-      { name: "code", type: { kind: "string" } },
-    ]), {
-      dimensions: ["entity", "code"],
-      uniqueBy: ["entity", "code"],
-    });
+    const inputSchema = grain.annotate(
+      tableType([
+        { name: "entity", type: { kind: "string" } },
+        { name: "code", type: { kind: "string" } },
+      ]),
+      {
+        dimensions: ["entity", "code"],
+        uniqueBy: ["entity", "code"],
+      },
+    );
     const lookupSchema = tableType([
       { name: "code", type: { kind: "string" } },
       { name: "value", type: DECIMAL },

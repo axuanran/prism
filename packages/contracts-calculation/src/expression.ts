@@ -33,18 +33,7 @@ export interface UnaryExpression {
 }
 
 export type BinaryOperator =
-  | "+"
-  | "-"
-  | "*"
-  | "/"
-  | "=="
-  | "!="
-  | ">"
-  | ">="
-  | "<"
-  | "<="
-  | "&&"
-  | "||";
+  "+" | "-" | "*" | "/" | "==" | "!=" | ">" | ">=" | "<" | "<=" | "&&" | "||";
 
 export interface BinaryExpression {
   readonly kind: "binary";

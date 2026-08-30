@@ -1,8 +1,4 @@
-import type {
-  CallContext,
-  JsonObject,
-  JsonPrimitive,
-} from "@prismengine/contracts-data";
+import type { CallContext, JsonObject, JsonPrimitive } from "@prismengine/contracts-data";
 import { defineCapability } from "@prismengine/kernel";
 import type { Resource, ResourceQuery } from "@prismengine/kernel";
 
@@ -33,7 +29,75 @@ export interface SaveDraftCommand<TSpec = unknown> {
   readonly id?: string;
   readonly name: string;
   readonly spec: TSpec;
+  /**
+   * Optimistic concurrency token. When supplied, the latest resource revision
+   * must still have this exact updatedAt value. `null` asserts that the
+   * resource does not exist yet.
+   */
+  readonly expectedUpdatedAt?: string | null;
 }
+export interface AuditRecord {
+  readonly sequence: number;
+  readonly id: string;
+  readonly timestamp: string;
+  readonly principalId: string;
+  readonly action: string;
+  readonly targetKind: string;
+  readonly targetId: string;
+  readonly beforeFingerprint: string | null;
+  readonly afterFingerprint: string | null;
+  readonly reason?: string;
+  readonly correlationId: string;
+  readonly approvalId?: string;
+  readonly previousHash: string | null;
+  readonly entryHash: string;
+}
+
+export interface AuditQuery {
+  readonly afterSequence?: number;
+  readonly limit?: number;
+  readonly targetKind?: string;
+  readonly targetId?: string;
+}
+
+export interface AuditVerification {
+  readonly valid: boolean;
+  readonly checked: number;
+  readonly brokenAtSequence?: number;
+}
+
+export interface AuditJournal {
+  list(context: CallContext, query?: AuditQuery): Promise<readonly AuditRecord[]>;
+  verify(context: CallContext): Promise<AuditVerification>;
+}
+export interface AuditExportResult {
+  readonly exported: number;
+  readonly verified: number;
+  readonly lastSequence: number;
+}
+
+export interface AuditExportCapability {
+  exportRange(
+    context: CallContext,
+    afterSequence?: number,
+    limit?: number,
+  ): Promise<AuditExportResult>;
+  verifyRange(
+    context: CallContext,
+    afterSequence?: number,
+    limit?: number,
+  ): Promise<AuditExportResult>;
+  productionReadiness(context: CallContext): Promise<{
+    readonly id: "audit-worm-export";
+    readonly passed: boolean;
+    readonly evidence?: string;
+  }>;
+}
+
+export const AuditExportCapabilityToken = defineCapability<AuditExportCapability>({
+  id: "storage.audit-export",
+  version: "1.0.0",
+});
 
 export interface ResourceStore {
   get<TSpec>(
@@ -87,6 +151,7 @@ export interface ResourceStore {
     kind: string,
     id: string,
     revision: number,
+    expectedUpdatedAt?: string,
   ): Promise<Resource<TSpec>>;
 
   /** Clones a revision into a new draft. The only way back from archived. */
@@ -113,7 +178,10 @@ export interface DocumentQuery {
   readonly where?: Readonly<Record<string, string | number | boolean | null>>;
   readonly limit?: number;
   readonly offset?: number;
-  readonly orderBy?: readonly { readonly field: string; readonly direction: "asc" | "desc" }[];
+  readonly orderBy?: readonly {
+    readonly field: string;
+    readonly direction: "asc" | "desc";
+  }[];
 }
 
 export interface DocumentCollection<TDocument extends { readonly id: string }> {
@@ -173,20 +241,24 @@ export interface AtomicWriteResult {
  * inside the atomic boundary.
  */
 export interface AtomicWriteCapability {
-  execute(
-    context: CallContext,
-    request: AtomicWriteRequest,
-  ): Promise<AtomicWriteResult>;
+  execute(context: CallContext, request: AtomicWriteRequest): Promise<AtomicWriteResult>;
 }
 
-export const AtomicWriteCapabilityToken =
-  defineCapability<AtomicWriteCapability>({
-    id: "storage.atomic-write",
-    version: "1.0.0",
-  });
+export const AtomicWriteCapabilityToken = defineCapability<AtomicWriteCapability>({
+  id: "storage.atomic-write",
+  version: "1.0.0",
+});
+
+export interface StorageReadinessEvidence {
+  readonly id: "database.pitr" | "audit-journal.valid";
+  readonly passed: boolean;
+  readonly evidence: string;
+}
 
 export interface StorageCapability {
   readonly resources: ResourceStore;
+  readonly audit: AuditJournal;
+  productionReadiness(context: CallContext): Promise<readonly StorageReadinessEvidence[]>;
 
   /**
    * `name` is plugin-namespaced, e.g. "organization.people". The engine does
@@ -208,8 +280,12 @@ export const StorageDiagnosticCode = {
   RESOURCE_PUBLISHED_IMMUTABLE: "RESOURCE_PUBLISHED_IMMUTABLE",
   RESOURCE_KIND_UNKNOWN: "RESOURCE_KIND_UNKNOWN",
   RESOURCE_VALIDATION_FAILED: "RESOURCE_VALIDATION_FAILED",
+  RESOURCE_CONFLICT: "RESOURCE_CONFLICT",
   ATOMIC_WRITE_INVALID: "ATOMIC_WRITE_INVALID",
   ATOMIC_WRITE_PRECONDITION_FAILED: "ATOMIC_WRITE_PRECONDITION_FAILED",
+  IDENTIFIER_INVALID: "STORAGE_IDENTIFIER_INVALID",
+  AUDIT_CONTEXT_INVALID: "STORAGE_AUDIT_CONTEXT_INVALID",
+  QUERY_INVALID: "STORAGE_QUERY_INVALID",
 } as const;
 
 export const ResourceEventType = {

@@ -1,10 +1,16 @@
-import { EngineDiagnosticCode, PrismError, diagnostic, hasErrors } from "@prismengine/contracts-data";
+import {
+  EngineDiagnosticCode,
+  PrismError,
+  diagnostic,
+  hasErrors,
+} from "@prismengine/contracts-data";
 import type { Diagnostic } from "@prismengine/contracts-data";
 import { normalizeRequirement } from "./capability.js";
 import type { CapabilityToken, RequirementMap } from "./capability.js";
 import type { Logger, PluginContext, PluginRegisterContext } from "./context.js";
 import type { EventBus } from "./events.js";
 import type { AnyPluginDefinition, Migration } from "./plugin.js";
+import { assertKernelId } from "./identity.js";
 import { resolvePlugins } from "./resolver.js";
 import type { Resolution } from "./resolver.js";
 import {
@@ -17,26 +23,78 @@ import {
   silentLogger,
 } from "./registries.js";
 import type { ResourceTypeDefinition } from "./resource.js";
+import { ENGINE_VERSION } from "./version.js";
 
-export const ENGINE_VERSION = "0.1.20";
+export { ENGINE_VERSION } from "./version.js";
+
+export interface AppliedMigration {
+  readonly id: string;
+  readonly checksum?: string;
+}
+
+export const MIGRATION_JOURNAL_MAX_ENTRIES = 10_000;
 
 /** Records which migrations already ran. Storage plugins supply a durable one. */
 export interface MigrationJournal {
-  applied(pluginId: string): Promise<readonly string[]>;
-  record(pluginId: string, migrationId: string): Promise<void>;
+  applied(pluginId: string): Promise<readonly AppliedMigration[]>;
+  record(pluginId: string, migrationId: string, checksum: string): Promise<void>;
+  run(
+    pluginId: string,
+    migrationId: string,
+    checksum: string,
+    action: () => Promise<void>,
+  ): Promise<"applied" | "skipped">;
 }
 
 export class InMemoryMigrationJournal implements MigrationJournal {
-  private readonly entries = new Map<string, Set<string>>();
+  private readonly entries = new Map<string, Map<string, string>>();
+  private readonly locks = new Map<string, Promise<void>>();
 
-  async applied(pluginId: string): Promise<readonly string[]> {
-    return [...(this.entries.get(pluginId) ?? [])];
+  async applied(pluginId: string): Promise<readonly AppliedMigration[]> {
+    return [...(this.entries.get(pluginId) ?? [])].map(([id, checksum]) => ({
+      id,
+      checksum,
+    }));
   }
 
-  async record(pluginId: string, migrationId: string): Promise<void> {
-    const set = this.entries.get(pluginId) ?? new Set<string>();
-    set.add(migrationId);
-    this.entries.set(pluginId, set);
+  async record(pluginId: string, migrationId: string, checksum: string): Promise<void> {
+    const entries = this.entries.get(pluginId) ?? new Map<string, string>();
+    entries.set(migrationId, checksum);
+    this.entries.set(pluginId, entries);
+  }
+
+  async run(
+    pluginId: string,
+    migrationId: string,
+    checksum: string,
+    action: () => Promise<void>,
+  ): Promise<"applied" | "skipped"> {
+    const key = `${pluginId}\u0000${migrationId}`;
+    const prior = this.locks.get(key) ?? Promise.resolve();
+    let result: "applied" | "skipped" = "skipped";
+    const current = prior.then(async () => {
+      const existing = this.entries.get(pluginId)?.get(migrationId);
+      if (existing !== undefined) {
+        if (existing !== checksum) {
+          throw PrismError.of(
+            "MIGRATION_CHECKSUM_MISMATCH",
+            "An applied migration implementation changed.",
+            { pluginId, migrationId, expected: existing, actual: checksum },
+          );
+        }
+        return;
+      }
+      await action();
+      await this.record(pluginId, migrationId, checksum);
+      result = "applied";
+    });
+    this.locks.set(key, current);
+    try {
+      await current;
+      return result;
+    } finally {
+      if (this.locks.get(key) === current) this.locks.delete(key);
+    }
   }
 }
 
@@ -45,6 +103,14 @@ export interface EngineOptions {
   readonly logger?: (pluginId: string) => Logger;
   readonly migrationJournal?: MigrationJournal;
   readonly onEventHandlerError?: (error: unknown) => void;
+  readonly confirmMigrationBackup?: (
+    pluginId: string,
+    migration: Migration,
+  ) => boolean | Promise<boolean>;
+  readonly approveMigrationExternalEffects?: (
+    pluginId: string,
+    migration: Migration,
+  ) => boolean | Promise<boolean>;
 }
 
 export type EnginePhase = "created" | "resolved" | "registered" | "started" | "stopped";
@@ -191,6 +257,12 @@ export class Engine {
     // Capabilities are frozen here so `start()` can assume a complete graph.
     this.capabilities.freeze();
     this.phase = "registered";
+    try {
+      await this.preflightMigrations(this.runtimes.map((runtime) => runtime.definition));
+    } catch (error) {
+      await this.cleanupRegistered();
+      throw wrap(error, EngineDiagnosticCode.PLUGIN_START_FAILED, "migration-preflight");
+    }
 
     for (const runtime of this.runtimes) {
       try {
@@ -291,24 +363,95 @@ export class Engine {
     try {
       await runtime.definition.stop?.(runtime.context);
     } catch (error) {
+      if (error instanceof PrismError) {
+        this.diagnostics.reportAll(error.diagnostics);
+        return;
+      }
       this.diagnostics.report(
         diagnostic(
           EngineDiagnosticCode.PLUGIN_STOP_FAILED,
-          `Plugin "${runtime.definition.id}" failed to stop: ${String(error)}`,
-          { details: { pluginId: runtime.definition.id } },
+          "Plugin lifecycle cleanup failed.",
+          {
+            details: {
+              pluginId: runtime.definition.id,
+              errorType: lifecycleErrorType(error),
+            },
+          },
         ),
       );
     }
   }
 
+  private async preflightMigrations(
+    definitions: readonly AnyPluginDefinition[],
+  ): Promise<void> {
+    for (const definition of definitions) {
+      if ((definition.migrations?.length ?? 0) === 0) continue;
+      const applied = parseAppliedMigrations(
+        definition.id,
+        await this.journal.applied(definition.id),
+      );
+      for (const migration of definition.migrations ?? []) {
+        if (!/^[0-9a-f]{64}$/u.test(migration.checksum)) {
+          throw PrismError.of(
+            "MIGRATION_CHECKSUM_INVALID",
+            "Migration checksum must be a lowercase SHA-256 value.",
+            { pluginId: definition.id, migrationId: migration.id },
+          );
+        }
+        if (applied.has(migration.id)) {
+          const recordedChecksum = applied.get(migration.id);
+          if (recordedChecksum !== undefined && recordedChecksum !== migration.checksum) {
+            throw PrismError.of(
+              "MIGRATION_CHECKSUM_MISMATCH",
+              "An applied migration implementation changed.",
+              {
+                pluginId: definition.id,
+                migrationId: migration.id,
+                expected: recordedChecksum,
+                actual: migration.checksum,
+              },
+            );
+          }
+          continue;
+        }
+        if (
+          migration.requiresBackup &&
+          (await this.options.confirmMigrationBackup?.(definition.id, migration)) !== true
+        ) {
+          throw PrismError.of(
+            "MIGRATION_BACKUP_REQUIRED",
+            "Migration requires an explicitly confirmed backup.",
+            { pluginId: definition.id, migrationId: migration.id, risk: migration.risk },
+          );
+        }
+        if (
+          migration.externalEffects.length > 0 &&
+          (await this.options.approveMigrationExternalEffects?.(
+            definition.id,
+            migration,
+          )) !== true
+        ) {
+          throw PrismError.of(
+            "MIGRATION_EXTERNAL_EFFECTS_APPROVAL_REQUIRED",
+            "Migration declares external effects that require explicit approval.",
+            {
+              pluginId: definition.id,
+              migrationId: migration.id,
+              externalEffects: migration.externalEffects,
+            },
+          );
+        }
+        await migration.preflight?.({ pluginId: definition.id });
+      }
+    }
+  }
+
   private async runMigrations(definition: AnyPluginDefinition): Promise<void> {
-    const migrations: readonly Migration[] = definition.migrations ?? [];
-    if (migrations.length === 0) return;
-    const applied = new Set(await this.journal.applied(definition.id));
-    for (const migration of migrations) {
-      if (applied.has(migration.id)) continue;
-      await migration.up({ pluginId: definition.id });
-      await this.journal.record(definition.id, migration.id);
+    for (const migration of definition.migrations ?? []) {
+      await this.journal.run(definition.id, migration.id, migration.checksum, () =>
+        migration.up({ pluginId: definition.id }),
+      );
     }
   }
 
@@ -353,15 +496,86 @@ export class Engine {
             { pluginId: definition.id, capabilityId: token.id },
           );
         }
-        this.capabilities.provide(definition.id, token as CapabilityToken<unknown>, service);
+        this.capabilities.provide(
+          definition.id,
+          token as CapabilityToken<unknown>,
+          service,
+        );
       },
     } satisfies PluginRegisterContext<RequirementMap>;
   }
 }
+function parseAppliedMigrations(
+  pluginId: string,
+  value: unknown,
+): Map<string, string | undefined> {
+  if (!Array.isArray(value) || value.length > MIGRATION_JOURNAL_MAX_ENTRIES) {
+    throw migrationJournalInvalid(pluginId, "snapshot");
+  }
+  const applied = new Map<string, string | undefined>();
+  for (let entryIndex = 0; entryIndex < value.length; entryIndex += 1) {
+    const item = value[entryIndex];
+    let id: unknown;
+    let checksum: unknown;
+    try {
+      if (typeof item !== "object" || item === null || Array.isArray(item)) {
+        throw migrationJournalInvalid(pluginId, "entry", entryIndex);
+      }
+      const prototype = Object.getPrototypeOf(item);
+      if (prototype !== Object.prototype && prototype !== null) {
+        throw migrationJournalInvalid(pluginId, "entry", entryIndex);
+      }
+      const record = item as Readonly<Record<string, unknown>>;
+      id = record.id;
+      checksum = record.checksum;
+    } catch (error) {
+      if (error instanceof PrismError) throw error;
+      throw migrationJournalInvalid(pluginId, "entry", entryIndex);
+    }
+    try {
+      assertKernelId(id, "id");
+    } catch {
+      throw migrationJournalInvalid(pluginId, "id", entryIndex);
+    }
+    if (applied.has(id)) throw migrationJournalInvalid(pluginId, "id", entryIndex);
+    if (
+      checksum !== undefined &&
+      (typeof checksum !== "string" || !/^[0-9a-f]{64}$/u.test(checksum))
+    ) {
+      throw migrationJournalInvalid(pluginId, "checksum", entryIndex);
+    }
+    applied.set(id, checksum);
+  }
+  return applied;
+}
+
+function migrationJournalInvalid(
+  pluginId: string,
+  field: string,
+  entryIndex?: number,
+): PrismError {
+  return PrismError.of(
+    "MIGRATION_JOURNAL_INVALID",
+    "Migration journal returned invalid metadata.",
+    {
+      pluginId,
+      field,
+      ...(entryIndex === undefined ? {} : { entryIndex }),
+    },
+  );
+}
 
 function wrap(error: unknown, code: string, pluginId: string): PrismError {
   if (error instanceof PrismError) return error;
-  return PrismError.of(code, `Plugin "${pluginId}": ${String(error)}`, { pluginId });
+  return PrismError.of(code, "Plugin lifecycle callback failed.", {
+    pluginId,
+    errorType: lifecycleErrorType(error),
+  });
+}
+
+function lifecycleErrorType(error: unknown): string {
+  if (!(error instanceof Error)) return typeof error;
+  return /^[A-Za-z][A-Za-z0-9]{0,63}$/u.test(error.name) ? error.name : "Error";
 }
 
 export function createEngine(options: EngineOptions): Engine {

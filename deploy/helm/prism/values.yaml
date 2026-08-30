@@ -1,0 +1,93 @@
+replicaCount: 1
+
+hostImage:
+  repository: ""
+  digest: ""
+  pullPolicy: IfNotPresent
+workerImage:
+  repository: ""
+  digest: ""
+
+serviceAccount:
+  name: ""
+  annotations: {}
+
+deployment:
+  id: ""
+  environment: production
+
+http:
+  port: 3000
+
+postgres:
+  secretName: ""
+  urlKey: database-url
+  schema: prism
+
+oidc:
+  issuer: ""
+  audience: prism
+  jwksUri: ""
+  rolesClaim: roles
+  permissionsClaim: permissions
+
+s3:
+  region: ""
+  endpoint: ""
+  forcePathStyle: false
+  artifactBucket: ""
+  artifactPrefix: ""
+  artifactRetentionDays: 365
+  auditBucket: ""
+  auditPrefix: audit
+  auditRetentionDays: 3650
+  auditExportIntervalMs: 10000
+
+vault:
+  address: ""
+  namespace: ""
+  kvMount: secret
+  kubernetesRole: ""
+  kubernetesMount: kubernetes
+
+worker:
+  user: "10001:10001"
+  memoryBytes: 1073741824
+  nanoCpus: 1000000000
+  pidsLimit: 128
+  tmpfsBytes: 67108864
+  staticMounts: []
+  dockerRemoteUrl: ""
+  dockerTlsSecretName: ""
+  dockerCaKey: ca.pem
+  dockerCertificateKey: cert.pem
+  dockerPrivateKeyKey: key.pem
+
+otel:
+  serviceName: prism-engine
+  traceEndpoint: ""
+  metricEndpoint: ""
+  healthUrl: ""
+  headersSecretName: ""
+  headersSecretKey: headers.json
+  metricIntervalMs: 30000
+
+evidence:
+  secretName: ""
+  maxAgeDays: 90
+  files: []
+
+migrations:
+  approvedExternal: []
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 512Mi
+  limits:
+    cpu: "2"
+    memory: 2Gi
+
+networkPolicy:
+  clientNamespaceLabel: prism-client
+  egress: []
